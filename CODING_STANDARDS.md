@@ -1,0 +1,3 @@
+- Production Go code must report no messgo violations in the design,codesize rulesets
+- Production Go code must report a covered-MSI % in mutago of 80% or higher
+- Production Go code should follow idiomatic Go guidelines and the Uber Go style guide
