@@ -32,6 +32,10 @@ _Avoid_: endpoint, entity, model (when you mean the exposed DB object)
 A request that nests related resources in one response, driven by declared relationships.
 _Avoid_: join, include, expand (unless quoting a query parameter name)
 
+**Relationship**:
+A link between resources in the schema cache, taken only from foreign keys the catalog declares (including a join table used for many-to-many).
+_Avoid_: association, join path, inferred view link (when you mean a cache relationship)
+
 **RPC**:
 A call to an exposed database routine through the PostgREST-style function calling interface.
 _Avoid_: stored procedure endpoint, remote procedure (unless explaining the acronym)

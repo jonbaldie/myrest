@@ -1,0 +1,5 @@
+# Read and embed: full match core, honest partials, refuse Postgres-only
+
+Clients must read one **resource** and **embed** related **resources** with a truthful PostgREST-shaped contract on MySQL 8. **Decision** (from [Decide read, filter, and embed parity boundaries](https://github.com/jonbaldie/myrest/issues/9)): ordinary read (columns, common filters, order, page) and exact count are **full match**; text-match case rules and JSON path are **partial match** with named limits; Postgres full-text operators, array/range operators, and planner-stat count modes are **not supported**. **Embed** is **full match** only when the relationship is in the **schema cache**; no relationship and computed relationships are **not supported**. Aggregates are not decided here.
+
+**Why:** Keep the main client path honest and complete; name the two MySQL semantic gaps instead of silent drift; refuse Postgres-only operators rather than reuse names with different meaning.
