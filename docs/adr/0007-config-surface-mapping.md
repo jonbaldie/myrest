@@ -1,0 +1,5 @@
+# Config surface: short client-facing map, PostgREST names, MYREST_ env
+
+Operators need a clear myrest setting list without copying every PostgREST ops knob or Postgres-only path. **Decision** (from [Decide PostgREST config surface mapping](https://github.com/jonbaldie/myrest/issues/11)): the Config **capability area** is a **short normative map** — minimum run set, client-visible gates, and an explicit drop list. Keep PostgREST **names** when the idea matches; document MySQL-only value meaning where needed (`db-uri` = MySQL **authenticator** URI; `db-schemas` = MySQL database list). Deliver config by file and/or `MYREST_*` environment variables; restart applies config; schema-cache **explicit reload** stays separate. No in-database config. Drop NOTIFY/channel, `search_path` extras, GUC/`app.settings` injection, plan-media gate, and admin listen knobs from this surface. Pure process tuning (pool, logs, bind) is not parity law.
+
+**Why:** Same names help operators and docs; a short client-facing map keeps the parent spec honest on MySQL and avoids fake drop-in of Postgres machinery.
