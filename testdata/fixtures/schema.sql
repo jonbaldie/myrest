@@ -35,9 +35,13 @@ INSERT INTO outside_items (name) VALUES ('hidden');
 -- The authenticator logs in with no privileges of its own: every privilege
 -- comes from the database role that myrest activates for the request.
 CREATE ROLE IF NOT EXISTS 'myrest_anon';
+-- MySQL takes a dash in a role name, so myrest must take one too.
+CREATE ROLE IF NOT EXISTS 'web-anon';
 CREATE USER IF NOT EXISTS 'authenticator'@'%' IDENTIFIED BY 'secret';
 GRANT 'myrest_anon' TO 'authenticator'@'%';
+GRANT 'web-anon' TO 'authenticator'@'%';
 SET DEFAULT ROLE NONE TO 'authenticator'@'%';
 
 GRANT SELECT ON myrest_fixture.items TO 'myrest_anon';
 GRANT SELECT ON myrest_hidden.outside_items TO 'myrest_anon';
+GRANT SELECT ON myrest_fixture.items TO 'web-anon';

@@ -9,12 +9,30 @@ import (
 func TestRoleSwitchStatementActivatesTheRole(t *testing.T) {
 	t.Parallel()
 
-	statement, err := roleSwitchStatement("myrest_anon")
-	if err != nil {
-		t.Fatalf("roleSwitchStatement: %v", err)
+	cases := []struct {
+		name string
+		role schemacache.Role
+		want string
+	}{
+		{name: "a simple name", role: "myrest_anon", want: "SET ROLE 'myrest_anon'"},
+		// MySQL takes any of these as a role name, so myrest must too.
+		{name: "a name with a dash", role: "web-anon", want: "SET ROLE 'web-anon'"},
+		{name: "a name with a space", role: "web anon", want: "SET ROLE 'web anon'"},
+		{name: "a name with a host", role: "web-anon@localhost", want: "SET ROLE 'web-anon'@'localhost'"},
+		{name: "a name with the host %", role: "web_anon@%", want: "SET ROLE 'web_anon'@'%'"},
 	}
-	if want := "SET ROLE 'myrest_anon'"; statement != want {
-		t.Fatalf("statement = %q, want %q", statement, want)
+	for _, one := range cases {
+		t.Run(one.name, func(t *testing.T) {
+			t.Parallel()
+
+			statement, err := roleSwitchStatement(one.role)
+			if err != nil {
+				t.Fatalf("roleSwitchStatement(%q): %v", one.role, err)
+			}
+			if statement != one.want {
+				t.Fatalf("statement = %q, want %q", statement, one.want)
+			}
+		})
 	}
 }
 
@@ -27,10 +45,14 @@ func TestRoleSwitchStatementRefusesANameItCannotQuote(t *testing.T) {
 	}{
 		{name: "an empty name", role: ""},
 		{name: "a name that closes the quote", role: "myrest_anon'; DROP DATABASE shop; --"},
-		{name: "a name with a host part", role: "myrest_anon@%"},
-		{name: "a name with a space", role: "myrest anon"},
-		{name: "a MySQL keyword with a space", role: "NONE "},
-		{name: "a name with a dash", role: "myrest-anon"},
+		{name: "a name with a double quote", role: `myrest"anon`},
+		{name: "a name with a back quote", role: "myrest`anon"},
+		{name: "a name with an escape character", role: `myrest\anon`},
+		{name: "a name with a new line", role: "myrest\nanon"},
+		{name: "a name with the delete character", role: "myrest\x7fanon"},
+		{name: "a host that closes the quote", role: "myrest_anon@'"},
+		{name: "an empty host", role: "myrest_anon@"},
+		{name: "a host with no name", role: "@localhost"},
 	}
 	for _, one := range cases {
 		t.Run(one.name, func(t *testing.T) {
@@ -41,15 +63,5 @@ func TestRoleSwitchStatementRefusesANameItCannotQuote(t *testing.T) {
 				t.Fatalf("roleSwitchStatement gave %q for the role %q", statement, one.role)
 			}
 		})
-	}
-}
-
-func TestSimpleNameAcceptsLettersDigitsAndUnderscores(t *testing.T) {
-	t.Parallel()
-
-	for _, role := range []schemacache.Role{"a", "Z", "myrest_anon", "role9", "_"} {
-		if !isSimpleName(role) {
-			t.Errorf("isSimpleName(%q) = false, want true", role)
-		}
 	}
 }
