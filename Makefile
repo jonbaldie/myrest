@@ -14,8 +14,10 @@ messgo:
 
 # CODING_STANDARDS.md: mutago covered-MSI of 80% or higher on production packages.
 # The MySQL Docker harness is test infrastructure and is not mutated here.
+# cmd/myrest is glue over these packages; its tests run it as a process, so
+# mutation coverage of the command comes from the packages it calls.
 mutago:
-	mutago --coverage --min-covered-msi 80 --quiet --no-diffs ./internal/httpapi
+	mutago --coverage --min-covered-msi 80 --quiet --no-diffs ./internal/config ./internal/httpapi
 
 # Start MySQL 8.0+ in Docker and load fixture SQL. Ctrl+C stops the container.
 mysql-fixtures:
