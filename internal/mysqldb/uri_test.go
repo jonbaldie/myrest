@@ -44,19 +44,23 @@ func TestDataSourceNameKeepsURIQueryValues(t *testing.T) {
 func TestDataSourceNameRefusesAURIThatIsNotMySQL(t *testing.T) {
 	t.Parallel()
 
-	for name, uri := range map[string]string{
-		"another scheme":   "postgres://authenticator@127.0.0.1:5432/",
-		"no user at all":   "mysql://127.0.0.1:3306/",
-		"an empty user":    "mysql://:secret@127.0.0.1:3306/",
-		"no host":          "mysql://authenticator@/",
-		"not a URI at all": "mysql://authenticator@127.0.0.1:3306/%zz",
-	} {
-		t.Run(name, func(t *testing.T) {
+	cases := []struct {
+		name string
+		uri  string
+	}{
+		{name: "another scheme", uri: "postgres://authenticator@127.0.0.1:5432/"},
+		{name: "no user at all", uri: "mysql://127.0.0.1:3306/"},
+		{name: "an empty user", uri: "mysql://:secret@127.0.0.1:3306/"},
+		{name: "no host", uri: "mysql://authenticator@/"},
+		{name: "not a URI at all", uri: "mysql://authenticator@127.0.0.1:3306/%zz"},
+	}
+	for _, one := range cases {
+		t.Run(one.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := dataSourceName(uri)
+			_, err := dataSourceName(one.uri)
 			if err == nil {
-				t.Fatalf("dataSourceName accepted %q", uri)
+				t.Fatalf("dataSourceName accepted %q", one.uri)
 			}
 			// The operator must read which knob holds the bad value.
 			if !strings.Contains(err.Error(), "db-uri") {

@@ -3,6 +3,7 @@ package mysqldb
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -31,123 +32,125 @@ var grantSources = []string{"ROLE_TABLE_GRANTS", "TABLE_PRIVILEGES"}
 
 // readCatalog reads the catalog data of the configured MySQL databases. The
 // caller must have activated the roles of the authenticator.
-func readCatalog(ctx context.Context, conn *sql.Conn, schemas []string) (schemacache.Catalog, error) {
-	if len(schemas) == 0 {
-		return schemacache.Catalog{}, fmt.Errorf("db-schemas holds no MySQL database")
+func readCatalog(
+	ctx context.Context,
+	conn *sql.Conn,
+	databases []string,
+) (schemacache.Catalog, error) {
+	if len(databases) == 0 {
+		return schemacache.Catalog{}, errors.New("db-schemas holds no MySQL database")
 	}
 
-	tables, err := readTableFacts(ctx, conn, schemas)
+	tables, err := read(ctx, conn, fmt.Sprintf(tableQuery, placeholders(databases)), databases, scanTable)
 	if err != nil {
-		return schemacache.Catalog{}, err
+		return schemacache.Catalog{}, fmt.Errorf("read the tables: %w", err)
 	}
-	columns, err := readColumnFacts(ctx, conn, schemas)
+	columns, err := read(ctx, conn, fmt.Sprintf(columnQuery, placeholders(databases)), databases, scanColumn)
 	if err != nil {
-		return schemacache.Catalog{}, err
+		return schemacache.Catalog{}, fmt.Errorf("read the columns: %w", err)
 	}
-	selects, err := readSelectFacts(ctx, conn, schemas)
+	selects, err := readSelectFacts(ctx, conn, databases)
 	if err != nil {
 		return schemacache.Catalog{}, err
 	}
 	return schemacache.Catalog{Tables: tables, Columns: columns, Selects: selects}, nil
 }
 
-func readTableFacts(ctx context.Context, conn *sql.Conn, schemas []string) ([]schemacache.TableFact, error) {
-	query := fmt.Sprintf(tableQuery, placeholders(len(schemas)))
-	result, err := conn.QueryContext(ctx, query, arguments(schemas)...)
-	if err != nil {
-		return nil, fmt.Errorf("read the tables: %w", err)
-	}
-	defer func() { _ = result.Close() }()
-
-	var facts []schemacache.TableFact
-	for result.Next() {
-		var fact schemacache.TableFact
-		if err := result.Scan(&fact.Schema, &fact.Name); err != nil {
-			return nil, err
-		}
-		facts = append(facts, fact)
-	}
-	return facts, result.Err()
-}
-
-func readColumnFacts(ctx context.Context, conn *sql.Conn, schemas []string) ([]schemacache.ColumnFact, error) {
-	query := fmt.Sprintf(columnQuery, placeholders(len(schemas)))
-	result, err := conn.QueryContext(ctx, query, arguments(schemas)...)
-	if err != nil {
-		return nil, fmt.Errorf("read the columns: %w", err)
-	}
-	defer func() { _ = result.Close() }()
-
-	var facts []schemacache.ColumnFact
-	for result.Next() {
-		var fact schemacache.ColumnFact
-		if err := result.Scan(&fact.Schema, &fact.Table, &fact.Name); err != nil {
-			return nil, err
-		}
-		facts = append(facts, fact)
-	}
-	return facts, result.Err()
-}
-
-func readSelectFacts(ctx context.Context, conn *sql.Conn, schemas []string) ([]schemacache.SelectFact, error) {
+// readSelectFacts reads the SELECT grants out of every catalog view that
+// reports one.
+func readSelectFacts(
+	ctx context.Context,
+	conn *sql.Conn,
+	databases []string,
+) ([]schemacache.SelectFact, error) {
 	var facts []schemacache.SelectFact
 	for _, source := range grantSources {
-		query := fmt.Sprintf(grantQuery, source, placeholders(len(schemas)))
-		result, err := conn.QueryContext(ctx, query, arguments(schemas)...)
+		query := fmt.Sprintf(grantQuery, source, placeholders(databases))
+		found, err := read(ctx, conn, query, databases, scanSelect)
 		if err != nil {
 			return nil, fmt.Errorf("read the SELECT grants of %s: %w", source, err)
-		}
-		found, err := scanSelectFacts(result)
-		_ = result.Close()
-		if err != nil {
-			return nil, err
 		}
 		facts = append(facts, found...)
 	}
 	return facts, nil
 }
 
-func scanSelectFacts(result *sql.Rows) ([]schemacache.SelectFact, error) {
-	var facts []schemacache.SelectFact
+// read runs one catalog query over the configured databases and reads every
+// row of the answer with scan. A row that scan gives no fact for is left out.
+func read[Fact any](
+	ctx context.Context,
+	conn *sql.Conn,
+	query string,
+	databases []string,
+	scan func(*sql.Rows) (Fact, bool, error),
+) ([]Fact, error) {
+	result, err := conn.QueryContext(ctx, query, asArguments(databases)...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = result.Close() }()
+
+	var facts []Fact
 	for result.Next() {
-		var grantee string
-		var fact schemacache.SelectFact
-		if err := result.Scan(&grantee, &fact.Schema, &fact.Table); err != nil {
+		fact, held, err := scan(result)
+		if err != nil {
 			return nil, err
 		}
-		fact.Role = roleOfGrantee(grantee)
-		if fact.Role == "" {
-			continue
+		if held {
+			facts = append(facts, fact)
 		}
-		facts = append(facts, fact)
 	}
 	return facts, result.Err()
 }
 
+func scanTable(result *sql.Rows) (schemacache.TableID, bool, error) {
+	var table schemacache.TableID
+	err := result.Scan(&table.Database, &table.Name)
+	return table, err == nil, err
+}
+
+func scanColumn(result *sql.Rows) (schemacache.ColumnFact, bool, error) {
+	var fact schemacache.ColumnFact
+	err := result.Scan(&fact.Table.Database, &fact.Table.Name, &fact.Name)
+	return fact, err == nil, err
+}
+
+// scanSelect reads a grant row. A grantee myrest cannot read a role name out
+// of gives no fact.
+func scanSelect(result *sql.Rows) (schemacache.SelectFact, bool, error) {
+	var grantee string
+	var fact schemacache.SelectFact
+	if err := result.Scan(&grantee, &fact.Table.Database, &fact.Table.Name); err != nil {
+		return fact, false, err
+	}
+	fact.Role = roleOfGrantee(grantee)
+	return fact, fact.Role != "", nil
+}
+
 // roleOfGrantee reads the role name out of a MySQL grantee. TABLE_PRIVILEGES
 // writes `'name'@'host'`; ROLE_TABLE_GRANTS writes the bare name.
-func roleOfGrantee(grantee string) string {
+func roleOfGrantee(grantee string) schemacache.Role {
 	if quoted, isQuoted := strings.CutPrefix(grantee, "'"); isQuoted {
 		name, _, closed := strings.Cut(quoted, "'")
 		if !closed {
 			return ""
 		}
-		return name
+		return schemacache.Role(name)
 	}
 	name, _, _ := strings.Cut(grantee, "@")
-	return name
+	return schemacache.Role(name)
 }
 
-// placeholders builds the `?, ?` list of an IN clause.
-func placeholders(count int) string {
-	return strings.TrimSuffix(strings.Repeat("?, ", count), ", ")
+// placeholders builds the `?, ?` list an IN clause needs for the databases.
+func placeholders(databases []string) string {
+	return strings.TrimSuffix(strings.Repeat("?, ", len(databases)), ", ")
 }
 
-// arguments passes the configured databases as query arguments.
-func arguments(values []string) []any {
-	passed := make([]any, len(values))
-	for i, value := range values {
-		passed[i] = value
+// asArguments passes the database names as query arguments.
+func asArguments(databases []string) []any {
+	passed := make([]any, len(databases))
+	for i, database := range databases {
+		passed[i] = database
 	}
 	return passed
 }

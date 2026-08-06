@@ -3,6 +3,7 @@ package mysqldb
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -41,14 +42,13 @@ func (p *Pool) Close() error {
 	return p.connections.Close()
 }
 
-// Catalog reads the catalog data of the configured MySQL databases. It
-// activates every role of the authenticator first, because MySQL hides
-// catalog rows from an account that holds no privilege on them.
-func (p *Pool) Catalog(ctx context.Context, schemas []string) (schemacache.Catalog, error) {
+// Catalog reads the catalog data of the configured MySQL databases, with every
+// role of the authenticator active (see ADR 0010).
+func (p *Pool) Catalog(ctx context.Context, databases []string) (schemacache.Catalog, error) {
 	var catalog schemacache.Catalog
-	err := p.withRole(ctx, allRoles, func(ctx context.Context, conn *sql.Conn) error {
+	err := p.onConnection(ctx, activateAllRoles, func(ctx context.Context, conn *sql.Conn) error {
 		var readErr error
-		catalog, readErr = readCatalog(ctx, conn, schemas)
+		catalog, readErr = readCatalog(ctx, conn, databases)
 		return readErr
 	})
 	return catalog, err
@@ -57,9 +57,18 @@ func (p *Pool) Catalog(ctx context.Context, schemas []string) (schemacache.Catal
 // Read gives back every row of the table, as the database role. MySQL applies
 // the grants of that role, so a table the role lost SELECT on gives an error
 // even when the schema cache still holds it.
-func (p *Pool) Read(ctx context.Context, role string, table schemacache.Table) ([]rows.Row, error) {
+func (p *Pool) Read(
+	ctx context.Context,
+	role schemacache.Role,
+	table schemacache.Table,
+) ([]rows.Row, error) {
+	statement, err := roleSwitchStatement(role)
+	if err != nil {
+		return nil, err
+	}
+
 	var read []rows.Row
-	err := p.withRole(ctx, role, func(ctx context.Context, conn *sql.Conn) error {
+	err = p.onConnection(ctx, statement, func(ctx context.Context, conn *sql.Conn) error {
 		var readErr error
 		read, readErr = readTable(ctx, conn, table)
 		return readErr
@@ -67,28 +76,38 @@ func (p *Pool) Read(ctx context.Context, role string, table schemacache.Table) (
 	return read, err
 }
 
-// withRole takes one authenticator connection, activates the database role on
-// it, runs work, and then clears the role so that the next request that takes
-// the connection starts with no privileges.
-func (p *Pool) withRole(
+// onConnection takes one authenticator connection, activates roles on it with
+// the given SET ROLE statement, and runs work.
+//
+// No request can read with the roles of another request: MySQL keeps the
+// active roles for the session, and every use of a connection comes through
+// here, where SET ROLE replaces them. Clearing the roles afterwards is what
+// keeps a connection that waits in the pool powerless; a connection that
+// cannot be cleared leaves the pool instead.
+func (p *Pool) onConnection(
 	ctx context.Context,
-	role string,
+	roleSwitch string,
 	work func(context.Context, *sql.Conn) error,
 ) error {
-	statement, err := roleSwitchStatement(role)
-	if err != nil {
-		return err
-	}
 	conn, err := p.connections.Conn(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = conn.Close() }()
 
-	if _, err := conn.ExecContext(ctx, statement); err != nil {
-		return fmt.Errorf("role switch to %s: %w", role, err)
+	if _, err := conn.ExecContext(ctx, roleSwitch); err != nil {
+		return fmt.Errorf("%s: %w", roleSwitch, err)
 	}
-	defer func() { _, _ = conn.ExecContext(context.WithoutCancel(ctx), "SET ROLE NONE") }()
+	defer clearRolesOrDrop(conn)
 
 	return work(ctx, conn)
+}
+
+// clearRolesOrDrop takes the roles off the connection. A connection that keeps
+// its roles must not go back to the pool, so it is marked unusable and the
+// pool throws it away.
+func clearRolesOrDrop(conn *sql.Conn) {
+	if _, err := conn.ExecContext(context.Background(), clearRoles); err != nil {
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+	}
 }

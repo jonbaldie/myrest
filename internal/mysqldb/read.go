@@ -14,7 +14,7 @@ import (
 // on purpose: no filter, no order, and no page. Later tickets add those.
 func readTable(ctx context.Context, conn *sql.Conn, table schemacache.Table) ([]rows.Row, error) {
 	if len(table.Columns) == 0 {
-		return nil, fmt.Errorf("the table %s.%s holds no column", table.Schema, table.Name)
+		return nil, fmt.Errorf("the table %s.%s holds no column", table.ID.Database, table.ID.Name)
 	}
 
 	names := columnNames(table)
@@ -45,8 +45,8 @@ func selectStatement(table schemacache.Table, names []string) string {
 	return fmt.Sprintf(
 		"SELECT %s FROM %s.%s",
 		strings.Join(quoted, ", "),
-		quoteIdentifier(table.Schema),
-		quoteIdentifier(table.Name),
+		quoteIdentifier(table.ID.Database),
+		quoteIdentifier(table.ID.Name),
 	)
 }
 

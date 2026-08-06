@@ -40,19 +40,12 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	database, err = mysqltest.Start()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "start MySQL: %v\n", err)
-		os.Exit(1)
-	}
-	if err := database.LoadSQL(filepath.Join("..", "..", "testdata", "fixtures", "schema.sql")); err != nil {
-		fmt.Fprintf(os.Stderr, "load the fixtures: %v\n", err)
-		_ = database.Stop()
-		os.Exit(1)
-	}
+	fixtures := []string{mysqltest.FixtureSchema(filepath.Join("..", ".."))}
+	code := mysqltest.RunTests(fixtures, func(started *mysqltest.Harness) int {
+		database = started
+		return m.Run()
+	})
 
-	code := m.Run()
-	_ = database.Stop()
 	_ = os.RemoveAll(directory)
 	os.Exit(code)
 }

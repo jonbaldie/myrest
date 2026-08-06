@@ -41,6 +41,8 @@ curl http://127.0.0.1:3000/secrets
 {"code":"PGRST205","message":"Could not find the table 'shop.secrets' in the schema cache","details":null,"hint":null}
 ```
 
+When MySQL itself refuses a read — a grant taken away after start-up, for example — the `message` stays what myrest says, and `details` carries what the database said.
+
 The read is narrow for now: all columns, no filter, no order, and no page. myrest reads the catalog once at start-up; a restart picks up new tables and new grants until the explicit reload arrives.
 
 ## Configuration

@@ -5,8 +5,8 @@ import (
 	"net/http"
 )
 
-// The error codes this ticket needs. The ticket "Error envelope, PGRST codes,
-// myrest gap codes, and SQLSTATE map" locks the full code contract.
+// The error codes the anonymous read needs. The full code contract comes with
+// the error envelope slice.
 const (
 	// codeNoTable is the code of the parity target for a table the schema
 	// cache does not hold.
@@ -27,9 +27,16 @@ type failure struct {
 	Hint    *string `json:"hint"`
 }
 
-// writeFailure answers with the error envelope.
-func writeFailure(writer http.ResponseWriter, status int, code, message string) {
-	writeJSON(writer, status, failure{Code: code, Message: message})
+// writeFailure answers with the error envelope. The message is what myrest
+// says; details carry what the database said, and are null when the failure
+// comes from myrest alone.
+func writeFailure(writer http.ResponseWriter, status int, code, message string, details error) {
+	body := failure{Code: code, Message: message}
+	if details != nil {
+		said := details.Error()
+		body.Details = &said
+	}
+	writeJSON(writer, status, body)
 }
 
 // writeJSON answers with a JSON body. The parity target needs no content

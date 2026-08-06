@@ -10,17 +10,17 @@ import (
 
 // Reader reads the rows of a resource as one database role.
 type Reader interface {
-	Read(ctx context.Context, role string, table schemacache.Table) ([]rows.Row, error)
+	Read(ctx context.Context, role schemacache.Role, table schemacache.Table) ([]rows.Row, error)
 }
 
 // readTable answers GET /<table>: it finds the resource of the active database
 // role in the schema cache, and reads all of its rows.
 func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
-	role := s.settings.DB.AnonRole
+	role := schemacache.Role(s.settings.DB.AnonRole)
 	if role == "" {
 		writeFailure(
 			writer, http.StatusUnauthorized, codeNoAnonymousRole,
-			"Anonymous requests need db-anon-role",
+			"Anonymous requests need db-anon-role", nil,
 		)
 		return
 	}
@@ -28,13 +28,16 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 	name := request.PathValue("table")
 	table, isResource := s.cache.Resource(role, name)
 	if !isResource {
-		writeFailure(writer, http.StatusNotFound, codeNoTable, s.noTableMessage(name))
+		writeFailure(writer, http.StatusNotFound, codeNoTable, s.noTableMessage(name), nil)
 		return
 	}
 
 	read, err := s.reader.Read(request.Context(), role, table)
 	if err != nil {
-		writeFailure(writer, http.StatusInternalServerError, codeDatabaseFailure, err.Error())
+		writeFailure(
+			writer, http.StatusInternalServerError, codeDatabaseFailure,
+			"The database did not answer the read", err,
+		)
 		return
 	}
 	writeJSON(writer, http.StatusOK, read)

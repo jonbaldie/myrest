@@ -3,6 +3,16 @@
 // database roles hold the SELECT privilege on them.
 package schemacache
 
+// Role is a MySQL account or role that myrest activates for a request.
+type Role string
+
+// TableID names one table of one MySQL database. A MySQL database is what the
+// db-schemas knob lists, and what MySQL itself calls a schema.
+type TableID struct {
+	Database string
+	Name     string
+}
+
 // Column is one column of a table, in catalog order.
 type Column struct {
 	Name string
@@ -10,77 +20,60 @@ type Column struct {
 
 // Table is a table of a configured MySQL database.
 type Table struct {
-	Schema  string
-	Name    string
+	ID      TableID
 	Columns []Column
-}
-
-// TableFact says that a configured database holds a table.
-type TableFact struct {
-	Schema string
-	Name   string
 }
 
 // ColumnFact says that a table holds a column. The order of the column facts
 // of one table is the order the columns keep in the cache.
 type ColumnFact struct {
-	Schema string
-	Table  string
-	Name   string
+	Table TableID
+	Name  string
 }
 
 // SelectFact says that a database role holds the SELECT privilege on a table.
 type SelectFact struct {
-	Role   string
-	Schema string
-	Table  string
+	Role  Role
+	Table TableID
 }
 
 // Catalog is the catalog data a cache is built from.
 type Catalog struct {
-	Tables  []TableFact
+	Tables  []TableID
 	Columns []ColumnFact
 	Selects []SelectFact
 }
 
 // Cache answers which table a request can read as a given database role.
 type Cache struct {
-	tables  map[string]Table
-	byName  map[string][]string
-	selects map[string]map[string]bool
+	tables  map[TableID]Table
+	byName  map[string][]TableID
+	selects map[Role]map[TableID]bool
 }
 
-// Build makes a cache from catalog data. Facts about a table the catalog does
-// not hold are left out, so a column or a grant on an unknown table is ignored.
+// Build makes a cache from catalog data.
 func Build(catalog Catalog) *Cache {
 	cache := &Cache{
-		tables:  make(map[string]Table, len(catalog.Tables)),
-		byName:  make(map[string][]string),
-		selects: make(map[string]map[string]bool),
+		tables:  make(map[TableID]Table, len(catalog.Tables)),
+		byName:  make(map[string][]TableID),
+		selects: make(map[Role]map[TableID]bool),
 	}
 
 	// A column fact or a grant that names no table of the catalog reaches no
 	// table here, because only the table facts make a table of the cache.
-	columns := make(map[string][]Column)
+	columns := make(map[TableID][]Column)
 	for _, fact := range catalog.Columns {
-		key := tableKey(fact.Schema, fact.Table)
-		columns[key] = append(columns[key], Column{Name: fact.Name})
+		columns[fact.Table] = append(columns[fact.Table], Column{Name: fact.Name})
 	}
-	for _, fact := range catalog.Tables {
-		key := tableKey(fact.Schema, fact.Name)
-		cache.tables[key] = Table{
-			Schema:  fact.Schema,
-			Name:    fact.Name,
-			Columns: columns[key],
-		}
-		cache.byName[fact.Name] = append(cache.byName[fact.Name], key)
+	for _, id := range catalog.Tables {
+		cache.tables[id] = Table{ID: id, Columns: columns[id]}
+		cache.byName[id.Name] = append(cache.byName[id.Name], id)
 	}
 	for _, fact := range catalog.Selects {
-		key := tableKey(fact.Schema, fact.Table)
 		if cache.selects[fact.Role] == nil {
-			cache.selects[fact.Role] = make(map[string]bool)
+			cache.selects[fact.Role] = make(map[TableID]bool)
 		}
-		cache.selects[fact.Role][key] = true
+		cache.selects[fact.Role][fact.Table] = true
 	}
 	return cache
 }
@@ -88,15 +81,11 @@ func Build(catalog Catalog) *Cache {
 // Resource gives the table that the name asks for when the database role holds
 // the SELECT privilege on it. A table the role cannot select from is not a
 // resource, and neither is a table the cache does not hold.
-func (c *Cache) Resource(role, name string) (Table, bool) {
-	for _, key := range c.byName[name] {
-		if c.selects[role][key] {
-			return c.tables[key], true
+func (c *Cache) Resource(role Role, name string) (Table, bool) {
+	for _, id := range c.byName[name] {
+		if c.selects[role][id] {
+			return c.tables[id], true
 		}
 	}
 	return Table{}, false
-}
-
-func tableKey(schema, table string) string {
-	return schema + "." + table
 }

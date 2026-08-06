@@ -7,22 +7,23 @@ import (
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
+const anonRole schemacache.Role = "myrest_anon"
+
+func table(database, name string) schemacache.TableID {
+	return schemacache.TableID{Database: database, Name: name}
+}
+
 // catalog holds two tables of one configured database. The anonymous role can
 // select from items only.
 func catalog() schemacache.Catalog {
 	return schemacache.Catalog{
-		Tables: []schemacache.TableFact{
-			{Schema: "shop", Name: "items"},
-			{Schema: "shop", Name: "secrets"},
-		},
+		Tables: []schemacache.TableID{table("shop", "items"), table("shop", "secrets")},
 		Columns: []schemacache.ColumnFact{
-			{Schema: "shop", Table: "items", Name: "id"},
-			{Schema: "shop", Table: "items", Name: "name"},
-			{Schema: "shop", Table: "secrets", Name: "payload"},
+			{Table: table("shop", "items"), Name: "id"},
+			{Table: table("shop", "items"), Name: "name"},
+			{Table: table("shop", "secrets"), Name: "payload"},
 		},
-		Selects: []schemacache.SelectFact{
-			{Role: "myrest_anon", Schema: "shop", Table: "items"},
-		},
+		Selects: []schemacache.SelectFact{{Role: anonRole, Table: table("shop", "items")}},
 	}
 }
 
@@ -30,15 +31,15 @@ func catalog() schemacache.Catalog {
 func TestTableWithSelectIsAResource(t *testing.T) {
 	t.Parallel()
 
-	table, ok := schemacache.Build(catalog()).Resource("myrest_anon", "items")
+	found, ok := schemacache.Build(catalog()).Resource(anonRole, "items")
 	if !ok {
 		t.Fatal("items is not a resource for myrest_anon")
 	}
-	if table.Schema != "shop" || table.Name != "items" {
-		t.Fatalf("table = %s.%s, want shop.items", table.Schema, table.Name)
+	if found.ID != table("shop", "items") {
+		t.Fatalf("table = %v, want shop.items", found.ID)
 	}
-	if want := []schemacache.Column{{Name: "id"}, {Name: "name"}}; !reflect.DeepEqual(table.Columns, want) {
-		t.Fatalf("columns = %v, want %v", table.Columns, want)
+	if want := []schemacache.Column{{Name: "id"}, {Name: "name"}}; !reflect.DeepEqual(found.Columns, want) {
+		t.Fatalf("columns = %v, want %v", found.Columns, want)
 	}
 }
 
@@ -46,7 +47,7 @@ func TestTableWithSelectIsAResource(t *testing.T) {
 func TestTableWithoutSelectIsNotAResource(t *testing.T) {
 	t.Parallel()
 
-	if _, ok := schemacache.Build(catalog()).Resource("myrest_anon", "secrets"); ok {
+	if _, ok := schemacache.Build(catalog()).Resource(anonRole, "secrets"); ok {
 		t.Fatal("secrets is a resource for myrest_anon, which has no SELECT on it")
 	}
 }
@@ -54,7 +55,7 @@ func TestTableWithoutSelectIsNotAResource(t *testing.T) {
 func TestTableOutsideTheCatalogIsNotAResource(t *testing.T) {
 	t.Parallel()
 
-	if _, ok := schemacache.Build(catalog()).Resource("myrest_anon", "outside_items"); ok {
+	if _, ok := schemacache.Build(catalog()).Resource(anonRole, "outside_items"); ok {
 		t.Fatal("a table the catalog does not hold is a resource")
 	}
 }
@@ -73,24 +74,17 @@ func TestNameInTwoDatabasesResolvesToTheGrantedTable(t *testing.T) {
 	t.Parallel()
 
 	cache := schemacache.Build(schemacache.Catalog{
-		Tables: []schemacache.TableFact{
-			{Schema: "warehouse", Name: "items"},
-			{Schema: "shop", Name: "items"},
-		},
-		Columns: []schemacache.ColumnFact{
-			{Schema: "shop", Table: "items", Name: "id"},
-		},
-		Selects: []schemacache.SelectFact{
-			{Role: "myrest_anon", Schema: "shop", Table: "items"},
-		},
+		Tables:  []schemacache.TableID{table("warehouse", "items"), table("shop", "items")},
+		Columns: []schemacache.ColumnFact{{Table: table("shop", "items"), Name: "id"}},
+		Selects: []schemacache.SelectFact{{Role: anonRole, Table: table("shop", "items")}},
 	})
 
-	table, ok := cache.Resource("myrest_anon", "items")
+	found, ok := cache.Resource(anonRole, "items")
 	if !ok {
 		t.Fatal("items is not a resource for myrest_anon")
 	}
-	if table.Schema != "shop" {
-		t.Fatalf("schema = %q, want shop", table.Schema)
+	if found.ID.Database != "shop" {
+		t.Fatalf("database = %q, want shop", found.ID.Database)
 	}
 }
 
@@ -99,11 +93,11 @@ func TestGrantOnAnUnknownTableMakesNoResource(t *testing.T) {
 	t.Parallel()
 
 	cache := schemacache.Build(schemacache.Catalog{
-		Columns: []schemacache.ColumnFact{{Schema: "shop", Table: "ghost", Name: "id"}},
-		Selects: []schemacache.SelectFact{{Role: "myrest_anon", Schema: "shop", Table: "ghost"}},
+		Columns: []schemacache.ColumnFact{{Table: table("shop", "ghost"), Name: "id"}},
+		Selects: []schemacache.SelectFact{{Role: anonRole, Table: table("shop", "ghost")}},
 	})
 
-	if _, ok := cache.Resource("myrest_anon", "ghost"); ok {
+	if _, ok := cache.Resource(anonRole, "ghost"); ok {
 		t.Fatal("a grant alone made a resource out of a table the catalog does not hold")
 	}
 }
@@ -112,7 +106,7 @@ func TestGrantOnAnUnknownTableMakesNoResource(t *testing.T) {
 func TestEmptyCatalogHoldsNoResource(t *testing.T) {
 	t.Parallel()
 
-	if _, ok := schemacache.Build(schemacache.Catalog{}).Resource("myrest_anon", "items"); ok {
+	if _, ok := schemacache.Build(schemacache.Catalog{}).Resource(anonRole, "items"); ok {
 		t.Fatal("an empty catalog gave a resource")
 	}
 }

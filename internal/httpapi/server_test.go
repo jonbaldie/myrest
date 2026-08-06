@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 
+	"github.com/jonbaldie/myrest/internal/apitest"
 	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/rows"
@@ -22,15 +23,22 @@ import (
 // reader answers a read with fixed rows, or with a failure, and keeps what
 // the service asked of it.
 type reader struct {
-	read    []rows.Row
+	read []rows.Row
+	// failure is what the database says when it refuses the read.
 	failure error
-	ctx     context.Context
-	role    string
-	table   schemacache.Table
+	// stoppable records whether the read carried a context a request can stop.
+	stoppable bool
+	role      schemacache.Role
+	table     schemacache.Table
 }
 
-func (r *reader) Read(ctx context.Context, role string, table schemacache.Table) ([]rows.Row, error) {
-	r.ctx, r.role, r.table = ctx, role, table
+func (r *reader) Read(
+	ctx context.Context,
+	role schemacache.Role,
+	table schemacache.Table,
+) ([]rows.Row, error) {
+	r.stoppable = ctx != nil && ctx.Done() != nil
+	r.role, r.table = role, table
 	if r.failure != nil {
 		return nil, r.failure
 	}
@@ -39,19 +47,17 @@ func (r *reader) Read(ctx context.Context, role string, table schemacache.Table)
 
 // cache holds one readable table and one the anonymous role cannot select.
 func cache() *schemacache.Cache {
+	items := schemacache.TableID{Database: "shop", Name: "items"}
+	secrets := schemacache.TableID{Database: "shop", Name: "secrets"}
+
 	return schemacache.Build(schemacache.Catalog{
-		Tables: []schemacache.TableFact{
-			{Schema: "shop", Name: "items"},
-			{Schema: "shop", Name: "secrets"},
-		},
+		Tables: []schemacache.TableID{items, secrets},
 		Columns: []schemacache.ColumnFact{
-			{Schema: "shop", Table: "items", Name: "id"},
-			{Schema: "shop", Table: "items", Name: "name"},
-			{Schema: "shop", Table: "secrets", Name: "payload"},
+			{Table: items, Name: "id"},
+			{Table: items, Name: "name"},
+			{Table: secrets, Name: "payload"},
 		},
-		Selects: []schemacache.SelectFact{
-			{Role: "myrest_anon", Schema: "shop", Table: "items"},
-		},
+		Selects: []schemacache.SelectFact{{Role: "myrest_anon", Table: items}},
 	})
 }
 
@@ -86,26 +92,10 @@ func serve(t *testing.T, source httpapi.Reader, resolved config.Settings) *httpa
 }
 
 // get reads a path from a running service.
-func get(t *testing.T, service *httpapi.Service, path string) *http.Response {
+func get(t *testing.T, service *httpapi.Service, path string) (*http.Response, []byte) {
 	t.Helper()
 
-	response, err := http.Get(service.URL() + path)
-	if err != nil {
-		t.Fatalf("GET %s: %v", path, err)
-	}
-	t.Cleanup(func() { _ = response.Body.Close() })
-	return response
-}
-
-// body reads the answer of a response.
-func body(t *testing.T, response *http.Response) []byte {
-	t.Helper()
-
-	read, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read body: %v", err)
-	}
-	return read
+	return apitest.Get(t, service.URL()+path)
 }
 
 // smoke-001 and repr-001: an anonymous read gives JSON rows.
@@ -116,7 +106,7 @@ func TestAnonymousReadAnswersWithJSONRows(t *testing.T) {
 		{Columns: []string{"id", "name"}, Values: []any{int64(1), "alpha"}},
 		{Columns: []string{"id", "name"}, Values: []any{int64(2), "beta"}},
 	}}
-	response := get(t, serve(t, source, settings()), "/items")
+	response, body := get(t, serve(t, source, settings()), "/items")
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
@@ -125,8 +115,8 @@ func TestAnonymousReadAnswersWithJSONRows(t *testing.T) {
 		t.Fatalf("Content-Type = %q, want application/json", contentType)
 	}
 	want := `[{"id":1,"name":"alpha"},{"id":2,"name":"beta"}]`
-	if read := string(body(t, response)); read != want+"\n" {
-		t.Fatalf("body = %q, want %q", read, want)
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %q, want %q", body, want)
 	}
 }
 
@@ -140,15 +130,13 @@ func TestAnonymousReadRunsAsTheAnonymousDatabaseRole(t *testing.T) {
 	if source.role != "myrest_anon" {
 		t.Errorf("read as role %q, want myrest_anon", source.role)
 	}
-	if source.table.Schema != "shop" || source.table.Name != "items" {
-		t.Errorf("read table %s.%s, want shop.items", source.table.Schema, source.table.Name)
+	if want := (schemacache.TableID{Database: "shop", Name: "items"}); source.table.ID != want {
+		t.Errorf("read table %v, want %v", source.table.ID, want)
 	}
 	// The read carries the context of the request, so that a client that
 	// goes away stops the work in the database.
-	if source.ctx == nil {
-		t.Error("the read carries no request context")
-	} else if source.ctx.Done() == nil {
-		t.Error("the read carries a context that no request can stop")
+	if !source.stoppable {
+		t.Error("the read carries no context a request can stop")
 	}
 }
 
@@ -156,10 +144,10 @@ func TestAnonymousReadRunsAsTheAnonymousDatabaseRole(t *testing.T) {
 func TestReadOfAnEmptyResourceAnswersWithAnEmptyArray(t *testing.T) {
 	t.Parallel()
 
-	response := get(t, serve(t, &reader{read: []rows.Row{}}, settings()), "/items")
+	_, body := get(t, serve(t, &reader{read: []rows.Row{}}, settings()), "/items")
 
-	if read := string(body(t, response)); read != "[]\n" {
-		t.Fatalf("body = %q, want an empty array", read)
+	if string(body) != "[]\n" {
+		t.Fatalf("body = %q, want an empty array", body)
 	}
 }
 
@@ -167,9 +155,9 @@ func TestReadOfAnEmptyResourceAnswersWithAnEmptyArray(t *testing.T) {
 func TestTableTheRoleCannotSelectGivesTheErrorEnvelope(t *testing.T) {
 	t.Parallel()
 
-	response := get(t, serve(t, &reader{}, settings()), "/secrets")
+	response, body := get(t, serve(t, &reader{}, settings()), "/secrets")
 
-	failure := assertEnvelope(t, response, http.StatusNotFound, "PGRST205")
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
 	if want := "Could not find the table 'shop.secrets' in the schema cache"; failure.Message != want {
 		t.Fatalf("message = %q, want %q", failure.Message, want)
 	}
@@ -179,9 +167,9 @@ func TestTableTheRoleCannotSelectGivesTheErrorEnvelope(t *testing.T) {
 func TestTableOutsideTheConfiguredDatabasesIsNotReachable(t *testing.T) {
 	t.Parallel()
 
-	response := get(t, serve(t, &reader{}, settings()), "/outside_items")
+	response, body := get(t, serve(t, &reader{}, settings()), "/outside_items")
 
-	assertEnvelope(t, response, http.StatusNotFound, "PGRST205")
+	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
 }
 
 // A request without an anonymous database role is refused, not served.
@@ -192,25 +180,32 @@ func TestReadWithoutAnAnonymousDatabaseRoleIsRefused(t *testing.T) {
 	withoutAnon.DB.AnonRole = ""
 	withoutAnon.JWT.Secret = "reallyreallyreallyreallyverysafe"
 
-	response := get(t, serve(t, &reader{}, withoutAnon), "/items")
+	response, body := get(t, serve(t, &reader{}, withoutAnon), "/items")
 
-	assertEnvelope(t, response, http.StatusUnauthorized, "PGRST301")
+	apitest.AssertEnvelope(t, response, body, http.StatusUnauthorized, "PGRST301")
 }
 
-// err-001: a failing read answers with the error envelope, not with rows.
+// err-001: a failing read answers with the error envelope, not with rows. The
+// message is what myrest says; what the database said goes to details.
 func TestFailingReadGivesTheErrorEnvelope(t *testing.T) {
 	t.Parallel()
 
 	source := &reader{failure: errors.New("SELECT command denied")}
-	response := get(t, serve(t, source, settings()), "/items")
+	response, body := get(t, serve(t, source, settings()), "/items")
 
-	assertEnvelope(t, response, http.StatusInternalServerError, "PGRST000")
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusInternalServerError, "PGRST000")
+	if strings.Contains(failure.Message, "SELECT command denied") {
+		t.Errorf("message %q holds the words of the database", failure.Message)
+	}
+	if failure.Details == nil || *failure.Details != "SELECT command denied" {
+		t.Errorf("details = %v, want what the database said", failure.Details)
+	}
 }
 
 func TestRootPathNamesTheService(t *testing.T) {
 	t.Parallel()
 
-	response := get(t, serve(t, &reader{}, settings()), "/")
+	response, body := get(t, serve(t, &reader{}, settings()), "/")
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
@@ -218,7 +213,7 @@ func TestRootPathNamesTheService(t *testing.T) {
 	var named struct {
 		Service string `json:"service"`
 	}
-	if err := json.Unmarshal(body(t, response), &named); err != nil {
+	if err := json.Unmarshal(body, &named); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
 	if named.Service != "myrest" {
@@ -262,48 +257,4 @@ func TestCloseStopsTheService(t *testing.T) {
 	if _, err := http.Get(base + "/items"); err == nil {
 		t.Fatal("the service answered after Close")
 	}
-}
-
-// envelope is the error body of the parity target.
-type envelope struct {
-	Code    string  `json:"code"`
-	Message string  `json:"message"`
-	Details *string `json:"details"`
-	Hint    *string `json:"hint"`
-}
-
-// assertEnvelope holds the error contract: the status, the code, and all four
-// fields of the envelope.
-func assertEnvelope(t *testing.T, response *http.Response, status int, code string) envelope {
-	t.Helper()
-
-	if response.StatusCode != status {
-		t.Fatalf("status = %d, want %d", response.StatusCode, status)
-	}
-	if contentType := response.Header.Get("Content-Type"); contentType != "application/json" {
-		t.Fatalf("Content-Type = %q, want application/json", contentType)
-	}
-
-	read := body(t, response)
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(read, &fields); err != nil {
-		t.Fatalf("decode body %s: %v", read, err)
-	}
-	for _, field := range []string{"code", "message", "details", "hint"} {
-		if _, held := fields[field]; !held {
-			t.Fatalf("the envelope %s holds no %s", read, field)
-		}
-	}
-
-	var failure envelope
-	if err := json.Unmarshal(read, &failure); err != nil {
-		t.Fatalf("decode envelope: %v", err)
-	}
-	if failure.Code != code {
-		t.Fatalf("code = %q, want %q", failure.Code, code)
-	}
-	if failure.Message == "" {
-		t.Fatalf("the envelope %s holds an empty message", read)
-	}
-	return failure
 }

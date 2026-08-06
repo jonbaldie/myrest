@@ -6,14 +6,12 @@ package acceptance_test
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/jonbaldie/myrest/internal/apitest"
 	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/mysqldb"
@@ -28,23 +26,11 @@ const anonRole = "myrest_anon"
 var harness *mysqltest.Harness
 
 func TestMain(m *testing.M) {
-	started, err := mysqltest.Start()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "start MySQL: %v\n", err)
-		os.Exit(1)
-	}
-	harness = started
-
-	fixture := filepath.Join("..", "..", "testdata", "fixtures", "schema.sql")
-	if err := harness.LoadSQL(fixture); err != nil {
-		fmt.Fprintf(os.Stderr, "load the fixtures: %v\n", err)
-		_ = harness.Stop()
-		os.Exit(1)
-	}
-
-	code := m.Run()
-	_ = harness.Stop()
-	os.Exit(code)
+	fixtures := []string{mysqltest.FixtureSchema(filepath.Join("..", ".."))}
+	os.Exit(mysqltest.RunTests(fixtures, func(started *mysqltest.Harness) int {
+		harness = started
+		return m.Run()
+	}))
 }
 
 // serve starts myrest over the fixture database, exposing the given databases.
@@ -84,17 +70,7 @@ func serve(t *testing.T, databases ...string) *httpapi.Service {
 func get(t *testing.T, service *httpapi.Service, path string) (*http.Response, []byte) {
 	t.Helper()
 
-	response, err := http.Get(service.URL() + path)
-	if err != nil {
-		t.Fatalf("GET %s: %v", path, err)
-	}
-	defer func() { _ = response.Body.Close() }()
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read the body: %v", err)
-	}
-	return response, body
+	return apitest.Get(t, service.URL()+path)
 }
 
 // smoke-001, cache-001 and repr-001: a client that sends no JWT reads the rows
@@ -118,9 +94,9 @@ func TestAnonymousReadOfAnExposedTable(t *testing.T) {
 func TestTableWithoutSelectForTheAnonymousRoleIsNotAResource(t *testing.T) {
 	response, body := get(t, serve(t, "myrest_fixture"), "/secrets")
 
-	assertEnvelope(t, response, body, http.StatusNotFound)
-	if string(body) == "" {
-		t.Fatal("the refusal carries no body")
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
+	if want := "Could not find the table 'myrest_fixture.secrets' in the schema cache"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
 	}
 }
 
@@ -128,7 +104,7 @@ func TestTableWithoutSelectForTheAnonymousRoleIsNotAResource(t *testing.T) {
 func TestTableOutsideTheConfiguredDatabasesIsNotReachable(t *testing.T) {
 	response, body := get(t, serve(t, "myrest_fixture"), "/outside_items")
 
-	assertEnvelope(t, response, body, http.StatusNotFound)
+	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
 }
 
 // The pool logs in as the authenticator, which holds no privilege of its own:
@@ -144,8 +120,7 @@ func TestTheAuthenticatorAloneCannotReadTheResource(t *testing.T) {
 	t.Cleanup(func() { _ = pool.Close() })
 
 	table := schemacache.Table{
-		Schema:  "myrest_fixture",
-		Name:    "items",
+		ID:      schemacache.TableID{Database: "myrest_fixture", Name: "items"},
 		Columns: []schemacache.Column{{Name: "id"}, {Name: "name"}},
 	}
 	if _, err := pool.Read(context.Background(), "", table); err == nil {
@@ -175,27 +150,10 @@ func TestMySQLEnforcesTheGrantsAfterTheRoleSwitch(t *testing.T) {
 	if response.StatusCode == http.StatusOK {
 		t.Fatalf("the read gave rows after the grant was taken away: %s", body)
 	}
-	assertEnvelope(t, response, body, http.StatusInternalServerError)
-}
 
-// assertEnvelope holds the error contract at the HTTP boundary.
-func assertEnvelope(t *testing.T, response *http.Response, body []byte, status int) {
-	t.Helper()
-
-	if response.StatusCode != status {
-		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, status, body)
-	}
-	if contentType := response.Header.Get("Content-Type"); contentType != "application/json" {
-		t.Fatalf("Content-Type = %q, want application/json", contentType)
-	}
-
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(body, &fields); err != nil {
-		t.Fatalf("decode the body %s: %v", body, err)
-	}
-	for _, field := range []string{"code", "message", "details", "hint"} {
-		if _, held := fields[field]; !held {
-			t.Fatalf("the envelope %s holds no %s", body, field)
-		}
+	// The database says what it refused; myrest keeps its own message.
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusInternalServerError, "PGRST000")
+	if failure.Details == nil || *failure.Details == "" {
+		t.Fatal("the envelope carries nothing of what the database said")
 	}
 }
