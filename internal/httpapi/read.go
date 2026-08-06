@@ -14,29 +14,37 @@ type Reader interface {
 }
 
 // readTable answers GET /<table>: it finds the resource of the active database
-// role in the schema cache, and reads all of its rows.
+// role in the schema cache, and reads all of its rows. A request names no
+// database, so the table comes from the default database; the profile header
+// of the parity target comes with the content negotiation ticket.
 func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 	role := schemacache.Role(s.settings.DB.AnonRole)
 	if role == "" {
 		writeFailure(
 			writer, http.StatusUnauthorized, codeNoAnonymousRole,
-			"Anonymous requests need db-anon-role", nil,
+			"Anonymous requests need db-anon-role",
 		)
 		return
 	}
 
-	name := request.PathValue("table")
-	table, isResource := s.cache.Resource(role, name)
+	asked := schemacache.TableID{
+		Database: s.settings.DefaultDatabase(),
+		Name:     request.PathValue("table"),
+	}
+	table, isResource := s.cache.Resource(role, asked)
 	if !isResource {
-		writeFailure(writer, http.StatusNotFound, codeNoTable, s.noTableMessage(name), nil)
+		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(asked))
 		return
 	}
 
 	read, err := s.reader.Read(request.Context(), role, table)
 	if err != nil {
+		// The words of the database name the accounts of the deployment,
+		// so the operator reads them and the client does not.
+		s.log.Printf("myrest: read %s.%s as %s: %v", asked.Database, asked.Name, role, err)
 		writeFailure(
 			writer, http.StatusInternalServerError, codeDatabaseFailure,
-			"The database did not answer the read", err,
+			"The database did not answer the read",
 		)
 		return
 	}
@@ -45,8 +53,6 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 
 // noTableMessage names the object the client asked for, the way the parity
 // target does: with the database the request reads.
-func (s *Service) noTableMessage(name string) string {
-	return "Could not find the table '" +
-		s.settings.DefaultDatabase() + "." + name +
-		"' in the schema cache"
+func noTableMessage(asked schemacache.TableID) string {
+	return "Could not find the table '" + asked.Database + "." + asked.Name + "' in the schema cache"
 }

@@ -3,6 +3,7 @@
 package httpapi
 
 import (
+	"log"
 	"net"
 	"net/http"
 
@@ -12,12 +13,14 @@ import (
 
 // Options holds what a myrest listener needs: where to bind, the resolved
 // settings, the schema cache, and the reader that runs the read as the
-// database role of the request.
+// database role of the request. Log takes what the operator must see and the
+// client must not; it defaults to the logger of the log package.
 type Options struct {
 	Addr     string
 	Settings config.Settings
 	Cache    *schemacache.Cache
 	Reader   Reader
+	Log      *log.Logger
 }
 
 // Service is a running myrest HTTP listener.
@@ -27,6 +30,7 @@ type Service struct {
 	settings config.Settings
 	cache    *schemacache.Cache
 	reader   Reader
+	log      *log.Logger
 }
 
 // Listen binds the address of the options and returns a Service ready to Serve.
@@ -36,11 +40,16 @@ func Listen(options Options) (*Service, error) {
 		return nil, err
 	}
 
+	logger := options.Log
+	if logger == nil {
+		logger = log.Default()
+	}
 	service := &Service{
 		listener: listener,
 		settings: options.Settings,
 		cache:    options.Cache,
 		reader:   options.Reader,
+		log:      logger,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", writeService)

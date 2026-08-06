@@ -19,7 +19,7 @@ const (
 )
 
 // failure is the error envelope of the parity target. Every field is written,
-// and details and hint are null when myrest has nothing to add.
+// and details and hint stay null until a ticket gives them a value.
 type failure struct {
 	Code    string  `json:"code"`
 	Message string  `json:"message"`
@@ -27,16 +27,10 @@ type failure struct {
 	Hint    *string `json:"hint"`
 }
 
-// writeFailure answers with the error envelope. The message is what myrest
-// says; details carry what the database said, and are null when the failure
-// comes from myrest alone.
-func writeFailure(writer http.ResponseWriter, status int, code, message string, details error) {
-	body := failure{Code: code, Message: message}
-	if details != nil {
-		said := details.Error()
-		body.Details = &said
-	}
-	writeJSON(writer, status, body)
+// writeFailure answers with the error envelope. Only myrest writes the
+// message: what the database says goes to the log of the operator.
+func writeFailure(writer http.ResponseWriter, status int, code, message string) {
+	writeJSON(writer, status, failure{Code: code, Message: message})
 }
 
 // writeJSON answers with a JSON body. The parity target needs no content

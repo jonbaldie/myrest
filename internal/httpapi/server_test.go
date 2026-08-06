@@ -1,9 +1,11 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -69,16 +71,26 @@ func settings() config.Settings {
 	return resolved
 }
 
-// serve starts a myrest listener over the given reader and settings.
-func serve(t *testing.T, source httpapi.Reader, resolved config.Settings) *httpapi.Service {
+// serve starts a myrest listener over the given reader and settings, with a
+// log the test can read.
+func serve(
+	t *testing.T,
+	source httpapi.Reader,
+	resolved config.Settings,
+	logged ...*bytes.Buffer,
+) *httpapi.Service {
 	t.Helper()
 
-	service, err := httpapi.Listen(httpapi.Options{
+	options := httpapi.Options{
 		Addr:     "127.0.0.1:0",
 		Settings: resolved,
 		Cache:    cache(),
 		Reader:   source,
-	})
+	}
+	if len(logged) == 1 {
+		options.Log = log.New(logged[0], "", 0)
+	}
+	service, err := httpapi.Listen(options)
 	if err != nil {
 		t.Fatalf("Listen: %v", err)
 	}
@@ -163,6 +175,24 @@ func TestTableTheRoleCannotSelectGivesTheErrorEnvelope(t *testing.T) {
 	}
 }
 
+// A request names no database, so the read goes to the default database: the
+// first of db-schemas. A table of another configured database cannot answer
+// in its place.
+func TestReadGoesToTheDefaultDatabase(t *testing.T) {
+	t.Parallel()
+
+	// The cache holds shop.items only, and warehouse comes first.
+	otherDefault := settings()
+	otherDefault.DB.Schemas = []string{"warehouse", "shop"}
+
+	response, body := get(t, serve(t, &reader{}, otherDefault), "/items")
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
+	if want := "Could not find the table 'warehouse.items' in the schema cache"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+}
+
 // A table outside db-schemas is not in the cache, so it is not reachable.
 func TestTableOutsideTheConfiguredDatabasesIsNotReachable(t *testing.T) {
 	t.Parallel()
@@ -185,20 +215,35 @@ func TestReadWithoutAnAnonymousDatabaseRoleIsRefused(t *testing.T) {
 	apitest.AssertEnvelope(t, response, body, http.StatusUnauthorized, "PGRST301")
 }
 
-// err-001: a failing read answers with the error envelope, not with rows. The
-// message is what myrest says; what the database said goes to details.
+// err-001: a failing read answers with the error envelope, not with rows.
 func TestFailingReadGivesTheErrorEnvelope(t *testing.T) {
 	t.Parallel()
 
 	source := &reader{failure: errors.New("SELECT command denied")}
 	response, body := get(t, serve(t, source, settings()), "/items")
 
-	failure := apitest.AssertEnvelope(t, response, body, http.StatusInternalServerError, "PGRST000")
-	if strings.Contains(failure.Message, "SELECT command denied") {
-		t.Errorf("message %q holds the words of the database", failure.Message)
+	apitest.AssertEnvelope(t, response, body, http.StatusInternalServerError, "PGRST000")
+}
+
+// The words of the database name the accounts of the deployment: the operator
+// reads them in the log, and the client reads none of them.
+func TestFailingReadTellsTheOperatorAndNotTheClient(t *testing.T) {
+	t.Parallel()
+
+	said := "SELECT command denied to user 'authenticator'@'10.0.0.1'"
+	var logged bytes.Buffer
+	source := &reader{failure: errors.New(said)}
+
+	_, body := get(t, serve(t, source, settings(), &logged), "/items")
+
+	if strings.Contains(string(body), "authenticator") {
+		t.Errorf("the client reads the words of the database: %s", body)
 	}
-	if failure.Details == nil || *failure.Details != "SELECT command denied" {
-		t.Errorf("details = %v, want what the database said", failure.Details)
+	if !strings.Contains(logged.String(), said) {
+		t.Errorf("the log %q does not hold what the database said", logged.String())
+	}
+	if !strings.Contains(logged.String(), "shop.items") {
+		t.Errorf("the log %q does not name the table of the read", logged.String())
 	}
 }
 

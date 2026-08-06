@@ -27,6 +27,12 @@ const grantQuery = `SELECT GRANTEE, TABLE_SCHEMA, TABLE_NAME
 	FROM information_schema.%s
 	WHERE PRIVILEGE_TYPE = 'SELECT' AND TABLE_SCHEMA IN (%s)`
 
+// roleQuery finds which role MySQL granted to which other role, so that the
+// cache can follow a SELECT privilege that reaches a role through another one.
+// The view holds the roles the authenticator can reach, which are the roles
+// myrest can activate (ADR 0010).
+const roleQuery = `SELECT GRANTEE, ROLE_NAME FROM information_schema.APPLICABLE_ROLES`
+
 // grantSources are the catalog views that report a SELECT privilege.
 var grantSources = []string{"ROLE_TABLE_GRANTS", "TABLE_PRIVILEGES"}
 
@@ -53,7 +59,16 @@ func readCatalog(
 	if err != nil {
 		return schemacache.Catalog{}, err
 	}
-	return schemacache.Catalog{Tables: tables, Columns: columns, Selects: selects}, nil
+	roles, err := read(ctx, conn, roleQuery, nil, scanRole)
+	if err != nil {
+		return schemacache.Catalog{}, fmt.Errorf("read the role grants: %w", err)
+	}
+	return schemacache.Catalog{
+		Tables:  tables,
+		Columns: columns,
+		Selects: selects,
+		Roles:   roles,
+	}, nil
 }
 
 // readSelectFacts reads the SELECT grants out of every catalog view that
@@ -125,6 +140,20 @@ func scanSelect(result *sql.Rows) (schemacache.SelectFact, bool, error) {
 	}
 	fact.Role = roleOfGrantee(grantee)
 	return fact, fact.Role != "", nil
+}
+
+// scanRole reads a role grant. A grantee myrest cannot read a role name out
+// of gives no fact.
+func scanRole(result *sql.Rows) (schemacache.RoleFact, bool, error) {
+	var holder, granted string
+	if err := result.Scan(&holder, &granted); err != nil {
+		return schemacache.RoleFact{}, false, err
+	}
+	fact := schemacache.RoleFact{
+		Holder:  roleOfGrantee(holder),
+		Granted: roleOfGrantee(granted),
+	}
+	return fact, fact.Holder != "" && fact.Granted != "", nil
 }
 
 // roleOfGrantee reads the role name out of a MySQL grantee. TABLE_PRIVILEGES

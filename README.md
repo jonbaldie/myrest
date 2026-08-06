@@ -34,14 +34,14 @@ curl http://127.0.0.1:3000/items
 [{"id":1,"name":"alpha"},{"id":2,"name":"beta"}]
 ```
 
-myrest opens pooled MySQL connections as the **authenticator** of `db-uri` and activates the database role for each request, so MySQL grants — not a second access list — say what a client may read. A table is a **resource** of the request only when its database is in `db-schemas` and the active role holds `SELECT` on it. Any other name gets the PostgREST error envelope:
+myrest opens pooled MySQL connections as the **authenticator** of `db-uri` and activates the database role for each request, so MySQL grants — not a second access list — say what a client may read. A table is a **resource** of the request only when it is in the **default database** (the first of `db-schemas`) and the active role holds `SELECT` on it, of itself or through a role granted to it. A table of another configured database waits for the content negotiation that names its database. Any other name gets the PostgREST error envelope:
 
 ```bash
 curl http://127.0.0.1:3000/secrets
 {"code":"PGRST205","message":"Could not find the table 'shop.secrets' in the schema cache","details":null,"hint":null}
 ```
 
-When MySQL itself refuses a read — a grant taken away after start-up, for example — the `message` stays what myrest says, and `details` carries what the database said.
+When MySQL itself refuses a read — a grant taken away after start-up, for example — the client gets the same envelope with a message of myrest. What MySQL said names the accounts of the deployment, so it goes to the log of the operator and not to the client.
 
 The read is narrow for now: all columns, no filter, no order, and no page. myrest reads the catalog once at start-up; a restart picks up new tables and new grants until the explicit reload arrives.
 
@@ -104,7 +104,7 @@ SET DEFAULT ROLE NONE TO 'authenticator'@'%';
 GRANT SELECT ON shop.items TO 'myrest_anon';
 ```
 
-The authenticator must hold every database role myrest activates, because MySQL shows catalog rows only to an account that holds a privilege on them. See [ADR 0010](docs/adr/0010-catalog-read-under-authenticator-roles.md).
+The authenticator must hold every database role myrest activates, because MySQL shows catalog rows only to an account that holds a privilege on them. See [ADR 0010](docs/adr/0010-catalog-read-under-authenticator-roles.md). A role granted to `myrest_anon` widens what an anonymous client reads, because MySQL reads with the privileges of the roles granted to the active role. See [ADR 0011](docs/adr/0011-bare-table-name-reads-the-default-database.md).
 
 ## Fixture DDL
 

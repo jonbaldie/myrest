@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jonbaldie/myrest/internal/apitest"
@@ -33,14 +34,22 @@ func TestMain(m *testing.M) {
 	}))
 }
 
-// serve starts myrest over the fixture database, exposing the given databases.
+// serve starts myrest over the fixture database, exposing the given databases
+// to the anonymous database role of the fixtures.
 func serve(t *testing.T, databases ...string) *httpapi.Service {
+	t.Helper()
+
+	return serveAs(t, anonRole, databases...)
+}
+
+// serveAs starts myrest with the given anonymous database role.
+func serveAs(t *testing.T, role string, databases ...string) *httpapi.Service {
 	t.Helper()
 
 	settings := config.Defaults()
 	settings.DB.URI = harness.URI("authenticator", "secret")
 	settings.DB.Schemas = databases
-	settings.DB.AnonRole = anonRole
+	settings.DB.AnonRole = role
 
 	pool, err := mysqldb.Open(settings.DB.URI)
 	if err != nil {
@@ -107,6 +116,61 @@ func TestTableOutsideTheConfiguredDatabasesIsNotReachable(t *testing.T) {
 	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
 }
 
+// A request names no database, so the read goes to the default database: the
+// first of db-schemas. A table of the second database is not reachable, even
+// with SELECT on it, until content negotiation names its database.
+func TestReadGoesToTheDefaultDatabaseOnly(t *testing.T) {
+	response, body := get(t, serve(t, "myrest_fixture", "myrest_hidden"), "/outside_items")
+
+	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
+
+	// The same table answers when its database comes first.
+	response, body = get(t, serve(t, "myrest_hidden", "myrest_fixture"), "/outside_items")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+}
+
+// smoke-001 for a role name MySQL takes but a simple name check would refuse.
+func TestAnonymousReadWithADashInTheRoleName(t *testing.T) {
+	response, body := get(t, serveAs(t, "web-anon", "myrest_fixture"), "/items")
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if want := `[{"id":1,"name":"alpha"},{"id":2,"name":"beta"}]`; string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+// cache-001 through a second role: MySQL reads with the privileges of the
+// roles granted to the active role, so those tables are resources too.
+func TestGrantThroughAnotherRoleIsAResource(t *testing.T) {
+	for _, statement := range []string{
+		"CREATE ROLE IF NOT EXISTS 'nested_reader'",
+		"GRANT SELECT ON myrest_fixture.secrets TO 'nested_reader'",
+		"GRANT 'nested_reader' TO 'myrest_anon'",
+	} {
+		if err := harness.Exec(statement); err != nil {
+			t.Fatalf("%s: %v", statement, err)
+		}
+	}
+	t.Cleanup(func() {
+		if err := harness.Exec("DROP ROLE IF EXISTS 'nested_reader'"); err != nil {
+			t.Errorf("drop the nested role: %v", err)
+		}
+	})
+
+	response, body := get(t, serve(t, "myrest_fixture"), "/secrets")
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if want := `[{"id":1,"payload":"top-secret"}]`; string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
 // The pool logs in as the authenticator, which holds no privilege of its own:
 // only the role switch of the request opens the read. A read of the same
 // table with the role switch turned off must therefore fail.
@@ -151,9 +215,11 @@ func TestMySQLEnforcesTheGrantsAfterTheRoleSwitch(t *testing.T) {
 		t.Fatalf("the read gave rows after the grant was taken away: %s", body)
 	}
 
-	// The database says what it refused; myrest keeps its own message.
-	failure := apitest.AssertEnvelope(t, response, body, http.StatusInternalServerError, "PGRST000")
-	if failure.Details == nil || *failure.Details == "" {
-		t.Fatal("the envelope carries nothing of what the database said")
+	apitest.AssertEnvelope(t, response, body, http.StatusInternalServerError, "PGRST000")
+
+	// What MySQL says names the accounts of the deployment, so it goes to
+	// the log of the operator and not to the client.
+	if strings.Contains(string(body), "authenticator") {
+		t.Fatalf("the client reads the words of MySQL: %s", body)
 	}
 }
