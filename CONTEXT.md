@@ -39,3 +39,23 @@ _Avoid_: stored procedure endpoint, remote procedure (unless explaining the acro
 **Database role**:
 The MySQL account (or role) selected for a request after authentication, used for privilege checks and execution.
 _Avoid_: user (when you mean the DB principal), JWT role claim (the claim names the role; it is not the role)
+
+**Parity decision rule**:
+The rule that assigns each PostgREST behaviour one parity label for myrest against the parity target.
+_Avoid_: compatibility policy, support matrix rule (when you mean this rule)
+
+**Parity label**:
+One of: full match, partial match, or not supported. The parent spec puts exactly one parity label on each classified behaviour.
+_Avoid_: equivalent/narrowed/unsupported (informal synonyms only), status, support level
+
+**Full match**:
+Parity label meaning myrest keeps the same client HTTP contract as the parity target for that behaviour, on success and on errors it claims to support.
+_Avoid_: required equivalent, complete parity, compatible
+
+**Partial match**:
+Parity label meaning only a named stable subset of the behaviour is supported; other input gets a stable error.
+_Avoid_: narrowed, best-effort, mostly supported
+
+**Not supported**:
+Parity label meaning myrest refuses the behaviour with a stable error and does not implement it.
+_Avoid_: unsupported, out of scope (product scope is separate), wontfix
