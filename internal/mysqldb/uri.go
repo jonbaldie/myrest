@@ -32,8 +32,13 @@ func dataSourceName(uri string) (string, error) {
 	}
 
 	password, _ := parsed.User.Password()
+
+	// The driver gives a DATE or a DATETIME as a time value, which JSON can
+	// hold. An operator who wrote the parameter keeps their own value.
 	query := parsed.Query()
-	query.Set("parseTime", "true")
+	if !query.Has("parseTime") {
+		query.Set("parseTime", "true")
+	}
 
 	return fmt.Sprintf(
 		"%s:%s@tcp(%s)/%s?%s",

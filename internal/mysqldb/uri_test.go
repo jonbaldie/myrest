@@ -41,6 +41,19 @@ func TestDataSourceNameKeepsURIQueryValues(t *testing.T) {
 	}
 }
 
+// The operator, not myrest, owns a parameter the db-uri already carries.
+func TestDataSourceNameKeepsTheParseTimeOfTheOperator(t *testing.T) {
+	t.Parallel()
+
+	name, err := dataSourceName("mysql://authenticator@127.0.0.1:3306/?parseTime=false")
+	if err != nil {
+		t.Fatalf("dataSourceName: %v", err)
+	}
+	if want := "authenticator:@tcp(127.0.0.1:3306)/?parseTime=false"; name != want {
+		t.Fatalf("name = %q, want %q", name, want)
+	}
+}
+
 func TestDataSourceNameRefusesAURIThatIsNotMySQL(t *testing.T) {
 	t.Parallel()
 
