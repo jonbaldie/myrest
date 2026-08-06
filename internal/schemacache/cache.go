@@ -58,28 +58,25 @@ func Build(catalog Catalog) *Cache {
 		byName:  make(map[string][]string),
 		selects: make(map[string]map[string]bool),
 	}
-	for _, fact := range catalog.Tables {
-		key := tableKey(fact.Schema, fact.Name)
-		if _, known := cache.tables[key]; known {
-			continue
-		}
-		cache.tables[key] = Table{Schema: fact.Schema, Name: fact.Name}
-		cache.byName[fact.Name] = append(cache.byName[fact.Name], key)
-	}
+
+	// A column fact or a grant that names no table of the catalog reaches no
+	// table here, because only the table facts make a table of the cache.
+	columns := make(map[string][]Column)
 	for _, fact := range catalog.Columns {
 		key := tableKey(fact.Schema, fact.Table)
-		table, known := cache.tables[key]
-		if !known {
-			continue
+		columns[key] = append(columns[key], Column{Name: fact.Name})
+	}
+	for _, fact := range catalog.Tables {
+		key := tableKey(fact.Schema, fact.Name)
+		cache.tables[key] = Table{
+			Schema:  fact.Schema,
+			Name:    fact.Name,
+			Columns: columns[key],
 		}
-		table.Columns = append(table.Columns, Column{Name: fact.Name})
-		cache.tables[key] = table
+		cache.byName[fact.Name] = append(cache.byName[fact.Name], key)
 	}
 	for _, fact := range catalog.Selects {
 		key := tableKey(fact.Schema, fact.Table)
-		if _, known := cache.tables[key]; !known {
-			continue
-		}
 		if cache.selects[fact.Role] == nil {
 			cache.selects[fact.Role] = make(map[string]bool)
 		}

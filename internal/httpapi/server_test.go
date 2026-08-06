@@ -19,16 +19,18 @@ import (
 // of an anonymous read with a reader that answers in memory. The tests in
 // ./test/acceptance hold the same contract over MySQL 8.
 
-// reader answers a read with fixed rows, or with a failure.
+// reader answers a read with fixed rows, or with a failure, and keeps what
+// the service asked of it.
 type reader struct {
 	read    []rows.Row
 	failure error
+	ctx     context.Context
 	role    string
 	table   schemacache.Table
 }
 
-func (r *reader) Read(_ context.Context, role string, table schemacache.Table) ([]rows.Row, error) {
-	r.role, r.table = role, table
+func (r *reader) Read(ctx context.Context, role string, table schemacache.Table) ([]rows.Row, error) {
+	r.ctx, r.role, r.table = ctx, role, table
 	if r.failure != nil {
 		return nil, r.failure
 	}
@@ -140,6 +142,13 @@ func TestAnonymousReadRunsAsTheAnonymousDatabaseRole(t *testing.T) {
 	}
 	if source.table.Schema != "shop" || source.table.Name != "items" {
 		t.Errorf("read table %s.%s, want shop.items", source.table.Schema, source.table.Name)
+	}
+	// The read carries the context of the request, so that a client that
+	// goes away stops the work in the database.
+	if source.ctx == nil {
+		t.Error("the read carries no request context")
+	} else if source.ctx.Done() == nil {
+		t.Error("the read carries a context that no request can stop")
 	}
 }
 

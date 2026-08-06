@@ -96,6 +96,17 @@ type Settings struct {
 	Server  ServerSettings
 }
 
+// DefaultDatabase is the MySQL database a request reads when it names none.
+// It is the first database of db-schemas, as the parity target reads the
+// first schema of its schema list. Settings that did not pass the serve gate
+// name no database at all.
+func (s Settings) DefaultDatabase() string {
+	if len(s.DB.Schemas) == 0 {
+		return ""
+	}
+	return s.DB.Schemas[0]
+}
+
 // Defaults holds the value of every knob that nobody has set, as the parity
 // target documents them.
 func Defaults() Settings {

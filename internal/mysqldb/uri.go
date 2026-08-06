@@ -24,7 +24,7 @@ func dataSourceName(uri string) (string, error) {
 	if parsed.Scheme != "mysql" {
 		return "", errors.New("db-uri: the scheme must be mysql")
 	}
-	if parsed.User == nil || parsed.User.Username() == "" {
+	if parsed.User.Username() == "" {
 		return "", errors.New("db-uri: the authenticator user is missing")
 	}
 	if parsed.Host == "" {

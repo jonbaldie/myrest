@@ -1,6 +1,9 @@
 package mysqldb
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestDataSourceNameReadsAnAuthenticatorURI(t *testing.T) {
 	t.Parallel()
@@ -43,15 +46,21 @@ func TestDataSourceNameRefusesAURIThatIsNotMySQL(t *testing.T) {
 
 	for name, uri := range map[string]string{
 		"another scheme":   "postgres://authenticator@127.0.0.1:5432/",
-		"no user":          "mysql://127.0.0.1:3306/",
+		"no user at all":   "mysql://127.0.0.1:3306/",
+		"an empty user":    "mysql://:secret@127.0.0.1:3306/",
 		"no host":          "mysql://authenticator@/",
 		"not a URI at all": "mysql://authenticator@127.0.0.1:3306/%zz",
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := dataSourceName(uri); err == nil {
+			_, err := dataSourceName(uri)
+			if err == nil {
 				t.Fatalf("dataSourceName accepted %q", uri)
+			}
+			// The operator must read which knob holds the bad value.
+			if !strings.Contains(err.Error(), "db-uri") {
+				t.Fatalf("error %q does not name the db-uri knob", err)
 			}
 		})
 	}

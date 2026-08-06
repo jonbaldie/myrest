@@ -1,0 +1,5 @@
+# Catalog read under the roles of the authenticator
+
+MySQL shows a row of `information_schema` only to an account that holds a privilege on the object, and the **authenticator** of `db-uri` holds no privilege of its own (ADR 0002). A **schema cache** built on a bare authenticator connection is therefore empty. **Decision:** myrest reads the catalog on a connection that first activates every database role the authenticator holds (`SET ROLE ALL`), and it builds the cache from that read; each request then activates only its own **database role**, and myrest clears the role before the connection goes back to the pool.
+
+**Why:** It keeps one pooled login (no connection per role) and needs no privileged catalog account, so the cache sees exactly the objects the roles of that authenticator can reach. **Consequence:** an operator must grant myrest every database role it may switch to; a role that is not granted to the authenticator is invisible to the cache and cannot be activated.

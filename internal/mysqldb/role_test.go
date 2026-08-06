@@ -39,8 +39,9 @@ func TestRoleSwitchStatementRefusesANameItCannotQuote(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := roleSwitchStatement(role); err == nil {
-				t.Fatalf("roleSwitchStatement accepted %q", role)
+			statement, err := roleSwitchStatement(role)
+			if err == nil {
+				t.Fatalf("roleSwitchStatement gave %q for the role %q", statement, role)
 			}
 		})
 	}

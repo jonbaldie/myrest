@@ -23,11 +23,7 @@ func (r Row) MarshalJSON() ([]byte, error) {
 		if i > 0 {
 			buffer.WriteByte(',')
 		}
-		name, err := json.Marshal(column)
-		if err != nil {
-			return nil, err
-		}
-		buffer.Write(name)
+		buffer.Write(jsonString(column))
 		buffer.WriteByte(':')
 
 		var value any
@@ -42,4 +38,12 @@ func (r Row) MarshalJSON() ([]byte, error) {
 	}
 	buffer.WriteByte('}')
 	return buffer.Bytes(), nil
+}
+
+// jsonString writes a column name as a JSON string. A Go string always
+// becomes JSON: the encoder puts the replacement character where the bytes
+// are not UTF-8.
+func jsonString(value string) []byte {
+	encoded, _ := json.Marshal(value)
+	return encoded
 }

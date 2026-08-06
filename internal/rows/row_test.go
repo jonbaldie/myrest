@@ -51,12 +51,30 @@ func TestEmptyRowIsAnEmptyObject(t *testing.T) {
 	}
 }
 
+func TestRowEscapesAColumnName(t *testing.T) {
+	t.Parallel()
+
+	row := rows.Row{Columns: []string{`od"d`}, Values: []any{1}}
+
+	encoded, err := json.Marshal(row)
+	if err != nil {
+		t.Fatalf("marshal row: %v", err)
+	}
+	if want := `{"od\"d":1}`; string(encoded) != want {
+		t.Fatalf("row = %s, want %s", encoded, want)
+	}
+}
+
 func TestRowRefusesAValueJSONCannotHold(t *testing.T) {
 	t.Parallel()
 
 	row := rows.Row{Columns: []string{"broken"}, Values: []any{make(chan int)}}
 
-	if _, err := json.Marshal(row); err == nil {
-		t.Fatal("marshal accepted a value JSON cannot hold")
+	encoded, err := row.MarshalJSON()
+	if err == nil {
+		t.Fatalf("MarshalJSON gave %s for a value JSON cannot hold", encoded)
+	}
+	if encoded != nil {
+		t.Fatalf("MarshalJSON gave the body %s with its error", encoded)
 	}
 }

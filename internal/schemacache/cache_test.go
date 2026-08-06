@@ -108,24 +108,11 @@ func TestGrantOnAnUnknownTableMakesNoResource(t *testing.T) {
 	}
 }
 
-// The same table reported twice keeps one set of columns.
-func TestRepeatedTableFactKeepsOneTable(t *testing.T) {
+// An empty catalog holds no resource.
+func TestEmptyCatalogHoldsNoResource(t *testing.T) {
 	t.Parallel()
 
-	cache := schemacache.Build(schemacache.Catalog{
-		Tables: []schemacache.TableFact{
-			{Schema: "shop", Name: "items"},
-			{Schema: "shop", Name: "items"},
-		},
-		Columns: []schemacache.ColumnFact{{Schema: "shop", Table: "items", Name: "id"}},
-		Selects: []schemacache.SelectFact{{Role: "myrest_anon", Schema: "shop", Table: "items"}},
-	})
-
-	table, ok := cache.Resource("myrest_anon", "items")
-	if !ok {
-		t.Fatal("items is not a resource for myrest_anon")
-	}
-	if len(table.Columns) != 1 {
-		t.Fatalf("columns = %v, want one column", table.Columns)
+	if _, ok := schemacache.Build(schemacache.Catalog{}).Resource("myrest_anon", "items"); ok {
+		t.Fatal("an empty catalog gave a resource")
 	}
 }

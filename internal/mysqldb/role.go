@@ -1,7 +1,6 @@
 package mysqldb
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 )
@@ -20,9 +19,6 @@ var simpleName = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
 func roleSwitchStatement(role string) (string, error) {
 	if role == allRoles {
 		return "SET ROLE ALL", nil
-	}
-	if role == "" {
-		return "", errors.New("the database role is empty")
 	}
 	if !simpleName.MatchString(role) {
 		return "", fmt.Errorf("the database role %q is not a simple name", role)

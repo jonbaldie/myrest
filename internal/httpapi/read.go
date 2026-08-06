@@ -41,12 +41,9 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 }
 
 // noTableMessage names the object the client asked for, the way the parity
-// target does. The name carries the first configured database, because a
-// request without a profile reads the first database of db-schemas.
+// target does: with the database the request reads.
 func (s *Service) noTableMessage(name string) string {
-	schema := ""
-	if len(s.settings.DB.Schemas) > 0 {
-		schema = s.settings.DB.Schemas[0] + "."
-	}
-	return "Could not find the table '" + schema + name + "' in the schema cache"
+	return "Could not find the table '" +
+		s.settings.DefaultDatabase() + "." + name +
+		"' in the schema cache"
 }

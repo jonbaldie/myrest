@@ -127,17 +127,14 @@ func scanSelectFacts(result *sql.Rows) ([]schemacache.SelectFact, error) {
 // roleOfGrantee reads the role name out of a MySQL grantee. TABLE_PRIVILEGES
 // writes `'name'@'host'`; ROLE_TABLE_GRANTS writes the bare name.
 func roleOfGrantee(grantee string) string {
-	name := grantee
-	if quoted := strings.HasPrefix(name, "'"); quoted {
-		end := strings.Index(name[1:], "'")
-		if end < 0 {
+	if quoted, isQuoted := strings.CutPrefix(grantee, "'"); isQuoted {
+		name, _, closed := strings.Cut(quoted, "'")
+		if !closed {
 			return ""
 		}
-		return name[1 : 1+end]
+		return name
 	}
-	if at := strings.IndexByte(name, '@'); at >= 0 {
-		name = name[:at]
-	}
+	name, _, _ := strings.Cut(grantee, "@")
 	return name
 }
 
