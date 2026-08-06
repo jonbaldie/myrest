@@ -11,7 +11,7 @@ The current **parity target** pin lives in one place only:
 
 **`CONTEXT.md` → Language → `Parity target`**
 
-Today that entry names **PostgREST v14.16**. Every other mention in the repository (parent spec, ADRs, research notes, chapter prose) is a copy. When a copy disagrees with `CONTEXT.md`, `CONTEXT.md` wins until a pin-move pull request updates both.
+Read the version string from that entry. Every other mention in the repository (parent spec, ADRs, research notes, chapter prose) is a copy. When a copy disagrees with `CONTEXT.md`, `CONTEXT.md` wins until a pin-move pull request updates both.
 
 Do not treat GitHub “latest”, the PostgREST docs “stable” brand alone, or an unpinned phrase as the pin.
 
