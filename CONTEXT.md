@@ -40,6 +40,18 @@ _Avoid_: stored procedure endpoint, remote procedure (unless explaining the acro
 The MySQL account (or role) selected for a request after authentication, used for privilege checks and execution.
 _Avoid_: user (when you mean the DB principal), JWT role claim (the claim names the role; it is not the role)
 
+**Authenticator**:
+The MySQL login account myrest uses for pooled database connections before it selects a **database role** for the request.
+_Avoid_: superuser, admin connection, service account (when you mean this login)
+
+**Anonymous database role**:
+The **database role** myrest selects when the request has no usable JWT and anonymous access is configured.
+_Avoid_: guest, public role, unauthenticated user (when you mean this DB role)
+
+**Role switch**:
+The per-request step that activates the chosen **database role** on the **authenticator** connection so MySQL grants apply.
+_Avoid_: impersonation (Postgres-style identity change; myrest does not claim that), SET ROLE (implementation phrase in prose)
+
 **Parity decision rule**:
 The rule that assigns each PostgREST behaviour one parity label for myrest against the parity target.
 _Avoid_: compatibility policy, support matrix rule (when you mean this rule)
