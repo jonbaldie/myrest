@@ -60,6 +60,18 @@ _Avoid_: guest, public role, unauthenticated user (when you mean this DB role)
 The per-request step that activates the chosen **database role** on the **authenticator** connection so MySQL grants apply.
 _Avoid_: impersonation (Postgres-style identity change; myrest does not claim that), SET ROLE (implementation phrase in prose)
 
+**Knob**:
+One named setting on the myrest config surface, spelled with the PostgREST kebab-case name (for example `db-schemas`).
+_Avoid_: option, flag, parameter, property (when you mean this setting)
+
+**Minimum run set**:
+The **knobs** myrest must have before it serves the API: `db-uri`, `db-schemas`, and `jwt-secret` and/or `db-anon-role`.
+_Avoid_: required config, minimum config, bootstrap settings
+
+**Serve gate**:
+The start-up check that keeps a process with an incomplete **minimum run set** off the wire and names each missing **knob**.
+_Avoid_: validation, health check, readiness probe (those watch a running process)
+
 **Parity decision rule**:
 The rule that assigns each PostgREST behaviour one parity label for myrest against the parity target.
 _Avoid_: compatibility policy, support matrix rule (when you mean this rule)
