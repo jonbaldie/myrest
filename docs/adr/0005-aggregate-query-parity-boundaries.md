@@ -1,0 +1,5 @@
+# Aggregates on read: full match when enabled
+
+Clients may request aggregate reads (`sum` / `count` / `avg` / `min` / `max` style select) against a **resource**. **Decision** (from [Decide aggregate query parity boundaries](https://github.com/jonbaldie/myrest/issues/16)): when the operator turns aggregates on, that main path is **full match** with the **parity target**, including auto group behaviour. Aggregate + **embed** is **full match** only where the **parity target** supports it and the **relationship** is in the **schema cache**; combos the **parity target** refuses are **not supported**. Aggregates stay off until enabled; when off, refuse with a stable error. Labels live in the Read **capability area**, with a short note from Embed. No separate **partial match** band for aggregates.
+
+**Why:** MySQL can honour the same client contract for this surface. Match the **parity target** honestly, including its off-by-default gate and its embed refusals, rather than a thinner or looser subset.
