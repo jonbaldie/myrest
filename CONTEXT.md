@@ -13,7 +13,7 @@ The external reference system whose HTTP API contracts myrest aims to match.
 _Avoid_: postgrest (when referring to the project as a proper name in prose), Supabase
 
 **Parity target**:
-The concrete PostgREST release whose documented HTTP behaviour myrest treats as normative.
+PostgREST v14.16. The concrete PostgREST release whose documented HTTP behaviour myrest treats as normative (canonical pin; maintainers move it only via `docs/parity-pin-maintenance.md`).
 _Avoid_: “latest” without a version pin, “compatible enough”
 
 **Capability area**:
