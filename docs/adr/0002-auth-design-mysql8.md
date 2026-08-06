@@ -1,0 +1,5 @@
+# Auth design: JWT wire full match, grant-based role switch, no RLS/GUCs
+
+myrest must accept PostgREST-shaped Bearer JWTs and authorize with MySQL privileges, but MySQL cannot copy Postgres impersonation, RLS, or request GUCs. **Decision** (from [Decide myrest auth design on MySQL 8](https://github.com/jonbaldie/myrest/issues/6)): validate JWT on the HTTP wire as a **full match** with the parity target; map a simple role claim to a **database role**; **role switch** on a pooled **authenticator** connection; enforce access only via that role’s grants; anonymous path uses a configured **anonymous database role**. Label role “impersonation” **partial match** (rights follow the role; SQL `CURRENT_USER` stays the authenticator). **Not supported:** RLS, claim/header GUC-in-SQL, non-Bearer credential schemes. Keep a PostgREST-shaped pre-request DB hook in scope for later detail. Auth errors follow the parity target envelope, with myrest gap codes only for MySQL-only cases.
+
+**Why:** Closest honest path to “JWT→database-role” on MySQL 8 without a second app ACL or fake RLS. PROXY/connect-per-role is heavier; app-only auth abandons the destination.
