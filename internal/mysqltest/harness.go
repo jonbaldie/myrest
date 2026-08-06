@@ -84,6 +84,27 @@ func (h *Harness) RootDSN() string {
 	return fmt.Sprintf("root:%s@tcp(127.0.0.1:%s)/?parseTime=true&multiStatements=true", h.rootPass, h.hostPort)
 }
 
+// URI returns a myrest db-uri for a login account of the harness. Use it to
+// give myrest the authenticator the fixture SQL created.
+func (h *Harness) URI(user, password string) string {
+	return fmt.Sprintf("mysql://%s:%s@127.0.0.1:%s/", user, password, h.hostPort)
+}
+
+// Exec runs a statement as root, so that a test can change grants or data
+// after the fixtures are loaded.
+func (h *Harness) Exec(statement string) error {
+	db, err := sql.Open("mysql", h.RootDSN())
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(statement); err != nil {
+		return fmt.Errorf("exec %s: %w", statement, err)
+	}
+	return nil
+}
+
 // LoadSQL reads fixture SQL files and executes them as root.
 func (h *Harness) LoadSQL(paths ...string) error {
 	if len(paths) == 0 {

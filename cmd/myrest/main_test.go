@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jonbaldie/myrest/internal/mysqltest"
 )
 
 // processDeadline is how long a test waits for a myrest process to answer.
@@ -20,6 +22,9 @@ const processDeadline = 20 * time.Second
 // binary is the myrest command this test package builds once and then runs as
 // a process, so that the config surface is observed where an operator sees it.
 var binary string
+
+// database is the MySQL 8 database the started processes read.
+var database *mysqltest.Harness
 
 func TestMain(m *testing.M) {
 	directory, err := os.MkdirTemp("", "myrest-process")
@@ -34,9 +39,27 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "build myrest: %v\n", err)
 		os.Exit(1)
 	}
+
+	database, err = mysqltest.Start()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "start MySQL: %v\n", err)
+		os.Exit(1)
+	}
+	if err := database.LoadSQL(filepath.Join("..", "..", "testdata", "fixtures", "schema.sql")); err != nil {
+		fmt.Fprintf(os.Stderr, "load the fixtures: %v\n", err)
+		_ = database.Stop()
+		os.Exit(1)
+	}
+
 	code := m.Run()
+	_ = database.Stop()
 	_ = os.RemoveAll(directory)
 	os.Exit(code)
+}
+
+// authenticator is the db-uri of the fixture authenticator login.
+func authenticator() string {
+	return database.URI("authenticator", "secret")
 }
 
 // cfg-001: a half-configured process must stay off the wire and must say
@@ -64,14 +87,14 @@ func TestProcessBehavesTheSameFromEnvironmentVariablesAsFromAConfigFile(t *testi
 	t.Parallel()
 
 	fromEnvironment := start(t, map[string]string{
-		"MYREST_DB_URI":       "mysql://authenticator@127.0.0.1:3306/",
-		"MYREST_DB_SCHEMAS":   "shop",
+		"MYREST_DB_URI":       authenticator(),
+		"MYREST_DB_SCHEMAS":   "myrest_fixture",
 		"MYREST_DB_ANON_ROLE": "myrest_anon",
 	})
-	fromFile := start(t, nil, configFile(t, `db-uri = "mysql://authenticator@127.0.0.1:3306/"
-db-schemas = "shop"
+	fromFile := start(t, nil, configFile(t, fmt.Sprintf(`db-uri = %q
+db-schemas = "myrest_fixture"
 db-anon-role = "myrest_anon"
-`))
+`, authenticator())))
 
 	environmentURL, environmentExposed := fromEnvironment.waitForServe(t)
 	fileURL, fileExposed := fromFile.waitForServe(t)
@@ -88,10 +111,10 @@ db-anon-role = "myrest_anon"
 func TestProcessStartsWithTheMinimumRunSetAlone(t *testing.T) {
 	t.Parallel()
 
-	process := start(t, nil, configFile(t, `db-uri = "mysql://authenticator@127.0.0.1:3306/"
-db-schemas = "shop"
+	process := start(t, nil, configFile(t, fmt.Sprintf(`db-uri = %q
+db-schemas = "myrest_fixture"
 jwt-secret = "reallyreallyreallyreallyverysafe"
-`))
+`, authenticator())))
 
 	base, _ := process.waitForServe(t)
 	if body := get(t, base); !strings.Contains(body, `"service":"myrest"`) {
@@ -102,25 +125,42 @@ jwt-secret = "reallyreallyreallyreallyverysafe"
 func TestRestartAppliesAChangedConfigurationValue(t *testing.T) {
 	t.Parallel()
 
-	path := configFile(t, `db-uri = "mysql://authenticator@127.0.0.1:3306/"
-db-schemas = "shop"
+	path := configFile(t, fmt.Sprintf(`db-uri = %q
+db-schemas = "myrest_fixture"
 db-anon-role = "myrest_anon"
-`)
+`, authenticator()))
 
 	before := start(t, nil, path)
-	if line := before.waitForLine(t, "listening"); !strings.Contains(line, "databases=shop") {
-		t.Fatalf("start line %q does not expose database shop", line)
+	if line := before.waitForLine(t, "listening"); !strings.Contains(line, "databases=myrest_fixture") {
+		t.Fatalf("start line %q does not expose database myrest_fixture", line)
 	}
 	before.stop()
 
-	rewrite(t, path, `db-uri = "mysql://authenticator@127.0.0.1:3306/"
-db-schemas = "warehouse"
+	rewrite(t, path, fmt.Sprintf(`db-uri = %q
+db-schemas = "myrest_hidden"
 db-anon-role = "myrest_anon"
-`)
+`, authenticator()))
 
 	after := start(t, nil, path)
-	if line := after.waitForLine(t, "listening"); !strings.Contains(line, "databases=warehouse") {
-		t.Fatalf("line after restart %q does not expose database warehouse", line)
+	if line := after.waitForLine(t, "listening"); !strings.Contains(line, "databases=myrest_hidden") {
+		t.Fatalf("line after restart %q does not expose database myrest_hidden", line)
+	}
+}
+
+// A process that cannot log in as the authenticator must not serve the API.
+func TestProcessDoesNotServeWhenItCannotLogInAsTheAuthenticator(t *testing.T) {
+	t.Parallel()
+
+	messages, err := runUntilStop(t, map[string]string{
+		"MYREST_DB_URI":       "mysql://authenticator:wrong@127.0.0.1:1/",
+		"MYREST_DB_SCHEMAS":   "myrest_fixture",
+		"MYREST_DB_ANON_ROLE": "myrest_anon",
+	})
+	if err == nil {
+		t.Fatalf("myrest stopped without failure; messages: %s", messages)
+	}
+	if strings.Contains(messages, "listening") {
+		t.Fatalf("messages %q say the process served the API", messages)
 	}
 }
 
