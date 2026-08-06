@@ -1,0 +1,4 @@
+/bin/
+*.test
+mutago-report.html
+coverage.out
