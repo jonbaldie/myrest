@@ -1,42 +1,51 @@
+// Package httpapi serves the myrest HTTP API: it maps a request to a resource
+// of the schema cache and answers with JSON rows or with the error envelope.
 package httpapi
 
 import (
-	"encoding/json"
 	"net"
 	"net/http"
+
+	"github.com/jonbaldie/myrest/internal/config"
+	"github.com/jonbaldie/myrest/internal/schemacache"
 )
+
+// Options holds what a myrest listener needs: where to bind, the resolved
+// settings, the schema cache, and the reader that runs the read as the
+// database role of the request.
+type Options struct {
+	Addr     string
+	Settings config.Settings
+	Cache    *schemacache.Cache
+	Reader   Reader
+}
 
 // Service is a running myrest HTTP listener.
 type Service struct {
 	server   *http.Server
 	listener net.Listener
+	settings config.Settings
+	cache    *schemacache.Cache
+	reader   Reader
 }
 
-// Listen binds addr and returns a Service ready to Serve.
-func Listen(addr string) (*Service, error) {
-	listener, err := net.Listen("tcp", addr)
+// Listen binds the address of the options and returns a Service ready to Serve.
+func Listen(options Options) (*Service, error) {
+	listener, err := net.Listen("tcp", options.Addr)
 	if err != nil {
 		return nil, err
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", handleRoot)
-
-	return &Service{
-		server:   &http.Server{Handler: mux},
+	service := &Service{
 		listener: listener,
-	}, nil
-}
-
-// Start listens on an ephemeral local port and serves in the background.
-func Start() (*Service, error) {
-	service, err := Listen("127.0.0.1:0")
-	if err != nil {
-		return nil, err
+		settings: options.Settings,
+		cache:    options.Cache,
+		reader:   options.Reader,
 	}
-	go func() {
-		_ = service.Serve()
-	}()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", writeService)
+	mux.HandleFunc("GET /{table}", service.readTable)
+	service.server = &http.Server{Handler: mux}
 	return service, nil
 }
 
@@ -55,11 +64,8 @@ func (s *Service) Close() error {
 	return s.server.Close()
 }
 
-func handleRoot(writer http.ResponseWriter, _ *http.Request) {
-	writer.Header().Set("Content-Type", "application/json")
-	writer.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(writer).Encode(map[string]string{
-		"service": "myrest",
-		"parity":  "none",
-	})
+// writeService answers the root path. The OpenAPI output of the parity target
+// comes with the discovery ticket.
+func writeService(writer http.ResponseWriter, _ *http.Request) {
+	writeJSON(writer, http.StatusOK, map[string]string{"service": "myrest"})
 }
