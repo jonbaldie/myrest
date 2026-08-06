@@ -17,22 +17,22 @@ func TestLoadGivesTheParityTargetDefaultsWhenNoKnobIsSet(t *testing.T) {
 	}
 
 	if settings.DB.AggregatesEnabled {
-		t.Error("DBAggregatesEnabled = true, want off by default")
+		t.Error("DB.AggregatesEnabled = true, want off by default")
 	}
 	if settings.JWT.RoleClaimKey != ".role" {
-		t.Errorf("JWTRoleClaimKey = %q, want .role", settings.JWT.RoleClaimKey)
+		t.Errorf("JWT.RoleClaimKey = %q, want .role", settings.JWT.RoleClaimKey)
 	}
 	if settings.JWT.CacheMaxEntries != 1000 {
-		t.Errorf("JWTCacheMaxEntries = %d, want 1000", settings.JWT.CacheMaxEntries)
+		t.Errorf("JWT.CacheMaxEntries = %d, want 1000", settings.JWT.CacheMaxEntries)
 	}
 	if settings.DB.TxEnd != config.TxEndCommit {
-		t.Errorf("DBTxEnd = %q, want %q", settings.DB.TxEnd, config.TxEndCommit)
+		t.Errorf("DB.TxEnd = %q, want %q", settings.DB.TxEnd, config.TxEndCommit)
 	}
 	if settings.OpenAPI.Mode != config.OpenAPIModeFollowPrivileges {
-		t.Errorf("OpenAPIMode = %q, want %q", settings.OpenAPI.Mode, config.OpenAPIModeFollowPrivileges)
+		t.Errorf("OpenAPI.Mode = %q, want %q", settings.OpenAPI.Mode, config.OpenAPIModeFollowPrivileges)
 	}
 	if settings.DB.MaxRows.Capped {
-		t.Errorf("DBMaxRows = %+v, want no cap by default", settings.DB.MaxRows)
+		t.Errorf("DB.MaxRows = %+v, want no cap by default", settings.DB.MaxRows)
 	}
 }
 

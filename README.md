@@ -22,12 +22,12 @@ go install github.com/quality-gates/mutago/v2/cmd/mutago@latest
 | `go run ./cmd/myrest [config-file]` | Start the myrest service (`MYREST_LISTEN`, default `127.0.0.1:3000`) |
 | `make test` | Run tests (HTTP seam + MySQL harness) |
 | `make messgo` | Run messgo `design` and `codesize` rulesets (must report no violations) |
-| `make mutago` | Run mutago on `./internal/httpapi` with `--coverage --min-covered-msi 80` |
+| `make mutago` | Run mutago on `./internal/config` and `./internal/httpapi` with `--coverage --min-covered-msi 80` |
 | `make mysql-fixtures` | Start MySQL 8.0+ and load `testdata/fixtures/schema.sql` |
 
 ## Configuration
 
-Give myrest its settings in a config file, in `MYREST_*` environment variables, or in both. The one optional argument of the process is the path of the config file. An environment variable wins over the same knob in the file. A restart applies a changed value; there is no live configuration reload.
+Give myrest its settings in a config file, in `MYREST_*` environment variables, or in both. The one optional argument of the process is the path of the config file. An environment variable with a value wins over the same knob in the file; an empty variable counts as a variable nobody set. A restart applies a changed value; there is no live configuration reload.
 
 ```conf
 # myrest.conf

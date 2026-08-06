@@ -20,13 +20,13 @@ func TestLoadReadsTheMinimumRunSetFromEnvironmentVariables(t *testing.T) {
 	}
 
 	if settings.DB.URI != "mysql://authenticator@127.0.0.1:3306/" {
-		t.Errorf("DBURI = %q, want the MYREST_DB_URI value", settings.DB.URI)
+		t.Errorf("DB.URI = %q, want the MYREST_DB_URI value", settings.DB.URI)
 	}
 	if !reflect.DeepEqual(settings.DB.Schemas, []string{"myrest_fixture"}) {
-		t.Errorf("DBSchemas = %v, want [myrest_fixture]", settings.DB.Schemas)
+		t.Errorf("DB.Schemas = %v, want [myrest_fixture]", settings.DB.Schemas)
 	}
 	if settings.DB.AnonRole != "myrest_anon" {
-		t.Errorf("DBAnonRole = %q, want myrest_anon", settings.DB.AnonRole)
+		t.Errorf("DB.AnonRole = %q, want myrest_anon", settings.DB.AnonRole)
 	}
 }
 
@@ -71,7 +71,23 @@ func TestLoadLetsAnEnvironmentVariableWinOverTheSameKnobInTheFile(t *testing.T) 
 	}
 
 	if settings.DB.AnonRole != "from_environment" {
-		t.Fatalf("DBAnonRole = %q, want from_environment", settings.DB.AnonRole)
+		t.Fatalf("DB.AnonRole = %q, want from_environment", settings.DB.AnonRole)
+	}
+}
+
+func TestLoadKeepsTheFileValueWhenTheEnvironmentVariableIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	settings, err := config.Load(
+		`db-anon-role = "from_file"`,
+		config.Environment{"MYREST_DB_ANON_ROLE": ""},
+	)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if settings.DB.AnonRole != "from_file" {
+		t.Fatalf("DB.AnonRole = %q, want from_file", settings.DB.AnonRole)
 	}
 }
 
@@ -85,7 +101,7 @@ func TestLoadAcceptsMoreThanOneMySQLDatabaseInDBSchemas(t *testing.T) {
 
 	want := []string{"shop", "warehouse", "billing"}
 	if !reflect.DeepEqual(settings.DB.Schemas, want) {
-		t.Fatalf("DBSchemas = %v, want %v", settings.DB.Schemas, want)
+		t.Fatalf("DB.Schemas = %v, want %v", settings.DB.Schemas, want)
 	}
 }
 

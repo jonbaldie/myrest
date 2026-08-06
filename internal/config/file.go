@@ -26,11 +26,16 @@ func parseFile(text string) ([]assignment, error) {
 		number := index + 1
 		knob, value, err := parseAssignment(line)
 		if err != nil {
-			return nil, fmt.Errorf("config file line %d: %w", number, err)
+			return nil, atLine(number, err)
 		}
 		assignments = append(assignments, assignment{line: number, knob: knob, value: value})
 	}
 	return assignments, nil
+}
+
+// atLine puts the position in the config file in front of an error.
+func atLine(number int, err error) error {
+	return fmt.Errorf("config file line %d: %w", number, err)
 }
 
 // parseAssignment splits one line into its knob name and its text value.

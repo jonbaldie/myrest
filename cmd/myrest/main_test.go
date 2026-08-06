@@ -73,10 +73,14 @@ db-schemas = "shop"
 db-anon-role = "myrest_anon"
 `))
 
-	environmentBody := get(t, fromEnvironment.waitForServe(t))
-	fileBody := get(t, fromFile.waitForServe(t))
-	if environmentBody != fileBody {
-		t.Fatalf("environment body %q differs from file body %q", environmentBody, fileBody)
+	environmentURL, environmentExposed := fromEnvironment.waitForServe(t)
+	fileURL, fileExposed := fromFile.waitForServe(t)
+
+	if environmentExposed != fileExposed {
+		t.Errorf("environment exposes %q, the file exposes %q", environmentExposed, fileExposed)
+	}
+	if environmentBody, fileBody := get(t, environmentURL), get(t, fileURL); environmentBody != fileBody {
+		t.Errorf("environment body %q differs from file body %q", environmentBody, fileBody)
 	}
 }
 
@@ -89,7 +93,8 @@ db-schemas = "shop"
 jwt-secret = "reallyreallyreallyreallyverysafe"
 `))
 
-	if body := get(t, process.waitForServe(t)); !strings.Contains(body, `"service":"myrest"`) {
+	base, _ := process.waitForServe(t)
+	if body := get(t, base); !strings.Contains(body, `"service":"myrest"`) {
 		t.Fatalf("body = %q, does not come from myrest", body)
 	}
 }
@@ -212,14 +217,15 @@ func (p *process) waitForLine(t *testing.T, want string) string {
 	}
 }
 
-// waitForServe gives back the base URL the process serves.
-func (p *process) waitForServe(t *testing.T) string {
+// waitForServe gives back the base URL the process serves, and what it says it
+// exposes there.
+func (p *process) waitForServe(t *testing.T) (string, string) {
 	t.Helper()
 
 	line := p.waitForLine(t, "listening on ")
-	_, url, _ := strings.Cut(line, "listening on ")
-	base, _, _ := strings.Cut(url, " ")
-	return base
+	_, address, _ := strings.Cut(line, "listening on ")
+	base, exposed, _ := strings.Cut(address, " ")
+	return base, exposed
 }
 
 // entries builds a process environment that holds only what the test sets.

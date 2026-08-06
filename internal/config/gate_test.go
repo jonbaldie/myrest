@@ -2,18 +2,19 @@ package config_test
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/jonbaldie/myrest/internal/config"
 )
 
-func TestGateRefusesAnEmptyMinimumRunSetAndNamesEveryMissingKnob(t *testing.T) {
+func TestServeGateRefusesAnEmptyMinimumRunSetAndNamesEveryMissingKnob(t *testing.T) {
 	t.Parallel()
 
-	err := config.Gate(config.Settings{})
+	err := config.Settings{}.ServeGate()
 	if err == nil {
-		t.Fatal("Gate accepted settings with an empty minimum run set")
+		t.Fatal("ServeGate accepted settings with an empty minimum run set")
 	}
 
 	message := err.Error()
@@ -24,7 +25,7 @@ func TestGateRefusesAnEmptyMinimumRunSetAndNamesEveryMissingKnob(t *testing.T) {
 	}
 }
 
-func TestGateAcceptsJWTSecretAloneAsTheAuthPartOfTheRunSet(t *testing.T) {
+func TestServeGateAcceptsJWTSecretAloneAsTheAuthPartOfTheRunSet(t *testing.T) {
 	t.Parallel()
 
 	settings := config.Settings{
@@ -35,12 +36,12 @@ func TestGateAcceptsJWTSecretAloneAsTheAuthPartOfTheRunSet(t *testing.T) {
 		JWT: config.JWTSettings{Secret: "reallyreallyreallyreallyverysafe"},
 	}
 
-	if err := config.Gate(settings); err != nil {
-		t.Fatalf("Gate refused a complete run set with jwt-secret only: %v", err)
+	if err := settings.ServeGate(); err != nil {
+		t.Fatalf("ServeGate refused a complete run set with jwt-secret only: %v", err)
 	}
 }
 
-func TestGateAcceptsAnonymousDatabaseRoleAloneAsTheAuthPartOfTheRunSet(t *testing.T) {
+func TestServeGateAcceptsAnonymousDatabaseRoleAloneAsTheAuthPartOfTheRunSet(t *testing.T) {
 	t.Parallel()
 
 	settings := config.Settings{
@@ -51,12 +52,12 @@ func TestGateAcceptsAnonymousDatabaseRoleAloneAsTheAuthPartOfTheRunSet(t *testin
 		},
 	}
 
-	if err := config.Gate(settings); err != nil {
-		t.Fatalf("Gate refused a complete run set with db-anon-role only: %v", err)
+	if err := settings.ServeGate(); err != nil {
+		t.Fatalf("ServeGate refused a complete run set with db-anon-role only: %v", err)
 	}
 }
 
-func TestGateNamesOnlyTheKnobThatIsMissing(t *testing.T) {
+func TestServeGateNeedsOnlyTheKnobThatIsMissing(t *testing.T) {
 	t.Parallel()
 
 	settings := config.Settings{
@@ -66,16 +67,16 @@ func TestGateNamesOnlyTheKnobThatIsMissing(t *testing.T) {
 		},
 	}
 
-	err := config.Gate(settings)
+	err := settings.ServeGate()
 	if err == nil {
-		t.Fatal("Gate accepted settings without db-uri")
+		t.Fatal("ServeGate accepted settings without db-uri")
 	}
 
 	var incomplete *config.IncompleteRunSetError
 	if !errors.As(err, &incomplete) {
-		t.Fatalf("Gate error %v is not an *IncompleteRunSetError", err)
+		t.Fatalf("ServeGate error %v is not an *IncompleteRunSetError", err)
 	}
-	if len(incomplete.Missing) != 1 || incomplete.Missing[0] != "db-uri" {
-		t.Fatalf("Missing = %v, want [db-uri]", incomplete.Missing)
+	if !reflect.DeepEqual(incomplete.Needs, []string{"db-uri"}) {
+		t.Fatalf("Needs = %v, want [db-uri]", incomplete.Needs)
 	}
 }

@@ -60,6 +60,6 @@ db-anon-role = "myrest_anon"
 		t.Fatalf("Load: %v", err)
 	}
 	if settings.DB.AnonRole != "myrest_anon" {
-		t.Fatalf("DBAnonRole = %q, want myrest_anon", settings.DB.AnonRole)
+		t.Fatalf("DB.AnonRole = %q, want myrest_anon", settings.DB.AnonRole)
 	}
 }

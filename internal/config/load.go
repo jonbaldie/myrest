@@ -20,9 +20,10 @@ func EnvironmentFrom(entries []string) Environment {
 }
 
 // Load resolves the settings from config file text and from the environment.
-// Environment values win over file values, as the parity target does.
-func Load(file string, env Environment) (Settings, error) {
-	assignments, err := parseFile(file)
+// A MYREST_* variable with a value wins over the same knob in the file, as the
+// parity target does. An empty variable counts as a variable nobody set.
+func Load(text string, env Environment) (Settings, error) {
+	assignments, err := parseFile(text)
 	if err != nil {
 		return Settings{}, err
 	}
@@ -39,13 +40,11 @@ func applyFile(settings Settings, assignments []assignment) (Settings, error) {
 	for _, item := range assignments {
 		definition, known := definitions[item.knob]
 		if !known {
-			return Settings{}, fmt.Errorf(
-				"config file line %d: %s is not a myrest knob", item.line, item.knob,
-			)
+			return Settings{}, atLine(item.line, fmt.Errorf("%s is not a myrest knob", item.knob))
 		}
 		applied, err := definition.apply(settings, item.value)
 		if err != nil {
-			return Settings{}, fmt.Errorf("config file line %d: %s: %w", item.line, item.knob, err)
+			return Settings{}, atLine(item.line, fmt.Errorf("%s: %w", item.knob, err))
 		}
 		settings = applied
 	}
@@ -55,8 +54,8 @@ func applyFile(settings Settings, assignments []assignment) (Settings, error) {
 // applyEnvironment applies every MYREST_* variable that names a knob.
 func applyEnvironment(settings Settings, env Environment) (Settings, error) {
 	for _, definition := range knobDefinitions() {
-		raw, present := env[definition.variable()]
-		if !present {
+		raw := env[definition.variable()]
+		if raw == "" {
 			continue
 		}
 		applied, err := definition.apply(settings, raw)
