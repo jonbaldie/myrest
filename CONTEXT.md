@@ -79,3 +79,11 @@ _Avoid_: narrowed, best-effort, mostly supported
 **Not supported**:
 Parity label meaning myrest refuses the behaviour with a stable error and does not implement it.
 _Avoid_: unsupported, out of scope (product scope is separate), wontfix
+
+**Normative scenario**:
+A binding acceptance case in the parent spec for one labelled behaviour (or one fixed cross-area smoke path).
+_Avoid_: test case (when you mean the spec artifact), example (when the case is binding), PostgREST test (upstream source, not the myrest law)
+
+**Gap list**:
+The Verification roll-up of every **partial match** and **not supported** item taken from the **capability area** chapters.
+_Avoid_: global matrix, unsupported matrix, backlog (when you mean this roll-up)
