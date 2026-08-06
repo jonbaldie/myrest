@@ -2,7 +2,7 @@
 
 myrest will be an HTTP API service that exposes MySQL 8.0+ with PostgREST-compatible client contracts.
 
-This repository is in **prefactor**: the Go module, quality gates, MySQL fixture harness, and HTTP test seam are in place. The running service does **not** claim PostgREST parity yet (`GET /` returns `"parity":"none"`).
+The service serves its first parity slice: an **anonymous read** of one exposed table. Every other part of the PostgREST surface is still to come.
 
 ## Requirements
 
@@ -20,10 +20,30 @@ go install github.com/quality-gates/mutago/v2/cmd/mutago@latest
 | Command | Purpose |
 | --- | --- |
 | `go run ./cmd/myrest [config-file]` | Start the myrest service (`MYREST_LISTEN`, default `127.0.0.1:3000`) |
-| `make test` | Run tests (HTTP seam + MySQL harness) |
+| `make test` | Run tests (unit tests, process tests, and the MySQL 8 acceptance tests in `test/acceptance`) |
 | `make messgo` | Run messgo `design` and `codesize` rulesets (must report no violations) |
-| `make mutago` | Run mutago on `./internal/config` and `./internal/httpapi` with `--coverage --min-covered-msi 80` |
+| `make mutago` | Run mutago on the production packages with `--coverage --min-covered-msi 80` |
 | `make mysql-fixtures` | Start MySQL 8.0+ and load `testdata/fixtures/schema.sql` |
+
+## Reading a table
+
+A client that sends no JWT reads a table as the **anonymous database role** of `db-anon-role`:
+
+```bash
+curl http://127.0.0.1:3000/items
+[{"id":1,"name":"alpha"},{"id":2,"name":"beta"}]
+```
+
+myrest opens pooled MySQL connections as the **authenticator** of `db-uri` and activates the database role for each request, so MySQL grants — not a second access list — say what a client may read. A table is a **resource** of the request only when it is in the **default database** (the first of `db-schemas`) and the active role holds `SELECT` on it, of itself or through a role granted to it. A table of another configured database waits for the content negotiation that names its database. Any other name gets the PostgREST error envelope:
+
+```bash
+curl http://127.0.0.1:3000/secrets
+{"code":"PGRST205","message":"Could not find the table 'shop.secrets' in the schema cache","details":null,"hint":null}
+```
+
+When MySQL itself refuses a read — a grant taken away after start-up, for example — the client gets the same envelope with a message of myrest. What MySQL said names the accounts of the deployment, so it goes to the log of the operator and not to the client.
+
+The read is narrow for now: all columns, no filter, no order, and no page. myrest reads the catalog once at start-up; a restart picks up new tables and new grants until the explicit reload arrives.
 
 ## Configuration
 
@@ -72,6 +92,20 @@ These knobs are configurable and readable now. Later parity slices give them the
 
 Knobs on the drop list of [ADR 0007](docs/adr/0007-config-surface-mapping.md) — in-database config, NOTIFY channel, `search_path` extras, GUC or `app.settings` injection, plan-media gate, admin listen — are not on this surface. myrest refuses a config file that holds a name it does not know. `MYREST_LISTEN` is process tuning, not parity law, so it has no config file entry.
 
+## Database accounts
+
+myrest logs in as one account and takes its privileges from the database role of the request. Give the authenticator no privileges of its own:
+
+```sql
+CREATE ROLE 'myrest_anon';
+CREATE USER 'authenticator'@'%' IDENTIFIED BY 'secret';
+GRANT 'myrest_anon' TO 'authenticator'@'%';
+SET DEFAULT ROLE NONE TO 'authenticator'@'%';
+GRANT SELECT ON shop.items TO 'myrest_anon';
+```
+
+The authenticator must hold every database role myrest activates, because MySQL shows catalog rows only to an account that holds a privilege on them. See [ADR 0010](docs/adr/0010-catalog-read-under-authenticator-roles.md). A role granted to `myrest_anon` widens what an anonymous client reads, because MySQL reads with the privileges of the roles granted to the active role. See [ADR 0011](docs/adr/0011-bare-table-name-reads-the-default-database.md).
+
 ## Fixture DDL
 
-`testdata/fixtures/schema.sql` creates database `myrest_fixture` and table `items` for later parity slices. Parent-spec fixtures stay intent-only; this file is the concrete DDL for the harness.
+`testdata/fixtures/schema.sql` creates the databases `myrest_fixture` and `myrest_hidden`, the tables the tests read, the authenticator login, and the anonymous database role. Parent-spec fixtures stay intent-only; this file is the concrete DDL for the harness.

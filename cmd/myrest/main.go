@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net/http"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/httpapi"
+	"github.com/jonbaldie/myrest/internal/mysqldb"
+	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
 func main() {
@@ -18,12 +21,28 @@ func main() {
 		log.Fatalf("myrest: %v", err)
 	}
 
-	service, err := httpapi.Listen(config.ListenAddress(env))
+	pool, err := mysqldb.Open(settings.DB.URI)
+	if err != nil {
+		log.Fatalf("myrest: %v", err)
+	}
+	defer func() { _ = pool.Close() }()
+
+	catalog, err := pool.Catalog(context.Background(), settings.DB.Schemas)
+	if err != nil {
+		log.Fatalf("myrest: read the catalog: %v", err)
+	}
+
+	service, err := httpapi.Listen(httpapi.Options{
+		Addr:     config.ListenAddress(env),
+		Settings: settings,
+		Cache:    schemacache.Build(catalog),
+		Reader:   pool,
+	})
 	if err != nil {
 		log.Fatalf("myrest: listen: %v", err)
 	}
 	log.Printf(
-		"myrest listening on %s (databases=%s; parity=none)",
+		"myrest listening on %s (databases=%s)",
 		service.URL(), strings.Join(settings.DB.Schemas, ","),
 	)
 

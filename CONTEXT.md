@@ -68,6 +68,10 @@ _Avoid_: option, flag, parameter, property (when you mean this setting)
 The **knobs** myrest must have before it serves the API: `db-uri`, `db-schemas`, and `jwt-secret` and/or `db-anon-role`.
 _Avoid_: required config, minimum config, bootstrap settings
 
+**Default database**:
+The MySQL database a request reads when it names none: the first database of `db-schemas`.
+_Avoid_: default schema, current database, active schema (a profile header names a database; it does not rename this one)
+
 **Serve gate**:
 The start-up check that keeps a process with an incomplete **minimum run set** off the wire and names each missing **knob**.
 _Avoid_: validation, health check, readiness probe (those watch a running process)

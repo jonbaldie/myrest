@@ -1,0 +1,27 @@
+package config_test
+
+import (
+	"testing"
+
+	"github.com/jonbaldie/myrest/internal/config"
+)
+
+func TestDefaultDatabaseIsTheFirstDatabaseOfDbSchemas(t *testing.T) {
+	t.Parallel()
+
+	settings := config.Settings{
+		DB: config.DatabaseSettings{Schemas: []string{"shop", "warehouse"}},
+	}
+
+	if database := settings.DefaultDatabase(); database != "shop" {
+		t.Fatalf("DefaultDatabase = %q, want shop", database)
+	}
+}
+
+func TestDefaultDatabaseIsEmptyWithoutDbSchemas(t *testing.T) {
+	t.Parallel()
+
+	if database := (config.Settings{}).DefaultDatabase(); database != "" {
+		t.Fatalf("DefaultDatabase = %q, want an empty name", database)
+	}
+}
