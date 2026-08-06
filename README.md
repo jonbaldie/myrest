@@ -1,8 +1,8 @@
 # myrest
 
-myrest is an HTTP API service that exposes a MySQL database with the same client contracts as PostgREST.
+myrest will be an HTTP API service that exposes MySQL 8.0+ with PostgREST-compatible client contracts.
 
-This repository is in prefactor: the Go module, quality gates, MySQL fixture harness, and HTTP test seam are in place. The service does **not** claim PostgREST parity behaviour yet (`parity=none` on `GET /`).
+This repository is in **prefactor**: the Go module, quality gates, MySQL fixture harness, and HTTP test seam are in place. The running service does **not** claim PostgREST parity yet (`GET /` returns `"parity":"none"`).
 
 ## Requirements
 
