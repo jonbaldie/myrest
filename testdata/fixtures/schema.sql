@@ -1,0 +1,10 @@
+CREATE DATABASE IF NOT EXISTS myrest_fixture;
+USE myrest_fixture;
+
+CREATE TABLE items (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT INTO items (name) VALUES ('alpha'), ('beta');
