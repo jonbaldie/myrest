@@ -171,6 +171,7 @@ GRANT EXECUTE ON PROCEDURE myrest_fixture.bump_label TO 'myrest_anon';
 GRANT INSERT ON myrest_fixture.addresses TO 'myrest_anon';
 GRANT SHOW_ROUTINE ON *.* TO 'authenticator'@'%';
 GRANT SELECT ON myrest_hidden.outside_items TO 'myrest_anon';
+GRANT INSERT ON myrest_hidden.outside_items TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.items TO 'web-anon';
 
 -- A JWT role with SELECT on secrets, so auth-001 can prove grant switching.

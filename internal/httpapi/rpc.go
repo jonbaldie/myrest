@@ -67,8 +67,16 @@ func (s *Service) lookupRoutine(
 	if !ok {
 		return "", schemacache.RoutineID{}, schemacache.RoutineFact{}, false
 	}
+	header := headerContentProfile
+	if request.Method == http.MethodGet || request.Method == http.MethodHead {
+		header = headerAcceptProfile
+	}
+	database, ok := s.requestDatabase(writer, request, header)
+	if !ok {
+		return "", schemacache.RoutineID{}, schemacache.RoutineFact{}, false
+	}
 	asked := schemacache.RoutineID{
-		Database: s.settings.DefaultDatabase(),
+		Database: database,
 		Name:     request.PathValue("name"),
 	}
 	routine, isResource := s.cache.Routine(role, asked)

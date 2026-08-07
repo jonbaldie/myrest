@@ -25,3 +25,17 @@ func TestDefaultDatabaseIsEmptyWithoutDbSchemas(t *testing.T) {
 		t.Fatalf("DefaultDatabase = %q, want an empty name", database)
 	}
 }
+
+func TestHasDatabaseReportsMembershipOfDbSchemas(t *testing.T) {
+	t.Parallel()
+
+	settings := config.Settings{
+		DB: config.DatabaseSettings{Schemas: []string{"shop", "warehouse"}},
+	}
+	if !settings.HasDatabase("warehouse") {
+		t.Fatal("HasDatabase(warehouse) = false, want true")
+	}
+	if settings.HasDatabase("tenant3") {
+		t.Fatal("HasDatabase(tenant3) = true, want false")
+	}
+}

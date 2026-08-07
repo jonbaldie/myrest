@@ -20,6 +20,7 @@ cache. JWT failures use the PostgREST JWT group:
 | `PGRST301` | 401 | The Bearer JWT could not be decoded or verified. |
 | `PGRST302` | 401 | The request has no usable JWT and anonymous access is disabled. |
 | `PGRST303` | 401 | JWT claims validation failed (expired, audience, and related checks). |
+| `PGRST106` | 406 | `Accept-Profile` or `Content-Profile` names a database outside `db-schemas`. |
 
 The myrest gap codes are:
 
