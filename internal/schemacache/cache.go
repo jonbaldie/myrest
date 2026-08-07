@@ -365,6 +365,20 @@ func (c *Cache) Resource(role Role, id TableID) (Table, bool) {
 	return table, true
 }
 
+// TableWithPrivilege gives the table when the database role holds the named
+// privilege on it. Exposure of a resource does not imply every HTTP method:
+// INSERT, UPDATE, and DELETE each need their own grant.
+func (c *Cache) TableWithPrivilege(role Role, id TableID, privilege string) (Table, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	table, held := c.tables[id]
+	if !held || !c.tablePrivileges[bareName(role)][tablePrivilege{table: id, privilege: privilege}] {
+		return Table{}, false
+	}
+	return table, true
+}
+
 // Views are the views the catalog holds for later tickets. This ticket does
 // not expose them as HTTP resources.
 func (c *Cache) Views() []TableID {

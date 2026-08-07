@@ -150,6 +150,8 @@ GRANT SELECT ON myrest_fixture.addresses TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.deliveries TO 'myrest_anon';
 GRANT INSERT ON myrest_fixture.items TO 'myrest_anon';
 GRANT INSERT ON myrest_fixture.orders TO 'myrest_anon';
+GRANT UPDATE ON myrest_fixture.items TO 'myrest_anon';
+GRANT DELETE ON myrest_fixture.items TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.items_view TO 'myrest_anon';
 GRANT EXECUTE ON FUNCTION myrest_fixture.item_count TO 'myrest_anon';
 GRANT EXECUTE ON FUNCTION myrest_fixture.add_them TO 'myrest_anon';

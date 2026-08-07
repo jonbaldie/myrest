@@ -15,14 +15,15 @@ import (
 
 // Options holds what a myrest listener needs: where to bind, the resolved
 // settings, the schema cache, the reader that runs the read as the database
-// role of the request, and the caller that runs POST /rpc. Log takes what the
-// operator must see and the client must not; it defaults to the logger of the
-// log package.
+// role of the request, the writer that runs table writes, and the caller that
+// runs POST /rpc. Log takes what the operator must see and the client must
+// not; it defaults to the logger of the log package.
 type Options struct {
 	Addr     string
 	Settings config.Settings
 	Cache    *schemacache.Cache
 	Reader   Reader
+	Writer   Writer
 	Caller   Caller
 	Log      *log.Logger
 }
@@ -34,6 +35,7 @@ type Service struct {
 	settings config.Settings
 	cache    *schemacache.Cache
 	reader   Reader
+	writer   Writer
 	caller   Caller
 	verifier *jwt.Verifier
 	log      *log.Logger
@@ -72,6 +74,7 @@ func Listen(options Options) (*Service, error) {
 		settings: options.Settings,
 		cache:    options.Cache,
 		reader:   options.Reader,
+		writer:   options.Writer,
 		caller:   options.Caller,
 		verifier: verifier,
 		log:      logger,
@@ -80,6 +83,9 @@ func Listen(options Options) (*Service, error) {
 	mux.HandleFunc("GET /{$}", writeService)
 	mux.HandleFunc("GET /{table}", service.readTable)
 	mux.HandleFunc("HEAD /{table}", service.readTable)
+	mux.HandleFunc("POST /{table}", service.insertTable)
+	mux.HandleFunc("PATCH /{table}", service.patchTable)
+	mux.HandleFunc("DELETE /{table}", service.deleteTable)
 	mux.HandleFunc("POST /rpc/{name}", service.callRoutine)
 	mux.HandleFunc("/", writeNoHandler)
 	service.server = &http.Server{
