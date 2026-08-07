@@ -41,12 +41,8 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	role := schemacache.Role(s.settings.DB.AnonRole)
-	if role == "" {
-		writeFailure(
-			writer, http.StatusUnauthorized, codeNoAnonymousRole,
-			"Anonymous requests need db-anon-role",
-		)
+	role, ok := s.requestRole(writer, request)
+	if !ok {
 		return
 	}
 

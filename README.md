@@ -2,7 +2,8 @@
 
 myrest will be an HTTP API service that exposes MySQL 8.0+ with PostgREST-compatible client contracts.
 
-The service serves its first parity slice: an **anonymous read** of one exposed table. Every other part of the PostgREST surface is still to come.
+The service serves Bearer JWT authentication and an **anonymous read** of one
+exposed table. Every other part of the PostgREST surface is still to come.
 
 ## Requirements
 
@@ -34,7 +35,17 @@ curl http://127.0.0.1:3000/items
 [{"id":1,"name":"alpha"},{"id":2,"name":"beta"}]
 ```
 
-myrest opens pooled MySQL connections as the **authenticator** of `db-uri` and activates the database role for each request, so MySQL grants — not a second access list — say what a client may read. A table is a **resource** of the request only when it is in the **default database** (the first of `db-schemas`) and the active role holds `SELECT` on it, of itself or through a role granted to it. A table of another configured database waits for the content negotiation that names its database. Any other name gets the PostgREST error envelope:
+A client that sends a valid Bearer JWT reads as the **database role** named by the role claim (default `role`):
+
+```bash
+curl http://127.0.0.1:3000/secrets \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+[{"id":1,"payload":"top-secret"}]
+```
+
+myrest opens pooled MySQL connections as the **authenticator** of `db-uri` and activates the database role for each request, so MySQL grants — not a second access list — say what a client may read. After the **role switch**, grants follow the active role, but SQL `CURRENT_USER()` stays the authenticator (a documented **partial match**). See [Authentication](docs/auth.md).
+
+A table is a **resource** of the request only when it is in the **default database** (the first of `db-schemas`) and the active role holds `SELECT` on it, of itself or through a role granted to it. A table of another configured database waits for the content negotiation that names its database. Any other name gets the PostgREST error envelope:
 
 ```bash
 curl http://127.0.0.1:3000/secrets
@@ -76,7 +87,7 @@ myrest serves the API only when it has all of these. If one is missing, the proc
 
 ### Other kept knobs
 
-`server-cors-allowed-origins` and `openapi-server-proxy-uri` already have the CORS and reported-base-URL behaviour above. The other knobs are configurable and readable now; later parity slices give them their remaining behaviour.
+`server-cors-allowed-origins` and `openapi-server-proxy-uri` already have the CORS and reported-base-URL behaviour above. The JWT knobs (`jwt-secret-is-base64`, `jwt-aud`, `jwt-role-claim-key`, `jwt-cache-max-entries`) already drive Bearer JWT verification; see [Authentication](docs/auth.md). The other knobs are configurable and readable now; later parity slices give them their remaining behaviour.
 
 | Knob | Type | Default |
 | --- | --- | --- |

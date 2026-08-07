@@ -18,7 +18,7 @@ messgo:
 # mutation coverage of the command comes from the packages it calls.
 mutago:
 	mutago --coverage --min-covered-msi 80 --quiet --no-diffs \
-		./internal/config ./internal/httpapi ./internal/mysqldb \
+		./internal/config ./internal/httpapi ./internal/jwt ./internal/mysqldb \
 		./internal/rows ./internal/schemacache
 
 # Start MySQL 8.0+ in Docker and load fixture SQL. Ctrl+C stops the container.

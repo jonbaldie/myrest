@@ -76,6 +76,31 @@ func (p *Pool) Read(
 	return read, err
 }
 
+// SessionIdentity is the auth-004 probe: after a role switch, grants follow
+// the database role while SQL CURRENT_USER stays the authenticator.
+type SessionIdentity struct {
+	CurrentUser string
+	CurrentRole string
+}
+
+// IdentityAfterRoleSwitch activates the role and reads CURRENT_USER and
+// CURRENT_ROLE on that connection.
+func (p *Pool) IdentityAfterRoleSwitch(ctx context.Context, role schemacache.Role) (SessionIdentity, error) {
+	statement, err := roleSwitchStatement(role)
+	if err != nil {
+		return SessionIdentity{}, err
+	}
+
+	var identity SessionIdentity
+	err = p.onConnection(ctx, statement, func(ctx context.Context, conn *sql.Conn) error {
+		return conn.QueryRowContext(
+			ctx,
+			"SELECT CURRENT_USER(), CURRENT_ROLE()",
+		).Scan(&identity.CurrentUser, &identity.CurrentRole)
+	})
+	return identity, err
+}
+
 // onConnection takes one authenticator connection, activates roles on it with
 // the given SET ROLE statement, and runs work.
 //
