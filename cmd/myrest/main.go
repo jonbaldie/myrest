@@ -28,6 +28,7 @@ func main() {
 		log.Fatalf("myrest: %v", err)
 	}
 	defer func() { _ = pool.Close() }()
+	pool.SetPreRequest(settings.DB.PreRequest)
 
 	catalog, err := pool.Catalog(context.Background(), settings.DB.Schemas)
 	if err != nil {

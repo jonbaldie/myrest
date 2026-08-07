@@ -34,6 +34,16 @@ role, but SQL `CURRENT_USER()` stays the **authenticator**. Design policies and
 routines on grants and `CURRENT_ROLE()`, not on `CURRENT_USER()` equality with
 the JWT role.
 
+## Pre-request hook
+
+When `db-pre-request` names a zero-argument procedure as `database.routine`,
+myrest calls it after the **role switch** and before the main statement of the
+request. The hook runs as the active **database role** and needs that role's
+EXECUTE grant. A failing hook returns the error envelope with `MYREST002`, and
+the main statement does not run. myrest injects no JWT claims and no headers as
+session variables for the hook. When `db-pre-request` is unset, myrest calls
+nothing.
+
 ## Not supported
 
 | Feature | Refusal |
