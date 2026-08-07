@@ -218,3 +218,29 @@ func TestEmptyCatalogHoldsNoResource(t *testing.T) {
 		t.Fatal("an empty catalog gave a resource")
 	}
 }
+
+// Replace puts the new catalog into the cache, so a table that arrives after
+// the first build becomes a resource without a new Cache value.
+func TestReplaceShowsANewSelectGrant(t *testing.T) {
+	t.Parallel()
+
+	cache := schemacache.Build(catalog())
+	if _, ok := cache.Resource(anonRole, table("shop", "secrets")); ok {
+		t.Fatal("secrets was a resource before the grant arrived")
+	}
+
+	updated := catalog()
+	updated.Selects = append(updated.Selects, schemacache.SelectFact{
+		Role:  anonRole,
+		Table: table("shop", "secrets"),
+	})
+	cache.Replace(updated)
+
+	found, ok := cache.Resource(anonRole, table("shop", "secrets"))
+	if !ok {
+		t.Fatal("Replace did not make secrets a resource")
+	}
+	if want := []schemacache.Column{{Name: "payload"}}; !reflect.DeepEqual(found.Columns, want) {
+		t.Fatalf("columns = %#v, want %#v", found.Columns, want)
+	}
+}

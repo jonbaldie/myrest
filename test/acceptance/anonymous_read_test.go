@@ -39,11 +39,29 @@ func TestMain(m *testing.M) {
 func serve(t *testing.T, databases ...string) *httpapi.Service {
 	t.Helper()
 
-	return serveAs(t, anonRole, databases...)
+	_, _, service := serveWithPoolAs(t, anonRole, databases...)
+	return service
+}
+
+// serveWithPool starts myrest and keeps the pool and schema cache, so a test
+// can reload the schema cache from the live catalog.
+func serveWithPool(t *testing.T, databases ...string) (*mysqldb.Pool, *schemacache.Cache, *httpapi.Service) {
+	t.Helper()
+
+	return serveWithPoolAs(t, anonRole, databases...)
 }
 
 // serveAs starts myrest with the given anonymous database role.
 func serveAs(t *testing.T, role string, databases ...string) *httpapi.Service {
+	t.Helper()
+
+	_, _, service := serveWithPoolAs(t, role, databases...)
+	return service
+}
+
+// serveWithPoolAs starts myrest with the given anonymous database role and
+// keeps the authenticator pool and schema cache.
+func serveWithPoolAs(t *testing.T, role string, databases ...string) (*mysqldb.Pool, *schemacache.Cache, *httpapi.Service) {
 	t.Helper()
 
 	settings := config.Defaults()
@@ -61,11 +79,12 @@ func serveAs(t *testing.T, role string, databases ...string) *httpapi.Service {
 	if err != nil {
 		t.Fatalf("read the catalog: %v", err)
 	}
+	cache := schemacache.Build(catalog)
 
 	service, err := httpapi.Listen(httpapi.Options{
 		Addr:     "127.0.0.1:0",
 		Settings: settings,
-		Cache:    schemacache.Build(catalog),
+		Cache:    cache,
 		Reader:   pool,
 	})
 	if err != nil {
@@ -73,7 +92,7 @@ func serveAs(t *testing.T, role string, databases ...string) *httpapi.Service {
 	}
 	go func() { _ = service.Serve() }()
 	t.Cleanup(func() { _ = service.Close() })
-	return service
+	return pool, cache, service
 }
 
 func get(t *testing.T, service *httpapi.Service, path string) (*http.Response, []byte) {
@@ -93,7 +112,7 @@ func TestAnonymousReadOfAnExposedTable(t *testing.T) {
 	if contentType := response.Header.Get("Content-Type"); contentType != "application/json" {
 		t.Fatalf("Content-Type = %q, want application/json", contentType)
 	}
-	if want := `[{"id":1,"name":"alpha"},{"id":2,"name":"beta"}]`; string(body) != want+"\n" {
+	if want := `[{"id":1,"name":"alpha","name_len":5},{"id":2,"name":"beta","name_len":4}]`; string(body) != want+"\n" {
 		t.Fatalf("body = %s, want %s", body, want)
 	}
 }
@@ -138,7 +157,7 @@ func TestAnonymousReadWithADashInTheRoleName(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
 	}
-	if want := `[{"id":1,"name":"alpha"},{"id":2,"name":"beta"}]`; string(body) != want+"\n" {
+	if want := `[{"id":1,"name":"alpha","name_len":5},{"id":2,"name":"beta","name_len":4}]`; string(body) != want+"\n" {
 		t.Fatalf("body = %s, want %s", body, want)
 	}
 }
@@ -185,7 +204,7 @@ func TestTheAuthenticatorAloneCannotReadTheResource(t *testing.T) {
 
 	table := schemacache.Table{
 		ID:      schemacache.TableID{Database: "myrest_fixture", Name: "items"},
-		Columns: []schemacache.Column{{Name: "id"}, {Name: "name"}},
+		Columns: []schemacache.Column{{Name: "id"}, {Name: "name"}, {Name: "name_len"}},
 	}
 	if _, err := pool.Read(context.Background(), "", table); err == nil {
 		t.Fatal("the authenticator read the table without a role switch")
@@ -193,6 +212,46 @@ func TestTheAuthenticatorAloneCannotReadTheResource(t *testing.T) {
 
 	if response, body := get(t, service, "/items"); response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d after the failed read; body = %s", response.StatusCode, body)
+	}
+}
+
+// cache-003: after a catalog or grant change and an explicit reload, the new
+// exposure is visible over HTTP. A restart of the process is not required.
+func TestExplicitReloadShowsNewExposure(t *testing.T) {
+	pool, cache, service := serveWithPool(t, "myrest_fixture")
+
+	for _, statement := range []string{
+		`CREATE TABLE myrest_fixture.reloaded (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			label VARCHAR(255) NOT NULL,
+			PRIMARY KEY (id)
+		) ENGINE=InnoDB`,
+		`INSERT INTO myrest_fixture.reloaded (label) VALUES ('fresh')`,
+		`GRANT SELECT ON myrest_fixture.reloaded TO 'myrest_anon'`,
+	} {
+		if err := harness.Exec(statement); err != nil {
+			t.Fatalf("%s: %v", statement, err)
+		}
+	}
+	t.Cleanup(func() {
+		_ = harness.Exec("DROP TABLE IF EXISTS myrest_fixture.reloaded")
+	})
+
+	response, body := get(t, service, "/reloaded")
+	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
+
+	catalog, err := pool.Catalog(t.Context(), []string{"myrest_fixture"})
+	if err != nil {
+		t.Fatalf("read the catalog: %v", err)
+	}
+	cache.Replace(catalog)
+
+	response, body = get(t, service, "/reloaded")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if want := `[{"id":1,"label":"fresh"}]`; string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
 	}
 }
 

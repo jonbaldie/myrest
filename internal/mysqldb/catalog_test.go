@@ -53,6 +53,16 @@ func TestPlaceholdersMatchTheNumberOfDatabases(t *testing.T) {
 	}
 }
 
+func TestSplitPrivilegesReadsAPackedGrantSet(t *testing.T) {
+	t.Parallel()
+
+	got := splitPrivileges("Select,Insert")
+	want := []string{"SELECT", "INSERT"}
+	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("splitPrivileges = %#v, want %#v", got, want)
+	}
+}
+
 func TestAsArgumentsPassesEveryDatabase(t *testing.T) {
 	t.Parallel()
 
