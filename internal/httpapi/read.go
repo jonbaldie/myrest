@@ -102,16 +102,11 @@ func isPostgRESTFullTextSearchOperator(operator string) bool {
 }
 
 // hasPostgRESTCastOrDomainSyntax finds a PostgREST cast or domain mark in the
-// query string. MySQL has no matching catalog feature, so myrest refuses it.
+// select list. MySQL has no matching catalog feature, so myrest refuses it.
 func hasPostgRESTCastOrDomainSyntax(request *http.Request) bool {
-	for key, values := range request.URL.Query() {
-		if strings.Contains(key, "::") {
+	for _, value := range request.URL.Query()["select"] {
+		if strings.Contains(value, "::") {
 			return true
-		}
-		for _, value := range values {
-			if strings.Contains(value, "::") {
-				return true
-			}
 		}
 	}
 	return false

@@ -76,7 +76,7 @@ type Catalog struct {
 }
 
 // Cache answers which table a request can read as a given database role.
-// ReloadSchema replaces the held catalog under the lock, so a request that
+// Replace puts a new catalog into the cache under the lock, so a request that
 // reads during a reload still sees one complete snapshot.
 type Cache struct {
 	mu                sync.RWMutex
