@@ -260,6 +260,15 @@ func TestPostgRESTFullTextSearchIsRefusedWithAMyrestGapCode(t *testing.T) {
 	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
 }
 
+// Negated PostgREST full-text search needs the same refusal.
+func TestNegatedPostgRESTFullTextSearchIsRefusedWithAMyrestGapCode(t *testing.T) {
+	t.Parallel()
+
+	response, body := get(t, serve(t, &reader{}, settings()), "/items?name=not.fts.english.alpha")
+
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+}
+
 // err-001: paths and methods outside the current service surface still have
 // the client error envelope.
 func TestUnhandledRequestGivesTheErrorEnvelope(t *testing.T) {

@@ -19,7 +19,7 @@ type Reader interface {
 // database, so the table comes from the default database; the profile header
 // of the parity target comes with the content negotiation ticket.
 func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
-	if hasPostgresFullTextSearch(request) {
+	if hasPostgRESTFullTextSearchOperator(request) {
 		writeUnsupportedFeature(
 			writer,
 			"PostgREST full-text search operators are not available with MySQL",
@@ -63,18 +63,26 @@ func noTableMessage(asked schemacache.TableID) string {
 	return "Could not find the table '" + asked.Database + "." + asked.Name + "' in the schema cache"
 }
 
-// hasPostgresFullTextSearch finds the PostgREST full-text search operators.
-// myrest refuses them because a MySQL full-text query has different semantics.
-func hasPostgresFullTextSearch(request *http.Request) bool {
+// hasPostgRESTFullTextSearchOperator finds PostgREST full-text search
+// operators. myrest refuses them because a MySQL full-text query has different
+// semantics.
+func hasPostgRESTFullTextSearchOperator(request *http.Request) bool {
 	for _, values := range request.URL.Query() {
 		for _, value := range values {
-			if strings.HasPrefix(value, "fts.") ||
-				strings.HasPrefix(value, "plfts.") ||
-				strings.HasPrefix(value, "phfts.") ||
-				strings.HasPrefix(value, "wfts.") {
+			operator, _, found := strings.Cut(strings.TrimPrefix(value, "not."), ".")
+			if found && isPostgRESTFullTextSearchOperator(operator) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func isPostgRESTFullTextSearchOperator(operator string) bool {
+	switch operator {
+	case "fts", "plfts", "phfts", "wfts":
+		return true
+	default:
+		return false
+	}
 }

@@ -28,8 +28,8 @@ database error. `MYREST003` is for an unhandled request. All codes have the
 error envelope.
 
 For example, myrest refuses the PostgREST `fts`, `plfts`, `phfts`, and `wfts`
-full-text search operators with `MYREST001`. MySQL has full-text search, but
-it does not have the same PostgREST semantics.
+full-text search operators, including their `not.` forms, with `MYREST001`.
+MySQL has full-text search, but it does not have the same PostgREST semantics.
 
 ## MySQL SQLSTATE to HTTP status
 
