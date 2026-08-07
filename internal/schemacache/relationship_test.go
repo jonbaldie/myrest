@@ -112,34 +112,99 @@ func TestResolveEmbedManyToManyAndDisambiguation(t *testing.T) {
 	}
 }
 
-func TestResolveEmbedMissingAndComputed(t *testing.T) {
+func TestResolveEmbedHintByColumnAndJoinTableWithoutPK(t *testing.T) {
 	t.Parallel()
 
-	items := schemacache.TableID{Database: "shop", Name: "items"}
-	profiles := schemacache.TableID{Database: "shop", Name: "profiles"}
+	left := schemacache.TableID{Database: "shop", Name: "left_t"}
+	right := schemacache.TableID{Database: "shop", Name: "right_t"}
+	bridge := schemacache.TableID{Database: "shop", Name: "bridge"}
 	cache := schemacache.Build(schemacache.Catalog{
-		Tables: []schemacache.TableID{items, profiles},
+		Tables: []schemacache.TableID{left, right, bridge},
 		Columns: []schemacache.ColumnFact{
-			{Table: items, Name: "id"},
-			{Table: profiles, Name: "id"},
+			{Table: left, Name: "id"},
+			{Table: right, Name: "id"},
+			{Table: bridge, Name: "left_id"},
+			{Table: bridge, Name: "right_id"},
+			{Table: bridge, Name: "extra"},
 		},
-		Routines: []schemacache.RoutineFact{{
-			ID: schemacache.RoutineID{Database: "shop", Name: "item_count"}, Kind: "FUNCTION",
-		}},
+		Keys: []schemacache.KeyFact{
+			{Table: left, Name: "PRIMARY", Kind: "PRIMARY", Columns: []string{"id"}},
+			{Table: right, Name: "PRIMARY", Kind: "PRIMARY", Columns: []string{"id"}},
+			// Bridge PK does not cover both FKs, so it is not a join table.
+			{Table: bridge, Name: "PRIMARY", Kind: "PRIMARY", Columns: []string{"extra"}},
+		},
+		ForeignKeys: []schemacache.ForeignKeyFact{
+			{Name: "bridge_left", Table: bridge, Columns: []string{"left_id"}, ReferencedTable: left, ReferencedColumns: []string{"id"}},
+			{Name: "bridge_right", Table: bridge, Columns: []string{"right_id"}, ReferencedTable: right, ReferencedColumns: []string{"id"}},
+		},
 		Selects: []schemacache.SelectFact{
-			{Role: "anon", Table: items},
-			{Role: "anon", Table: profiles},
+			{Role: "anon", Table: left},
+			{Role: "anon", Table: right},
+			{Role: "anon", Table: bridge},
 		},
 	})
 
-	_, err := cache.ResolveEmbed("anon", items, "profiles", "")
+	_, err := cache.ResolveEmbed("anon", left, "right_t", "")
 	var missing schemacache.RelationshipMissing
 	if !errors.As(err, &missing) {
-		t.Fatalf("missing = %v", err)
+		t.Fatalf("bridge without PK cover = %v", err)
 	}
-	_, err = cache.ResolveEmbed("anon", items, "item_count", "")
-	var computed schemacache.ComputedRelationship
-	if !errors.As(err, &computed) {
-		t.Fatalf("computed = %v", err)
+
+	addresses := schemacache.TableID{Database: "shop", Name: "addresses"}
+	deliveries := schemacache.TableID{Database: "shop", Name: "deliveries"}
+	withHint := schemacache.Build(schemacache.Catalog{
+		Tables: []schemacache.TableID{addresses, deliveries},
+		Columns: []schemacache.ColumnFact{
+			{Table: addresses, Name: "id"},
+			{Table: deliveries, Name: "from_address_id"},
+			{Table: deliveries, Name: "to_address_id"},
+		},
+		Keys: []schemacache.KeyFact{
+			{Table: addresses, Name: "PRIMARY", Kind: "PRIMARY", Columns: []string{"id"}},
+			{Table: deliveries, Name: "PRIMARY", Kind: "PRIMARY", Columns: []string{"id"}},
+		},
+		ForeignKeys: []schemacache.ForeignKeyFact{
+			{Name: "deliveries_from", Table: deliveries, Columns: []string{"from_address_id"}, ReferencedTable: addresses, ReferencedColumns: []string{"id"}},
+			{Name: "deliveries_to", Table: deliveries, Columns: []string{"to_address_id"}, ReferencedTable: addresses, ReferencedColumns: []string{"id"}},
+		},
+		Selects: []schemacache.SelectFact{
+			{Role: "anon", Table: addresses},
+			{Role: "anon", Table: deliveries},
+		},
+	})
+	chosen, err := withHint.ResolveEmbed("anon", deliveries, "addresses", "from_address_id")
+	if err != nil || chosen.Name != "deliveries_from" {
+		t.Fatalf("column hint = %#v err %v", chosen, err)
+	}
+	_, err = withHint.ResolveEmbed("anon", deliveries, "addresses", "no_such_hint")
+	if !errors.As(err, &missing) {
+		t.Fatalf("bad hint = %v", err)
+	}
+}
+
+func TestResolveEmbedWithoutSelectOnTarget(t *testing.T) {
+	t.Parallel()
+
+	items := schemacache.TableID{Database: "shop", Name: "items"}
+	orders := schemacache.TableID{Database: "shop", Name: "orders"}
+	cache := schemacache.Build(schemacache.Catalog{
+		Tables: []schemacache.TableID{items, orders},
+		Columns: []schemacache.ColumnFact{
+			{Table: items, Name: "id"},
+			{Table: orders, Name: "item_id"},
+		},
+		ForeignKeys: []schemacache.ForeignKeyFact{{
+			Name: "orders_item", Table: orders, Columns: []string{"item_id"},
+			ReferencedTable: items, ReferencedColumns: []string{"id"},
+		}},
+		Selects: []schemacache.SelectFact{
+			{Role: "anon", Table: items},
+			// orders has no SELECT for anon
+		},
+	})
+	_, err := cache.ResolveEmbed("anon", items, "orders", "")
+	var missing schemacache.RelationshipMissing
+	if !errors.As(err, &missing) {
+		t.Fatalf("no select = %v", err)
 	}
 }

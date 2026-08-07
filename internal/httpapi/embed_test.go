@@ -94,6 +94,94 @@ func TestEmbedManyToOneUsesReaderRows(t *testing.T) {
 	}
 }
 
+func TestEmbedOneToManyUsesReaderRows(t *testing.T) {
+	t.Parallel()
+
+	source := &multiReader{answers: []readAnswer{
+		{rows: []rows.Row{
+			{Columns: []string{"id"}, Values: []any{int64(1)}},
+		}},
+		{rows: []rows.Row{
+			{Columns: []string{"id", "item_id"}, Values: []any{int64(2), int64(1)}},
+			{Columns: []string{"id", "item_id"}, Values: []any{int64(1), int64(1)}},
+		}},
+	}}
+	response, body := get(
+		t,
+		serveEmbed(t, source),
+		"/items?select=id,orders(id)&id=eq.1&orders.order=id.desc&orders.limit=1",
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d body = %s", response.StatusCode, body)
+	}
+	want := `[{"id":1,"orders":[{"id":2}]}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+func TestEmbedAmbiguousRelationshipAtHTTP(t *testing.T) {
+	t.Parallel()
+
+	addresses := schemacache.TableID{Database: "shop", Name: "addresses"}
+	deliveries := schemacache.TableID{Database: "shop", Name: "deliveries"}
+	cache := schemacache.Build(schemacache.Catalog{
+		Tables: []schemacache.TableID{addresses, deliveries},
+		Columns: []schemacache.ColumnFact{
+			{Table: addresses, Name: "id"},
+			{Table: addresses, Name: "label"},
+			{Table: deliveries, Name: "id"},
+			{Table: deliveries, Name: "from_address_id"},
+			{Table: deliveries, Name: "to_address_id"},
+		},
+		Keys: []schemacache.KeyFact{
+			{Table: addresses, Name: "PRIMARY", Kind: "PRIMARY", Columns: []string{"id"}},
+			{Table: deliveries, Name: "PRIMARY", Kind: "PRIMARY", Columns: []string{"id"}},
+		},
+		ForeignKeys: []schemacache.ForeignKeyFact{
+			{Name: "deliveries_from", Table: deliveries, Columns: []string{"from_address_id"}, ReferencedTable: addresses, ReferencedColumns: []string{"id"}},
+			{Name: "deliveries_to", Table: deliveries, Columns: []string{"to_address_id"}, ReferencedTable: addresses, ReferencedColumns: []string{"id"}},
+		},
+		Selects: []schemacache.SelectFact{
+			{Role: "myrest_anon", Table: addresses},
+			{Role: "myrest_anon", Table: deliveries},
+		},
+	})
+	resolved := settings()
+	service, err := httpapi.Listen(httpapi.Options{
+		Addr: "127.0.0.1:0", Settings: resolved, Cache: cache, Reader: &reader{},
+	})
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go func() { _ = service.Serve() }()
+	t.Cleanup(func() { _ = service.Close() })
+
+	response, body := get(t, service, "/deliveries?select=id,addresses(label)")
+	apitest.AssertEnvelope(t, response, body, http.StatusMultipleChoices, "PGRST201")
+
+	source := &multiReader{answers: []readAnswer{
+		{rows: []rows.Row{{Columns: []string{"id", "from_address_id"}, Values: []any{int64(1), int64(1)}}}},
+		{rows: []rows.Row{{Columns: []string{"id", "label"}, Values: []any{int64(1), "from-here"}}}},
+	}}
+	service2, err := httpapi.Listen(httpapi.Options{
+		Addr: "127.0.0.1:0", Settings: resolved, Cache: cache, Reader: source,
+	})
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go func() { _ = service2.Serve() }()
+	t.Cleanup(func() { _ = service2.Close() })
+	response, body = get(t, service2, "/deliveries?select=id,addresses!deliveries_from(label)")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d body = %s", response.StatusCode, body)
+	}
+	want := `[{"id":1,"addresses":{"label":"from-here"}}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
 type readAnswer struct {
 	rows  []rows.Row
 	total *int64

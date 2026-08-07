@@ -2,9 +2,9 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -55,26 +55,29 @@ func (s *Service) planEmbeds(
 }
 
 func writeEmbedPlanFailure(writer http.ResponseWriter, err error) bool {
-	switch failure := err.(type) {
-	case schemacache.RelationshipMissing:
-		writeFailure(writer, http.StatusBadRequest, codeNoRelationship, failure.Error())
+	var missing schemacache.RelationshipMissing
+	if errors.As(err, &missing) {
+		writeFailure(writer, http.StatusBadRequest, codeNoRelationship, missing.Error())
 		return true
-	case schemacache.ComputedRelationship:
-		writeUnsupportedFeature(writer, failure.Error())
+	}
+	var computed schemacache.ComputedRelationship
+	if errors.As(err, &computed) {
+		writeUnsupportedFeature(writer, computed.Error())
 		return true
-	case schemacache.RelationshipAmbiguous:
+	}
+	var ambiguous schemacache.RelationshipAmbiguous
+	if errors.As(err, &ambiguous) {
 		writeFailureExtra(
 			writer,
 			http.StatusMultipleChoices,
 			codeAmbiguousRelationship,
-			failure.Error(),
-			ambiguousDetails(failure),
-			ambiguousHint(failure),
+			ambiguous.Error(),
+			ambiguousDetails(ambiguous),
+			ambiguousHint(ambiguous),
 		)
 		return true
-	default:
-		return false
 	}
+	return false
 }
 
 func ambiguousDetails(failure schemacache.RelationshipAmbiguous) []map[string]string {
@@ -106,8 +109,6 @@ func cardinalityName(cardinality schemacache.Cardinality) string {
 		return "one-to-many"
 	case schemacache.ManyToMany:
 		return "many-to-many"
-	case schemacache.OneToOne:
-		return "one-to-one"
 	default:
 		return "unknown"
 	}
@@ -207,7 +208,7 @@ func (s *Service) nestOneEmbed(
 		return parentRows, nil
 	}
 	switch embed.relationship.Cardinality {
-	case schemacache.ManyToOne, schemacache.OneToOne:
+	case schemacache.ManyToOne:
 		return s.nestToOne(ctx, role, parentRows, embed)
 	case schemacache.OneToMany:
 		return s.nestToMany(ctx, role, parentRows, embed)
@@ -254,17 +255,7 @@ func (s *Service) nestToMany(
 		return nil, err
 	}
 	grouped := groupRows(related, embed.relationship.TargetColumns)
-	keyName := embed.ask.Key()
-	for i, row := range parentRows {
-		key := rowKey(row, embed.relationship.OriginColumns)
-		children := pageRows(grouped[key], embed.ask)
-		projected := make([]rows.Row, len(children))
-		for j, child := range children {
-			projected[j] = projectEmbedRow(child, embed.ask)
-		}
-		parentRows[i] = appendColumn(row, keyName, projected)
-	}
-	return parentRows, nil
+	return attachGroupedEmbeds(parentRows, embed, grouped), nil
 }
 
 func (s *Service) nestManyToMany(
@@ -274,15 +265,29 @@ func (s *Service) nestManyToMany(
 	embed plannedEmbed,
 ) ([]rows.Row, error) {
 	parentKeys := uniqueKeyTuples(parentRows, embed.relationship.OriginColumns)
+	related, parentsByTarget, err := s.loadManyToMany(ctx, role, embed, parentKeys)
+	if err != nil {
+		return nil, err
+	}
+	grouped := groupManyToMany(related, parentsByTarget, embed.relationship.TargetColumns)
+	return attachGroupedEmbeds(parentRows, embed, grouped), nil
+}
+
+func (s *Service) loadManyToMany(
+	ctx context.Context,
+	role schemacache.Role,
+	embed plannedEmbed,
+	parentKeys [][]any,
+) ([]rows.Row, map[string][]string, error) {
 	joinTable, ok := s.cache.Resource(role, embed.relationship.JoinTable)
 	if !ok {
-		return nil, schemacache.RelationshipMissing{
+		return nil, nil, schemacache.RelationshipMissing{
 			Origin: embed.relationship.Origin,
 			Target: embed.ask.Resource,
 		}
 	}
 	if len(embed.relationship.JoinOriginColumns) != 1 {
-		return nil, fmt.Errorf("composite many-to-many join keys are not available yet")
+		return nil, nil, fmt.Errorf("composite many-to-many foreign-key columns are not available yet")
 	}
 	joinQuery := readquery.Query{
 		SelectAll: true,
@@ -298,22 +303,42 @@ func (s *Service) nestManyToMany(
 	}
 	joinRead, err := s.reader.Read(ctx, role, joinTable, joinQuery)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	targetKeys := uniqueKeyTuples(joinRead.Rows, embed.relationship.JoinTargetColumns)
 	related, err := s.readByKeys(ctx, role, embed, embed.relationship.TargetColumns, targetKeys)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	relatedByKey := indexRows(related, embed.relationship.TargetColumns)
-	grouped := map[string][]rows.Row{}
+	parentsByTarget := map[string][]string{}
 	for _, link := range joinRead.Rows {
 		parentKey := rowKey(link, embed.relationship.JoinOriginColumns)
 		targetKey := rowKey(link, embed.relationship.JoinTargetColumns)
-		if child, ok := relatedByKey[targetKey]; ok {
+		parentsByTarget[targetKey] = append(parentsByTarget[targetKey], parentKey)
+	}
+	return related, parentsByTarget, nil
+}
+
+func groupManyToMany(
+	related []rows.Row,
+	parentsByTarget map[string][]string,
+	targetColumns []string,
+) map[string][]rows.Row {
+	grouped := map[string][]rows.Row{}
+	for _, child := range related {
+		targetKey := rowKey(child, targetColumns)
+		for _, parentKey := range parentsByTarget[targetKey] {
 			grouped[parentKey] = append(grouped[parentKey], child)
 		}
 	}
+	return grouped
+}
+
+func attachGroupedEmbeds(
+	parentRows []rows.Row,
+	embed plannedEmbed,
+	grouped map[string][]rows.Row,
+) []rows.Row {
 	keyName := embed.ask.Key()
 	for i, row := range parentRows {
 		key := rowKey(row, embed.relationship.OriginColumns)
@@ -324,7 +349,7 @@ func (s *Service) nestManyToMany(
 		}
 		parentRows[i] = appendColumn(row, keyName, projected)
 	}
-	return parentRows, nil
+	return parentRows
 }
 
 func (s *Service) readByKeys(
@@ -338,7 +363,7 @@ func (s *Service) readByKeys(
 		return nil, nil
 	}
 	if len(keyColumns) != 1 {
-		return nil, fmt.Errorf("composite embed keys are not available yet")
+		return nil, fmt.Errorf("composite embed foreign-key columns are not available yet")
 	}
 	// Limit and offset apply per parent row after grouping, not to the batch.
 	query := readquery.Query{
@@ -365,7 +390,22 @@ func (s *Service) readByKeys(
 		return nil, err
 	}
 	// Keep key columns for grouping; projectEmbedRow drops them for the client.
-	return dropInjectedColumns(nested, injected), nil
+	// withJoinColumns may list the same names for a nested embed — do not drop them.
+	return dropInjectedColumns(nested, exceptNames(injected, keyColumns)), nil
+}
+
+func exceptNames(names, keep []string) []string {
+	blocked := map[string]bool{}
+	for _, name := range keep {
+		blocked[name] = true
+	}
+	var out []string
+	for _, name := range names {
+		if !blocked[name] {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // ensureColumns adds named columns to the select list when the client did not
@@ -446,7 +486,7 @@ func pageRows(children []rows.Row, ask readquery.Embed) []rows.Row {
 	if children == nil {
 		children = []rows.Row{}
 	}
-	children = sortRows(children, ask.Order)
+	// Related rows keep the SQL order from readByKeys; grouping preserves it.
 	if ask.Offset > 0 {
 		if ask.Offset >= uint64(len(children)) {
 			return []rows.Row{}
@@ -457,25 +497,6 @@ func pageRows(children []rows.Row, ask readquery.Embed) []rows.Row {
 		children = children[:*ask.Limit]
 	}
 	return children
-}
-
-func sortRows(children []rows.Row, order []readquery.Order) []rows.Row {
-	if len(order) == 0 || len(children) < 2 {
-		return children
-	}
-	sorted := append([]rows.Row{}, children...)
-	for i := len(order) - 1; i >= 0; i-- {
-		key := order[i]
-		sort.SliceStable(sorted, func(a, b int) bool {
-			left := stringifyValue(columnValue(sorted[a], key.Column))
-			right := stringifyValue(columnValue(sorted[b], key.Column))
-			if key.Desc {
-				return left > right
-			}
-			return left < right
-		})
-	}
-	return sorted
 }
 
 func columnList(names []string) []readquery.Column {

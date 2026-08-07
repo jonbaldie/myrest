@@ -12,8 +12,6 @@ const (
 	OneToMany
 	// ManyToMany nests an array through a declared join table.
 	ManyToMany
-	// OneToOne nests one related object (or null).
-	OneToOne
 )
 
 // Relationship is one declared-FK path between two resources.

@@ -61,12 +61,12 @@ func TestEmbedManyToManyThroughJoinTable(t *testing.T) {
 	response, body := get(
 		t,
 		serve(t, "myrest_fixture"),
-		"/items?select=id,tags(name)&id=eq.1&tags.order=name.asc",
+		"/items?select=id,tags(id,name)&id=eq.1&tags.order=id.asc",
 	)
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
 	}
-	want := `[{"id":1,"tags":[{"name":"cold"},{"name":"hot"}]}]`
+	want := `[{"id":1,"tags":[{"id":1,"name":"hot"},{"id":2,"name":"cold"}]}]`
 	if string(body) != want+"\n" {
 		t.Fatalf("body = %s, want %s", body, want)
 	}
@@ -96,12 +96,28 @@ func TestEmbedDisambiguationSelectsOneRelationship(t *testing.T) {
 	}
 }
 
-// embed-003: an embed with no declared foreign key path refuses stably.
-func TestEmbedWithoutForeignKeyPathRefuses(t *testing.T) {
+// embed-001: nested embed over declared FKs succeeds.
+func TestNestedEmbedOverDeclaredForeignKeys(t *testing.T) {
 	response, body := get(
 		t,
 		serve(t, "myrest_fixture"),
-		"/items?select=id,profiles(id)",
+		"/items?select=id,orders(id,items(name))&id=eq.2&orders.order=id.asc",
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want := `[{"id":2,"orders":[{"id":3,"items":{"name":"beta"}}]}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+// View-chain embed with no declared FK refuses like any missing path.
+func TestEmbedThroughViewWithoutForeignKeyRefuses(t *testing.T) {
+	response, body := get(
+		t,
+		serve(t, "myrest_fixture"),
+		"/items?select=id,items_view(id)",
 	)
 	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST200")
 }
