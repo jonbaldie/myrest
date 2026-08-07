@@ -215,7 +215,7 @@ func TestMySQLEnforcesTheGrantsAfterTheRoleSwitch(t *testing.T) {
 		t.Fatalf("the read gave rows after the grant was taken away: %s", body)
 	}
 
-	apitest.AssertEnvelope(t, response, body, http.StatusInternalServerError, "PGRST000")
+	apitest.AssertEnvelope(t, response, body, http.StatusForbidden, "MYREST002")
 
 	// What MySQL says names the accounts of the deployment, so it goes to
 	// the log of the operator and not to the client.

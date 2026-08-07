@@ -2,7 +2,11 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 // The error codes the anonymous read needs. The full code contract comes with
@@ -14,8 +18,15 @@ const (
 	// codeNoAnonymousRole says that the request carries no usable JWT and
 	// that no anonymous database role is configured.
 	codeNoAnonymousRole = "PGRST301"
-	// codeDatabaseFailure says that the database refused the read.
-	codeDatabaseFailure = "PGRST000"
+	// codeMySQLDatabaseFailure says that MySQL returned an error for which
+	// myrest cannot claim PostgreSQL semantics.
+	codeMySQLDatabaseFailure = "MYREST002"
+	// codeNoHandler says that the current myrest surface has no handler for
+	// the request path and method.
+	codeNoHandler = "MYREST003"
+	// codePostgresOnlyFeature says that the request needs PostgREST behavior
+	// that myrest cannot provide over MySQL.
+	codePostgresOnlyFeature = "MYREST001"
 )
 
 // failure is the error envelope of the parity target. Every field is written,
@@ -31,6 +42,68 @@ type failure struct {
 // message: what the database says goes to the log of the operator.
 func writeFailure(writer http.ResponseWriter, status int, code, message string) {
 	writeJSON(writer, status, failure{Code: code, Message: message})
+}
+
+// writeDatabaseFailure answers a database error without disclosing database
+// account data. The status comes from the published MySQL SQLSTATE table.
+func writeDatabaseFailure(writer http.ResponseWriter, err error) {
+	writeFailure(
+		writer,
+		mysqlErrorStatus(err),
+		codeMySQLDatabaseFailure,
+		"The database did not answer the read",
+	)
+}
+
+// writeUnsupportedFeature answers a documented PostgreSQL semantic gap.
+func writeUnsupportedFeature(writer http.ResponseWriter, message string) {
+	writeFailure(writer, http.StatusBadRequest, codePostgresOnlyFeature, message)
+}
+
+// writeNoHandler answers a path or method outside the current service surface.
+func writeNoHandler(writer http.ResponseWriter, _ *http.Request) {
+	writeFailure(
+		writer,
+		http.StatusNotFound,
+		codeNoHandler,
+		"The requested path and method are not available",
+	)
+}
+
+// mysqlErrorStatus maps the supported MySQL errors to their HTTP status. Any
+// error outside the published table gives the documented internal-error
+// fallback.
+func mysqlErrorStatus(err error) int {
+	var mysqlError *mysql.MySQLError
+	if !errors.As(err, &mysqlError) {
+		return http.StatusInternalServerError
+	}
+
+	return mysqlStatus(mysqlError.Number, string(mysqlError.SQLState[:]))
+}
+
+// mysqlStatus is the status table in code. It has no side effects so each
+// database error maps to one status regardless of request state.
+func mysqlStatus(number uint16, state string) int {
+	switch number {
+	case 1044, 1045, 1142, 1227:
+		return http.StatusForbidden
+	case 1062, 1451, 1452, 1213:
+		return http.StatusConflict
+	}
+
+	switch {
+	case strings.HasPrefix(state, "08"):
+		return http.StatusServiceUnavailable
+	case strings.HasPrefix(state, "22"), strings.HasPrefix(state, "42"):
+		return http.StatusBadRequest
+	case strings.HasPrefix(state, "23"), strings.HasPrefix(state, "40"):
+		return http.StatusConflict
+	case strings.HasPrefix(state, "28"):
+		return http.StatusForbidden
+	default:
+		return http.StatusInternalServerError
+	}
 }
 
 // writeJSON answers with a JSON body. The parity target needs no content

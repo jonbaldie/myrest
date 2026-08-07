@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
@@ -18,6 +19,14 @@ type Reader interface {
 // database, so the table comes from the default database; the profile header
 // of the parity target comes with the content negotiation ticket.
 func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
+	if hasPostgRESTFullTextSearchOperator(request) {
+		writeUnsupportedFeature(
+			writer,
+			"PostgREST full-text search operators are not available with MySQL",
+		)
+		return
+	}
+
 	role := schemacache.Role(s.settings.DB.AnonRole)
 	if role == "" {
 		writeFailure(
@@ -42,10 +51,7 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 		// The words of the database name the accounts of the deployment,
 		// so the operator reads them and the client does not.
 		s.log.Printf("myrest: read %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		writeFailure(
-			writer, http.StatusInternalServerError, codeDatabaseFailure,
-			"The database did not answer the read",
-		)
+		writeDatabaseFailure(writer, err)
 		return
 	}
 	writeJSON(writer, http.StatusOK, read)
@@ -55,4 +61,28 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 // target does: with the database the request reads.
 func noTableMessage(asked schemacache.TableID) string {
 	return "Could not find the table '" + asked.Database + "." + asked.Name + "' in the schema cache"
+}
+
+// hasPostgRESTFullTextSearchOperator finds PostgREST full-text search
+// operators. myrest refuses them because a MySQL full-text query has different
+// semantics.
+func hasPostgRESTFullTextSearchOperator(request *http.Request) bool {
+	for _, values := range request.URL.Query() {
+		for _, value := range values {
+			operator, _, found := strings.Cut(strings.TrimPrefix(value, "not."), ".")
+			if found && isPostgRESTFullTextSearchOperator(operator) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isPostgRESTFullTextSearchOperator(operator string) bool {
+	switch operator {
+	case "fts", "plfts", "phfts", "wfts":
+		return true
+	default:
+		return false
+	}
 }

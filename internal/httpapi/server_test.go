@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/jonbaldie/myrest/internal/apitest"
 	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/httpapi"
@@ -222,7 +224,71 @@ func TestFailingReadGivesTheErrorEnvelope(t *testing.T) {
 	source := &reader{failure: errors.New("SELECT command denied")}
 	response, body := get(t, serve(t, source, settings()), "/items")
 
-	apitest.AssertEnvelope(t, response, body, http.StatusInternalServerError, "PGRST000")
+	apitest.AssertEnvelope(t, response, body, http.StatusInternalServerError, "MYREST002")
+}
+
+// err-004: MySQL access errors have the published SQLSTATE status and the
+// error envelope. MYREST002 is a myrest gap code because a MySQL error cannot
+// honestly claim a PostgreSQL SQLSTATE.
+func TestMySQLAccessErrorGivesThePublishedStatusAndGapCode(t *testing.T) {
+	t.Parallel()
+
+	source := &reader{failure: mysqlError(1142, "42000", "SELECT command denied")}
+	response, body := get(t, serve(t, source, settings()), "/items")
+
+	apitest.AssertEnvelope(t, response, body, http.StatusForbidden, "MYREST002")
+}
+
+// err-005: a MySQL SQLSTATE outside the published table has the documented
+// fallback status and keeps the same client error envelope.
+func TestUnmappedMySQLErrorGivesTheFallbackStatusAndGapCode(t *testing.T) {
+	t.Parallel()
+
+	source := &reader{failure: mysqlError(0, "HY000", "general error")}
+	response, body := get(t, serve(t, source, settings()), "/items")
+
+	apitest.AssertEnvelope(t, response, body, http.StatusInternalServerError, "MYREST002")
+}
+
+// err-003: a PostgREST full-text search operator is refused with a myrest gap
+// code. MySQL full-text search does not have the same semantics.
+func TestPostgRESTFullTextSearchIsRefusedWithAMyrestGapCode(t *testing.T) {
+	t.Parallel()
+
+	response, body := get(t, serve(t, &reader{}, settings()), "/items?name=fts.english.alpha")
+
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+}
+
+// Negated PostgREST full-text search needs the same refusal.
+func TestNegatedPostgRESTFullTextSearchIsRefusedWithAMyrestGapCode(t *testing.T) {
+	t.Parallel()
+
+	response, body := get(t, serve(t, &reader{}, settings()), "/items?name=not.fts.english.alpha")
+
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+}
+
+// err-001: paths and methods outside the current service surface still have
+// the client error envelope.
+func TestUnhandledRequestGivesTheErrorEnvelope(t *testing.T) {
+	t.Parallel()
+
+	request, err := http.NewRequest(http.MethodPost, serve(t, &reader{}, settings()).URL()+"/items", nil)
+	if err != nil {
+		t.Fatalf("new POST request: %v", err)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST /items: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read POST /items body: %v", err)
+	}
+
+	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "MYREST003")
 }
 
 // The words of the database name the accounts of the deployment: the operator
@@ -302,4 +368,11 @@ func TestCloseStopsTheService(t *testing.T) {
 	if _, err := http.Get(base + "/items"); err == nil {
 		t.Fatal("the service answered after Close")
 	}
+}
+
+func mysqlError(number uint16, state, message string) error {
+	var sqlState [5]byte
+	copy(sqlState[:], state)
+
+	return &mysql.MySQLError{Number: number, SQLState: sqlState, Message: message}
 }
