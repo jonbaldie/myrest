@@ -178,11 +178,6 @@ func tableColumn(table schemacache.Table, name string) (schemacache.Column, bool
 	return schemacache.Column{}, false
 }
 
-func tableHasColumn(table schemacache.Table, name string) bool {
-	_, ok := tableColumn(table, name)
-	return ok
-}
-
 func isJSONDataType(dataType string) bool {
 	return strings.EqualFold(dataType, "json")
 }

@@ -111,6 +111,45 @@ func TestBuildSelectRefusesJSONPathOnNonJSONColumn(t *testing.T) {
 	}
 }
 
+func TestILikeRefusesNonCaseInsensitiveCollation(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID: schemacache.TableID{Database: "shop", Name: "items"},
+		Columns: []schemacache.Column{
+			{Name: "name", DataType: "varchar", Collation: "utf8mb4_bin"},
+		},
+	}
+	_, err := buildSelect(table, readquery.Query{
+		Filters: []readquery.Filter{{Column: "name", Op: readquery.OpILike, Value: "ALPHA"}},
+	})
+	var gap readquery.UnsupportedFeature
+	if err == nil || !errors.As(err, &gap) {
+		t.Fatalf("err = %v, want UnsupportedFeature for non-ci collation", err)
+	}
+}
+
+func TestILikeAllowsCaseInsensitiveCollation(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID: schemacache.TableID{Database: "shop", Name: "items"},
+		Columns: []schemacache.Column{
+			{Name: "name", DataType: "varchar", Collation: "utf8mb4_0900_ai_ci"},
+		},
+	}
+	parts, err := buildSelect(table, readquery.Query{
+		Filters: []readquery.Filter{{Column: "name", Op: readquery.OpILike, Value: "ALPHA"}},
+	})
+	if err != nil {
+		t.Fatalf("buildSelect: %v", err)
+	}
+	want := "SELECT `name` FROM `shop`.`items` WHERE `name` LIKE ?"
+	if parts.statement != want {
+		t.Fatalf("statement = %q, want %q", parts.statement, want)
+	}
+}
+
 func TestBuildCountUsesTheSameFilters(t *testing.T) {
 	t.Parallel()
 

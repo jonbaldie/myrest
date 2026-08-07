@@ -20,12 +20,15 @@ MySQL follows the column collation.
 The subset holds when the filtered column uses a MySQL Unicode
 case-insensitive collation (`*_ci`), for example the fixture default
 `utf8mb4_0900_ai_ci`. Matching then follows that collation (case and accent
-rules of MySQL), not Postgres `ILIKE` Unicode case folding.
+rules of MySQL), not Postgres `ILIKE` Unicode case folding. myrest reads the
+column collation from the schema cache: `ilike` on a column whose collation
+is not `*_ci` refuses with `MYREST001`.
 
 **Outside subset (stable refuse, `MYREST001`):**
 
 | Client form | Why |
 | --- | --- |
+| `col=ilike.pattern` on a non-`*_ci` collation | Outside the named MySQL collation subset |
 | `col=match.regex` | Postgres POSIX regex (`~`) |
 | `col=imatch.regex` | Postgres case-insensitive POSIX regex (`~*`) |
 | `not.match` / `not.imatch` | Same Postgres regex family |

@@ -22,7 +22,7 @@ const (
 	ORDER BY TABLE_SCHEMA, TABLE_NAME`
 
 	columnQuery = `SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE,
-		IS_NULLABLE, COLUMN_DEFAULT, COLUMN_COMMENT, EXTRA
+		COLLATION_NAME, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_COMMENT, EXTRA
 	FROM information_schema.COLUMNS
 	WHERE TABLE_SCHEMA IN (%s)
 	ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION`
@@ -488,6 +488,7 @@ func read[Fact any](
 
 func scanColumn(result *sql.Rows) (schemacache.ColumnFact, bool, error) {
 	var fact schemacache.ColumnFact
+	var collation sql.NullString
 	var nullable string
 	var defaultValue sql.NullString
 	var extra string
@@ -496,6 +497,7 @@ func scanColumn(result *sql.Rows) (schemacache.ColumnFact, bool, error) {
 		&fact.Table.Name,
 		&fact.Name,
 		&fact.DataType,
+		&collation,
 		&nullable,
 		&defaultValue,
 		&fact.Comment,
@@ -503,6 +505,9 @@ func scanColumn(result *sql.Rows) (schemacache.ColumnFact, bool, error) {
 	)
 	if err != nil {
 		return fact, false, err
+	}
+	if collation.Valid {
+		fact.Collation = collation.String
 	}
 	fact.Nullable = strings.EqualFold(nullable, "YES")
 	if defaultValue.Valid {

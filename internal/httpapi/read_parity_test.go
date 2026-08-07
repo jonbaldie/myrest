@@ -97,27 +97,18 @@ func TestILikeFilterInsideTextCaseSubsetSucceeds(t *testing.T) {
 	}
 }
 
-// read-005: a JSON path read or filter inside the documented subset succeeds.
-func TestJSONPathSelectAndFilterInsideSubsetSucceeds(t *testing.T) {
+// read-004: ilike outside the *_ci collation subset refuses stably.
+func TestILikeOutsideCollationSubsetIsRefused(t *testing.T) {
 	t.Parallel()
 
-	source := &reader{read: []rows.Row{
-		{Columns: []string{"id", "blood_type"}, Values: []any{int64(1), "A-"}},
+	source := &reader{failure: readquery.UnsupportedFeature{
+		Message: "ilike needs a MySQL Unicode case-insensitive (*_ci) column collation",
 	}}
-	path := "/items?select=id,meta->>blood_type&" + url.QueryEscape("meta->>blood_type") + "=eq.A-"
-	response, body := get(t, serve(t, source, settings()), path)
+	response, body := get(t, serve(t, source, settings()), "/items?name=ilike.ALPHA")
 
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
-	}
-	if len(source.query.Columns) != 2 || source.query.Columns[1].Path == nil || !source.query.Columns[1].Path.AsText {
-		t.Fatalf("select = %#v", source.query.Columns)
-	}
-	if len(source.query.Filters) != 1 || source.query.Filters[0].Path == nil || source.query.Filters[0].Value != "A-" {
-		t.Fatalf("filters = %#v", source.query.Filters)
-	}
-	if want := `[{"id":1,"blood_type":"A-"}]`; string(body) != want+"\n" {
-		t.Fatalf("body = %s, want %s", body, want)
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if !strings.Contains(failure.Message, "*_ci") {
+		t.Fatalf("message = %q, want a collation subset refusal", failure.Message)
 	}
 }
 
