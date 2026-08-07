@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -247,6 +248,38 @@ func TestUnmappedMySQLErrorGivesTheFallbackStatusAndGapCode(t *testing.T) {
 	response, body := get(t, serve(t, source, settings()), "/items")
 
 	apitest.AssertEnvelope(t, response, body, http.StatusInternalServerError, "MYREST002")
+}
+
+// err-003: a PostgREST full-text search operator is refused with a myrest gap
+// code. MySQL full-text search does not have the same semantics.
+func TestPostgRESTFullTextSearchIsRefusedWithAMyrestGapCode(t *testing.T) {
+	t.Parallel()
+
+	response, body := get(t, serve(t, &reader{}, settings()), "/items?name=fts.english.alpha")
+
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+}
+
+// err-001: paths and methods outside the current service surface still have
+// the client error envelope.
+func TestUnhandledRequestGivesTheErrorEnvelope(t *testing.T) {
+	t.Parallel()
+
+	request, err := http.NewRequest(http.MethodPost, serve(t, &reader{}, settings()).URL()+"/items", nil)
+	if err != nil {
+		t.Fatalf("new POST request: %v", err)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST /items: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read POST /items body: %v", err)
+	}
+
+	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "MYREST003")
 }
 
 // The words of the database name the accounts of the deployment: the operator

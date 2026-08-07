@@ -21,9 +21,15 @@ The myrest gap codes are:
 | --- | --- |
 | `MYREST001` | The request needs PostgreSQL semantics that MySQL does not provide. |
 | `MYREST002` | MySQL returned a database error. myrest cannot claim a PostgreSQL SQLSTATE for it. |
+| `MYREST003` | The request path and method are not in the current myrest surface. |
 
 `MYREST001` is for a documented MySQL-gap refusal. `MYREST002` is for a MySQL
-database error. Both codes have the error envelope.
+database error. `MYREST003` is for an unhandled request. All codes have the
+error envelope.
+
+For example, myrest refuses the PostgREST `fts`, `plfts`, `phfts`, and `wfts`
+full-text search operators with `MYREST001`. MySQL has full-text search, but
+it does not have the same PostgREST semantics.
 
 ## MySQL SQLSTATE to HTTP status
 

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
@@ -18,6 +19,14 @@ type Reader interface {
 // database, so the table comes from the default database; the profile header
 // of the parity target comes with the content negotiation ticket.
 func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
+	if hasPostgresFullTextSearch(request) {
+		writeUnsupportedFeature(
+			writer,
+			"PostgREST full-text search operators are not available with MySQL",
+		)
+		return
+	}
+
 	role := schemacache.Role(s.settings.DB.AnonRole)
 	if role == "" {
 		writeFailure(
@@ -52,4 +61,20 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 // target does: with the database the request reads.
 func noTableMessage(asked schemacache.TableID) string {
 	return "Could not find the table '" + asked.Database + "." + asked.Name + "' in the schema cache"
+}
+
+// hasPostgresFullTextSearch finds the PostgREST full-text search operators.
+// myrest refuses them because a MySQL full-text query has different semantics.
+func hasPostgresFullTextSearch(request *http.Request) bool {
+	for _, values := range request.URL.Query() {
+		for _, value := range values {
+			if strings.HasPrefix(value, "fts.") ||
+				strings.HasPrefix(value, "plfts.") ||
+				strings.HasPrefix(value, "phfts.") ||
+				strings.HasPrefix(value, "wfts.") {
+				return true
+			}
+		}
+	}
+	return false
 }

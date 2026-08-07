@@ -21,6 +21,12 @@ const (
 	// codeMySQLDatabaseFailure says that MySQL returned an error for which
 	// myrest cannot claim PostgreSQL semantics.
 	codeMySQLDatabaseFailure = "MYREST002"
+	// codeNoHandler says that the current myrest surface has no handler for
+	// the request path and method.
+	codeNoHandler = "MYREST003"
+	// codePostgresOnlyFeature says that the request needs PostgREST behavior
+	// that myrest cannot provide over MySQL.
+	codePostgresOnlyFeature = "MYREST001"
 )
 
 // failure is the error envelope of the parity target. Every field is written,
@@ -46,6 +52,21 @@ func writeDatabaseFailure(writer http.ResponseWriter, err error) {
 		mysqlErrorStatus(err),
 		codeMySQLDatabaseFailure,
 		"The database did not answer the read",
+	)
+}
+
+// writeUnsupportedFeature answers a documented PostgreSQL semantic gap.
+func writeUnsupportedFeature(writer http.ResponseWriter, message string) {
+	writeFailure(writer, http.StatusBadRequest, codePostgresOnlyFeature, message)
+}
+
+// writeNoHandler answers a path or method outside the current service surface.
+func writeNoHandler(writer http.ResponseWriter, _ *http.Request) {
+	writeFailure(
+		writer,
+		http.StatusNotFound,
+		codeNoHandler,
+		"The requested path and method are not available",
 	)
 }
 
