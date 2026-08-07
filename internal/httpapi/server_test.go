@@ -269,6 +269,30 @@ func TestNegatedPostgRESTFullTextSearchIsRefusedWithAMyrestGapCode(t *testing.T)
 	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
 }
 
+// cache-005: PostgREST domain and cast syntax is refused.
+func TestPostgRESTCastSyntaxIsRefused(t *testing.T) {
+	t.Parallel()
+
+	response, body := get(t, serve(t, &reader{}, settings()), "/items?select=name::text")
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if !strings.Contains(failure.Message, "domain and cast") {
+		t.Fatalf("message = %q, want a domain and cast refusal", failure.Message)
+	}
+}
+
+// cache-005: PostgREST row computed-field syntax is refused.
+func TestPostgRESTComputedFieldSyntaxIsRefused(t *testing.T) {
+	t.Parallel()
+
+	response, body := get(t, serve(t, &reader{}, settings()), "/items?select=total()")
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if !strings.Contains(failure.Message, "computed-field") {
+		t.Fatalf("message = %q, want a computed-field refusal", failure.Message)
+	}
+}
+
 // err-001: paths and methods outside the current service surface still have
 // the client error envelope.
 func TestUnhandledRequestGivesTheErrorEnvelope(t *testing.T) {

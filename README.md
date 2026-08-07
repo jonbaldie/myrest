@@ -43,7 +43,7 @@ curl http://127.0.0.1:3000/secrets
 
 When MySQL itself refuses a read — a grant taken away after start-up, for example — the client gets the same envelope with a message of myrest. What MySQL said names the accounts of the deployment, so it goes to the log of the operator and not to the client.
 
-The read is narrow for now: all columns, no filter, no order, and no page. myrest reads the catalog once at start-up; a restart picks up new tables and new grants until the explicit reload arrives.
+The read is narrow for now: all columns, no filter, no order, and no page. myrest builds the **schema cache** from the MySQL catalog at start-up. Send `SIGUSR1` to reload it after DDL or grant changes; a process restart is not required for that refresh. Config changes still need a restart.
 
 ## Configuration
 

@@ -26,6 +26,20 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 		)
 		return
 	}
+	if hasPostgRESTCastOrDomainSyntax(request) {
+		writeUnsupportedFeature(
+			writer,
+			"PostgREST domain and cast features are not available with MySQL",
+		)
+		return
+	}
+	if hasPostgRESTComputedFieldSyntax(request) {
+		writeUnsupportedFeature(
+			writer,
+			"PostgREST row computed-field features are not available with MySQL",
+		)
+		return
+	}
 
 	role := schemacache.Role(s.settings.DB.AnonRole)
 	if role == "" {
@@ -85,4 +99,29 @@ func isPostgRESTFullTextSearchOperator(operator string) bool {
 	default:
 		return false
 	}
+}
+
+// hasPostgRESTCastOrDomainSyntax finds a PostgREST cast or domain mark in the
+// select list. MySQL has no matching catalog feature, so myrest refuses it.
+func hasPostgRESTCastOrDomainSyntax(request *http.Request) bool {
+	for _, value := range request.URL.Query()["select"] {
+		if strings.Contains(value, "::") {
+			return true
+		}
+	}
+	return false
+}
+
+// hasPostgRESTComputedFieldSyntax finds a PostgREST row computed-field call in
+// select. MySQL has no row-type functions of that kind, so myrest refuses it.
+func hasPostgRESTComputedFieldSyntax(request *http.Request) bool {
+	for _, value := range request.URL.Query()["select"] {
+		for _, part := range strings.Split(value, ",") {
+			part = strings.TrimSpace(part)
+			if strings.HasSuffix(part, "()") {
+				return true
+			}
+		}
+	}
+	return false
 }

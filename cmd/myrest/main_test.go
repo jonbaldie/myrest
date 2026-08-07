@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -169,6 +170,70 @@ func TestProcessRefusesMoreThanOneConfigFileArgument(t *testing.T) {
 	}
 }
 
+// cache-003 at the process seam, and reload separate from configuration
+// restart: SIGUSR1 reloads the schema cache while the process keeps serving.
+func TestSIGUSR1ReloadsTheSchemaCacheWithoutARestart(t *testing.T) {
+	process := start(t, map[string]string{
+		"MYREST_DB_URI":       authenticator(),
+		"MYREST_DB_SCHEMAS":   "myrest_fixture",
+		"MYREST_DB_ANON_ROLE": "myrest_anon",
+	})
+	base, _ := process.waitForServe(t)
+
+	for _, statement := range []string{
+		`CREATE TABLE myrest_fixture.signal_reloaded (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			label VARCHAR(255) NOT NULL,
+			PRIMARY KEY (id)
+		) ENGINE=InnoDB`,
+		`INSERT INTO myrest_fixture.signal_reloaded (label) VALUES ('from-signal')`,
+		`GRANT SELECT ON myrest_fixture.signal_reloaded TO 'myrest_anon'`,
+	} {
+		if err := database.Exec(statement); err != nil {
+			t.Fatalf("%s: %v", statement, err)
+		}
+	}
+	t.Cleanup(func() {
+		_ = database.Exec("DROP TABLE IF EXISTS myrest_fixture.signal_reloaded")
+	})
+
+	before := getPath(t, base, "/signal_reloaded")
+	if !strings.Contains(before, "PGRST205") {
+		t.Fatalf("before reload body = %q, want PGRST205", before)
+	}
+
+	if err := process.command.Process.Signal(syscall.SIGUSR1); err != nil {
+		t.Fatalf("SIGUSR1: %v", err)
+	}
+	_ = process.waitForLine(t, "reloaded the schema cache")
+
+	after := getPath(t, base, "/signal_reloaded")
+	if want := `[{"id":1,"label":"from-signal"}]`; after != want+"\n" {
+		t.Fatalf("after reload body = %q, want %q", after, want)
+	}
+}
+
+// cache-004: myrest offers no NOTIFY reload bus. A NOTIFY channel knob stays
+// on the drop list, so a config file that names one never starts.
+func TestProcessRefusesANotifyChannelKnob(t *testing.T) {
+	t.Parallel()
+
+	messages, err := runUntilStop(t, nil, configFile(t, fmt.Sprintf(`db-uri = %q
+db-schemas = "myrest_fixture"
+db-anon-role = "myrest_anon"
+db-channel = "pgrst"
+`, authenticator())))
+	if err == nil {
+		t.Fatalf("myrest started with a NOTIFY channel knob; messages: %s", messages)
+	}
+	if !strings.Contains(messages, "db-channel") {
+		t.Fatalf("messages %q do not refuse db-channel", messages)
+	}
+	if strings.Contains(messages, "listening") {
+		t.Fatalf("messages %q say the process served the API", messages)
+	}
+}
+
 // process is a running myrest command and the messages it writes.
 type process struct {
 	command  *exec.Cmd
@@ -301,6 +366,23 @@ func get(t *testing.T, base string) string {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	return string(body)
+}
+
+// getPath reads the body of GET path from a running myrest process.
+func getPath(t *testing.T, base, path string) string {
+	t.Helper()
+
+	response, err := http.Get(base + path)
+	if err != nil {
+		t.Fatalf("GET %s%s: %v", base, path, err)
+	}
+	defer response.Body.Close()
+
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		t.Fatalf("read body: %v", err)
