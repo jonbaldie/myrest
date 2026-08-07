@@ -164,3 +164,17 @@ func TestRoutineWithoutExecuteIsNotUsableAsAResource(t *testing.T) {
 		t.Fatalf("message = %q, want %q", failure.Message, want)
 	}
 }
+
+// Missing named arguments are a signature mismatch, the way the parity target
+// treats them: not a found routine.
+func TestPostRPCWithAMissingArgumentIsNotAFoundRoutine(t *testing.T) {
+	t.Parallel()
+
+	response, body := apitest.PostJSON(
+		t,
+		serveRPC(t, &caller{body: int64(0)}).URL()+"/rpc/add_them",
+		`{"a":1}`,
+	)
+
+	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST202")
+}

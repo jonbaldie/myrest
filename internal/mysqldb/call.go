@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
@@ -151,38 +152,50 @@ func readProcedureOutputs(
 	ctx context.Context,
 	conn *sql.Conn,
 	outNames, outVars []string,
-) (map[string]any, error) {
-	result := map[string]any{}
-	for i, name := range outNames {
+) (rows.Row, error) {
+	values := make([]any, len(outNames))
+	for i := range outNames {
 		var value any
 		if err := conn.QueryRowContext(ctx, "SELECT "+outVars[i]).Scan(&value); err != nil {
-			return nil, err
+			return rows.Row{}, err
 		}
-		result[name] = jsonValue(value)
+		values[i] = jsonValue(value)
 	}
-	return result, nil
+	return rows.Row{Columns: append([]string(nil), outNames...), Values: values}, nil
 }
 
 func inputParameters(routine schemacache.RoutineFact) []schemacache.ParameterFact {
+	return filterParameters(routine, func(param schemacache.ParameterFact) bool {
+		return param.Ordinal != 0
+	})
+}
+
+func callableParameters(routine schemacache.RoutineFact) []schemacache.ParameterFact {
+	return filterParameters(routine, func(param schemacache.ParameterFact) bool {
+		return param.Ordinal != 0 && param.Name != ""
+	})
+}
+
+func filterParameters(
+	routine schemacache.RoutineFact,
+	keep func(schemacache.ParameterFact) bool,
+) []schemacache.ParameterFact {
 	params := make([]schemacache.ParameterFact, 0, len(routine.Parameters))
 	for _, param := range routine.Parameters {
-		if param.Ordinal == 0 {
-			continue
+		if keep(param) {
+			params = append(params, param)
 		}
-		params = append(params, param)
 	}
 	return params
 }
 
-func callableParameters(routine schemacache.RoutineFact) []schemacache.ParameterFact {
-	params := make([]schemacache.ParameterFact, 0, len(routine.Parameters))
-	for _, param := range routine.Parameters {
-		if param.Ordinal == 0 || param.Name == "" {
-			continue
-		}
-		params = append(params, param)
-	}
-	return params
+// MissingArgument says the JSON body did not name a required argument.
+type MissingArgument struct {
+	Name string
+}
+
+func (e MissingArgument) Error() string {
+	return fmt.Sprintf("missing argument %q", e.Name)
 }
 
 func bindArguments(params []schemacache.ParameterFact, args map[string]any) ([]any, error) {
@@ -200,7 +213,7 @@ func bindArguments(params []schemacache.ParameterFact, args map[string]any) ([]a
 func argumentValue(name string, args map[string]any) (any, error) {
 	value, held := args[name]
 	if !held {
-		return nil, fmt.Errorf("missing argument %q", name)
+		return nil, MissingArgument{Name: name}
 	}
 	return value, nil
 }

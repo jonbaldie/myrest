@@ -88,3 +88,19 @@ func TestRoutineWithoutExecuteIsNotAResource(t *testing.T) {
 		t.Fatalf("message = %q, want %q", failure.Message, want)
 	}
 }
+
+// rpc-002 with an INOUT parameter: the stable object holds the final value.
+func TestPostRPCProcedureAnswersWithINOUTParameters(t *testing.T) {
+	response, body := apitest.PostJSON(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/bump_label",
+		`{"label":"alpha"}`,
+	)
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if string(body) != `{"label":"alpha!"}`+"\n" {
+		t.Fatalf("body = %s, want label alpha!", body)
+	}
+}

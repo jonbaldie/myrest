@@ -53,6 +53,11 @@ BEGIN
   SET dst = src;
 END;
 
+CREATE PROCEDURE bump_label(INOUT label VARCHAR(255))
+BEGIN
+  SET label = CONCAT(label, '!');
+END;
+
 -- In a configured database, but the anonymous database role gets no SELECT.
 CREATE TABLE secrets (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -91,6 +96,7 @@ GRANT EXECUTE ON FUNCTION myrest_fixture.item_count TO 'myrest_anon';
 GRANT EXECUTE ON FUNCTION myrest_fixture.add_them TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.ping TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.echo_name TO 'myrest_anon';
+GRANT EXECUTE ON PROCEDURE myrest_fixture.bump_label TO 'myrest_anon';
 GRANT SHOW_ROUTINE ON *.* TO 'authenticator'@'%';
 GRANT SELECT ON myrest_hidden.outside_items TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.items TO 'web-anon';

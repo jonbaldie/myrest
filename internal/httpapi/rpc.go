@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
@@ -47,6 +48,11 @@ func (s *Service) callRoutine(writer http.ResponseWriter, request *http.Request)
 		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
 		return
 	}
+	if _, missing := missingRequiredArgument(routine, args); missing {
+		// The parity target treats a signature mismatch as a missing routine.
+		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
+		return
+	}
 
 	result, err := s.caller.Call(request.Context(), role, routine, args)
 	if err != nil {
@@ -55,6 +61,22 @@ func (s *Service) callRoutine(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 	writeJSON(writer, http.StatusOK, result)
+}
+
+// missingRequiredArgument finds an IN or INOUT argument the body does not name.
+func missingRequiredArgument(routine schemacache.RoutineFact, args map[string]any) (string, bool) {
+	for _, param := range routine.Parameters {
+		if param.Ordinal == 0 || param.Name == "" {
+			continue
+		}
+		if strings.EqualFold(param.Mode, "OUT") {
+			continue
+		}
+		if _, held := args[param.Name]; !held {
+			return param.Name, true
+		}
+	}
+	return "", false
 }
 
 // readNamedJSONArgs reads the PostgREST named-argument object. An empty body

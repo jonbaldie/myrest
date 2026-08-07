@@ -9,8 +9,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 )
 
-// The error codes the anonymous read needs. The full code contract comes with
-// the error envelope slice.
+// The error codes of the PostgREST envelope and the myrest gap family.
 const (
 	// codeNoTable is the code of the parity target for a table the schema
 	// cache does not hold.
