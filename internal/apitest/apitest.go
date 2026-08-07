@@ -35,6 +35,16 @@ func PostJSON(t *testing.T, url, body string) (*http.Response, []byte) {
 	return do(t, http.MethodPost, url, headers, body)
 }
 
+// Post sends a POST with the given Content-Type and body and gives back the
+// answer with its body.
+func Post(t *testing.T, url, contentType, body string) (*http.Response, []byte) {
+	t.Helper()
+
+	headers := http.Header{}
+	headers.Set("Content-Type", contentType)
+	return do(t, http.MethodPost, url, headers, body)
+}
+
 // Do sends a request with the given method and headers and gives back the
 // answer with its body.
 func Do(t *testing.T, method, url string, headers http.Header) (*http.Response, []byte) {

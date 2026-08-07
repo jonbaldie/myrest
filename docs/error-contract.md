@@ -50,7 +50,10 @@ relationship applies and the request does not disambiguate. A computed
 relationship embed is a MySQL gap and uses `MYREST001`. See [Embed](embed.md).
 
 `GET /rpc` on a routine that is not read-safe under MySQL `SQL_DATA_ACCESS`
-also uses `MYREST001`. See [GET /rpc read-safe routines](rpc-get.md).
+also uses `MYREST001`. See [GET /rpc read-safe routines](rpc-get.md). Unusual
+`POST /rpc` whole-body argument modes (single unnamed `json`/`jsonb`/`bytea`/
+`text`/`xml`) use the same gap code. See
+[RPC whole-body argument modes](rpc-body-modes.md).
 
 ## MySQL SQLSTATE to HTTP status
 

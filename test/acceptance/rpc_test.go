@@ -151,3 +151,62 @@ func TestGetRPCNonReadSafeRoutineRefuses(t *testing.T) {
 		t.Fatalf("message = %q, want %q", failure.Message, want)
 	}
 }
+
+// rpc-007: a single unnamed JSON/jsonb whole-body argument refuses stably.
+func TestPostRPCWholeBodyJSONArgumentRefuses(t *testing.T) {
+	response, body := apitest.PostJSON(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/add_them",
+		`[1, 2]`,
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if want := "A single unnamed JSON RPC argument is not supported"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+}
+
+// rpc-008: a single unnamed bytea whole-body argument refuses stably.
+func TestPostRPCWholeBodyByteaArgumentRefuses(t *testing.T) {
+	response, body := apitest.Post(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/add_them",
+		"application/octet-stream",
+		"\x00\x01\x02",
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if want := "A single unnamed bytea RPC argument is not supported"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+}
+
+// rpc-009: a single unnamed text whole-body argument refuses stably.
+func TestPostRPCWholeBodyTextArgumentRefuses(t *testing.T) {
+	response, body := apitest.Post(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/add_them",
+		"text/plain",
+		"hello",
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if want := "A single unnamed text RPC argument is not supported"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+}
+
+// rpc-010: a single unnamed xml whole-body argument refuses stably.
+func TestPostRPCWholeBodyXMLArgumentRefuses(t *testing.T) {
+	response, body := apitest.Post(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/add_them",
+		"text/xml",
+		"<a/>",
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if want := "A single unnamed xml RPC argument is not supported"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+}
