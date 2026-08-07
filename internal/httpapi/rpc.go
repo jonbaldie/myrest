@@ -29,12 +29,26 @@ type Caller interface {
 // active database role and runs it with named JSON arguments. Functions follow
 // the PostgREST scalar body. Procedures return the stable OUT/INOUT object.
 func (s *Service) callRoutine(writer http.ResponseWriter, request *http.Request) {
-	role, ok := s.requestRole(writer, request)
+	args, ok := readNamedJSONArgs(writer, request)
 	if !ok {
 		return
 	}
+	s.runRoutine(writer, request, args, false)
+}
 
-	args, ok := readNamedJSONArgs(writer, request)
+// getRoutine answers GET /rpc/<name>: named query-string arguments, only when
+// the routine is read-safe under MySQL SQL_DATA_ACCESS.
+func (s *Service) getRoutine(writer http.ResponseWriter, request *http.Request) {
+	s.runRoutine(writer, request, namedQueryArgs(request), true)
+}
+
+func (s *Service) runRoutine(
+	writer http.ResponseWriter,
+	request *http.Request,
+	args map[string]any,
+	getOnly bool,
+) {
+	role, ok := s.requestRole(writer, request)
 	if !ok {
 		return
 	}
@@ -46,6 +60,15 @@ func (s *Service) callRoutine(writer http.ResponseWriter, request *http.Request)
 	routine, isResource := s.cache.Routine(role, asked)
 	if !isResource {
 		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
+		return
+	}
+	if getOnly && !routine.ReadSafe() {
+		writeFailure(
+			writer,
+			http.StatusBadRequest,
+			codePostgresOnlyFeature,
+			"Only a read-safe routine can be called with GET",
+		)
 		return
 	}
 	if _, missing := missingRequiredArgument(routine, args); missing {
@@ -77,6 +100,19 @@ func missingRequiredArgument(routine schemacache.RoutineFact, args map[string]an
 		}
 	}
 	return "", false
+}
+
+// namedQueryArgs maps each query key to its first value as a named argument.
+func namedQueryArgs(request *http.Request) map[string]any {
+	args := map[string]any{}
+	for name, values := range request.URL.Query() {
+		if len(values) == 0 {
+			args[name] = ""
+			continue
+		}
+		args[name] = values[0]
+	}
+	return args
 }
 
 // readNamedJSONArgs reads the PostgREST named-argument object. An empty body

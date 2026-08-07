@@ -52,7 +52,7 @@ const (
 	ORDER BY kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION`
 
 	routineQuery = `SELECT ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, ROUTINE_COMMENT,
-		DTD_IDENTIFIER
+		DTD_IDENTIFIER, SQL_DATA_ACCESS
 	FROM information_schema.ROUTINES
 	WHERE ROUTINE_SCHEMA IN (%s)
 	ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME`
@@ -345,6 +345,7 @@ func scanRoutine(result *sql.Rows) (schemacache.RoutineFact, bool, error) {
 		&fact.Kind,
 		&fact.Comment,
 		&returnType,
+		&fact.SQLDataAccess,
 	)
 	if err != nil {
 		return fact, false, err

@@ -16,8 +16,8 @@ import (
 // Options holds what a myrest listener needs: where to bind, the resolved
 // settings, the schema cache, the reader that runs the read as the database
 // role of the request, the writer that runs table writes, and the caller that
-// runs POST /rpc. Log takes what the operator must see and the client must
-// not; it defaults to the logger of the log package.
+// runs POST /rpc and GET /rpc. Log takes what the operator must see and the
+// client must not; it defaults to the logger of the log package.
 type Options struct {
 	Addr     string
 	Settings config.Settings
@@ -87,6 +87,7 @@ func Listen(options Options) (*Service, error) {
 	mux.HandleFunc("PATCH /{table}", service.patchTable)
 	mux.HandleFunc("DELETE /{table}", service.deleteTable)
 	mux.HandleFunc("POST /rpc/{name}", service.callRoutine)
+	mux.HandleFunc("GET /rpc/{name}", service.getRoutine)
 	mux.HandleFunc("/", writeNoHandler)
 	service.server = &http.Server{
 		Handler: withCORS(options.Settings.Server.CORSAllowedOrigins, mux),

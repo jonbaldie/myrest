@@ -96,6 +96,15 @@ CREATE FUNCTION secret_count() RETURNS BIGINT
   NO SQL
   RETURN 99;
 
+-- MODIFIES SQL DATA: not read-safe for GET /rpc (rpc-004).
+-- A procedure is used because MySQL with binary logging refuses a
+-- MODIFIES SQL DATA function unless log_bin_trust_function_creators is on.
+CREATE PROCEDURE write_marker()
+  MODIFIES SQL DATA
+BEGIN
+  INSERT INTO addresses (label) VALUES ('rpc-write');
+END;
+
 CREATE PROCEDURE ping()
 BEGIN
   DO 0;
@@ -155,9 +164,11 @@ GRANT DELETE ON myrest_fixture.items TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.items_view TO 'myrest_anon';
 GRANT EXECUTE ON FUNCTION myrest_fixture.item_count TO 'myrest_anon';
 GRANT EXECUTE ON FUNCTION myrest_fixture.add_them TO 'myrest_anon';
+GRANT EXECUTE ON PROCEDURE myrest_fixture.write_marker TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.ping TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.echo_name TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.bump_label TO 'myrest_anon';
+GRANT INSERT ON myrest_fixture.addresses TO 'myrest_anon';
 GRANT SHOW_ROUTINE ON *.* TO 'authenticator'@'%';
 GRANT SELECT ON myrest_hidden.outside_items TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.items TO 'web-anon';

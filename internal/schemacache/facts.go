@@ -1,5 +1,7 @@
 package schemacache
 
+import "strings"
+
 // CommentFact is a comment MySQL holds on a table or a view.
 type CommentFact struct {
 	Relation TableID
@@ -44,11 +46,25 @@ type ParameterFact struct {
 
 // RoutineFact is one function or procedure of a configured MySQL database.
 type RoutineFact struct {
-	ID         RoutineID
-	Kind       string
-	Comment    string
-	ReturnType string
-	Parameters []ParameterFact
+	ID            RoutineID
+	Kind          string
+	Comment       string
+	ReturnType    string
+	SQLDataAccess string
+	Parameters    []ParameterFact
+}
+
+// ReadSafe reports whether myrest may call this routine with GET /rpc.
+// The decision uses only MySQL ROUTINES.SQL_DATA_ACCESS:
+// NO SQL, CONTAINS SQL, and READS SQL DATA are read-safe; MODIFIES SQL DATA
+// and any other or empty value are not.
+func (r RoutineFact) ReadSafe() bool {
+	switch strings.ToUpper(strings.TrimSpace(r.SQLDataAccess)) {
+	case "NO SQL", "CONTAINS SQL", "READS SQL DATA":
+		return true
+	default:
+		return false
+	}
 }
 
 // TablePrivilegeFact says that a database role holds one table privilege the
