@@ -104,3 +104,50 @@ func TestPostRPCProcedureAnswersWithINOUTParameters(t *testing.T) {
 		t.Fatalf("body = %s, want label alpha!", body)
 	}
 }
+
+// rpc-003: GET /rpc/<read-safe routine> with named query-string arguments
+// succeeds over MySQL 8.
+func TestGetRPCReadSafeRoutineWithNamedQueryArgs(t *testing.T) {
+	response, body := apitest.Get(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/add_them?a=1&b=2",
+	)
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if contentType := response.Header.Get("Content-Type"); contentType != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", contentType)
+	}
+	if string(body) != "3\n" {
+		t.Fatalf("body = %s, want 3", body)
+	}
+}
+
+// A read-safe function that reads SQL data also answers over GET /rpc.
+func TestGetRPCReadSafeRoutineThatReadsSQLData(t *testing.T) {
+	response, body := apitest.Get(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/item_count",
+	)
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if string(body) != "2\n" {
+		t.Fatalf("body = %s, want 2", body)
+	}
+}
+
+// rpc-004: GET /rpc/<routine that is not read-safe> refuses stably.
+func TestGetRPCNonReadSafeRoutineRefuses(t *testing.T) {
+	response, body := apitest.Get(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/write_marker",
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if want := "Only a read-safe routine can be called with GET"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+}

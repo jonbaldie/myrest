@@ -51,10 +51,11 @@ func TestCacheHoldsTheCatalogFactsTheSpecNames(t *testing.T) {
 		},
 		Routines: []schemacache.RoutineFact{
 			{
-				ID:       countRoutine,
-				Kind:     "FUNCTION",
-				Comment:  "how many items",
-				ReturnType: "bigint",
+				ID:            countRoutine,
+				Kind:          "FUNCTION",
+				Comment:       "how many items",
+				ReturnType:    "bigint",
+				SQLDataAccess: "READS SQL DATA",
 				Parameters: []schemacache.ParameterFact{
 					{Name: "", Mode: "", Ordinal: 0, DataType: "bigint"},
 				},
@@ -124,10 +125,11 @@ func TestCacheHoldsTheCatalogFactsTheSpecNames(t *testing.T) {
 	}
 	if got := cache.Routines(); !reflect.DeepEqual(got, []schemacache.RoutineFact{
 		{
-			ID:         countRoutine,
-			Kind:       "FUNCTION",
-			Comment:    "how many items",
-			ReturnType: "bigint",
+			ID:            countRoutine,
+			Kind:          "FUNCTION",
+			Comment:       "how many items",
+			ReturnType:    "bigint",
+			SQLDataAccess: "READS SQL DATA",
 			Parameters: []schemacache.ParameterFact{
 				{Name: "", Mode: "", Ordinal: 0, DataType: "bigint"},
 			},

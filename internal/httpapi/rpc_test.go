@@ -40,6 +40,7 @@ func rpcCache() *schemacache.Cache {
 	addThem := schemacache.RoutineID{Database: "shop", Name: "add_them"}
 	ping := schemacache.RoutineID{Database: "shop", Name: "ping"}
 	secret := schemacache.RoutineID{Database: "shop", Name: "secret_count"}
+	writeMarker := schemacache.RoutineID{Database: "shop", Name: "write_marker"}
 
 	return schemacache.Build(schemacache.Catalog{
 		Tables: []schemacache.TableID{items},
@@ -50,9 +51,10 @@ func rpcCache() *schemacache.Cache {
 		Selects: []schemacache.SelectFact{{Role: "myrest_anon", Table: items}},
 		Routines: []schemacache.RoutineFact{
 			{
-				ID:         addThem,
-				Kind:       "FUNCTION",
-				ReturnType: "bigint",
+				ID:            addThem,
+				Kind:          "FUNCTION",
+				ReturnType:    "bigint",
+				SQLDataAccess: "NO SQL",
 				Parameters: []schemacache.ParameterFact{
 					{Ordinal: 0, DataType: "bigint"},
 					{Name: "a", Mode: "IN", Ordinal: 1, DataType: "bigint"},
@@ -60,17 +62,25 @@ func rpcCache() *schemacache.Cache {
 				},
 			},
 			{
-				ID:   ping,
-				Kind: "PROCEDURE",
+				ID:            ping,
+				Kind:          "PROCEDURE",
+				SQLDataAccess: "CONTAINS SQL",
 			},
 			{
-				ID:   secret,
-				Kind: "FUNCTION",
+				ID:            secret,
+				Kind:          "FUNCTION",
+				SQLDataAccess: "NO SQL",
+			},
+			{
+				ID:            writeMarker,
+				Kind:          "PROCEDURE",
+				SQLDataAccess: "MODIFIES SQL DATA",
 			},
 		},
 		RoutinePrivileges: []schemacache.RoutinePrivilegeFact{
 			{Role: "myrest_anon", Routine: addThem, Privilege: "EXECUTE"},
 			{Role: "myrest_anon", Routine: ping, Privilege: "EXECUTE"},
+			{Role: "myrest_anon", Routine: writeMarker, Privilege: "EXECUTE"},
 		},
 	})
 }
@@ -177,4 +187,51 @@ func TestPostRPCWithAMissingArgumentIsNotAFoundRoutine(t *testing.T) {
 	)
 
 	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST202")
+}
+
+// rpc-003: GET /rpc/<read-safe routine> with named query-string arguments
+// succeeds.
+func TestGetRPCReadSafeRoutineWithNamedQueryArgsSucceeds(t *testing.T) {
+	t.Parallel()
+
+	source := &caller{body: int64(3)}
+	response, body := apitest.Get(
+		t,
+		serveRPC(t, source).URL()+"/rpc/add_them?a=1&b=2",
+	)
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if contentType := response.Header.Get("Content-Type"); contentType != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", contentType)
+	}
+	if string(body) != "3\n" {
+		t.Fatalf("body = %q, want 3", body)
+	}
+	if source.routine.ID.Name != "add_them" {
+		t.Errorf("routine = %v, want add_them", source.routine.ID)
+	}
+	if source.args["a"] != "1" || source.args["b"] != "2" {
+		t.Errorf("args = %#v, want a=1 b=2 as query-string values", source.args)
+	}
+}
+
+// rpc-004: GET /rpc/<routine that is not read-safe> refuses stably.
+func TestGetRPCNonReadSafeRoutineRefusesStably(t *testing.T) {
+	t.Parallel()
+
+	source := &caller{body: int64(1)}
+	response, body := apitest.Get(
+		t,
+		serveRPC(t, source).URL()+"/rpc/write_marker",
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if want := "Only a read-safe routine can be called with GET"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+	if source.routine.ID.Name != "" {
+		t.Fatalf("caller ran for %v, want no call", source.routine.ID)
+	}
 }

@@ -29,16 +29,44 @@ type Caller interface {
 // active database role and runs it with named JSON arguments. Functions follow
 // the PostgREST scalar body. Procedures return the stable OUT/INOUT object.
 func (s *Service) callRoutine(writer http.ResponseWriter, request *http.Request) {
-	role, ok := s.requestRole(writer, request)
-	if !ok {
-		return
-	}
-
 	args, ok := readNamedJSONArgs(writer, request)
 	if !ok {
 		return
 	}
+	role, asked, routine, ok := s.lookupRoutine(writer, request)
+	if !ok {
+		return
+	}
+	s.invokeRoutine(writer, request, role, asked, routine, args)
+}
 
+// getRoutine answers GET /rpc/<name>: named query-string arguments, only when
+// the routine is read-safe under MySQL SQL_DATA_ACCESS.
+func (s *Service) getRoutine(writer http.ResponseWriter, request *http.Request) {
+	role, asked, routine, ok := s.lookupRoutine(writer, request)
+	if !ok {
+		return
+	}
+	if !routine.ReadSafe() {
+		writeFailure(
+			writer,
+			http.StatusBadRequest,
+			codePostgresOnlyFeature,
+			"Only a read-safe routine can be called with GET",
+		)
+		return
+	}
+	s.invokeRoutine(writer, request, role, asked, routine, namedQueryArgs(request))
+}
+
+func (s *Service) lookupRoutine(
+	writer http.ResponseWriter,
+	request *http.Request,
+) (schemacache.Role, schemacache.RoutineID, schemacache.RoutineFact, bool) {
+	role, ok := s.requestRole(writer, request)
+	if !ok {
+		return "", schemacache.RoutineID{}, schemacache.RoutineFact{}, false
+	}
 	asked := schemacache.RoutineID{
 		Database: s.settings.DefaultDatabase(),
 		Name:     request.PathValue("name"),
@@ -46,8 +74,19 @@ func (s *Service) callRoutine(writer http.ResponseWriter, request *http.Request)
 	routine, isResource := s.cache.Routine(role, asked)
 	if !isResource {
 		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
-		return
+		return "", schemacache.RoutineID{}, schemacache.RoutineFact{}, false
 	}
+	return role, asked, routine, true
+}
+
+func (s *Service) invokeRoutine(
+	writer http.ResponseWriter,
+	request *http.Request,
+	role schemacache.Role,
+	asked schemacache.RoutineID,
+	routine schemacache.RoutineFact,
+	args map[string]any,
+) {
 	if _, missing := missingRequiredArgument(routine, args); missing {
 		// The parity target treats a signature mismatch as a missing routine.
 		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
@@ -77,6 +116,15 @@ func missingRequiredArgument(routine schemacache.RoutineFact, args map[string]an
 		}
 	}
 	return "", false
+}
+
+// namedQueryArgs maps each query key to its first value as a named argument.
+func namedQueryArgs(request *http.Request) map[string]any {
+	args := map[string]any{}
+	for name, values := range request.URL.Query() {
+		args[name] = values[0]
+	}
+	return args
 }
 
 // readNamedJSONArgs reads the PostgREST named-argument object. An empty body

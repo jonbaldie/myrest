@@ -48,10 +48,22 @@ func TestSchemaCacheHoldsTheLiveCatalog(t *testing.T) {
 	for _, routine := range routines {
 		if routine.ID == countRoutine && routine.Kind == "FUNCTION" {
 			foundCount = true
+			if routine.SQLDataAccess != "READS SQL DATA" {
+				t.Fatalf("item_count SQLDataAccess = %q, want READS SQL DATA", routine.SQLDataAccess)
+			}
+			if !routine.ReadSafe() {
+				t.Fatal("item_count must be read-safe")
+			}
 		}
 	}
 	if !foundCount {
 		t.Fatalf("routines = %#v, want item_count FUNCTION among them", routines)
+	}
+	writeMarker := schemacache.RoutineID{Database: "myrest_fixture", Name: "write_marker"}
+	for _, routine := range routines {
+		if routine.ID == writeMarker && routine.ReadSafe() {
+			t.Fatalf("write_marker SQLDataAccess = %q must not be read-safe", routine.SQLDataAccess)
+		}
 	}
 	if !cache.HasTablePrivilege(anonRole, items, "INSERT") {
 		t.Fatal("cache lost the INSERT grant")
