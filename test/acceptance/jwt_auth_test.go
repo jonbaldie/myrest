@@ -12,6 +12,7 @@ import (
 	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/mysqldb"
+	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
@@ -183,12 +184,12 @@ func TestRoleSwitchKeepsAuthenticatorAsCurrentUser(t *testing.T) {
 		ID:      schemacache.TableID{Database: "myrest_fixture", Name: "secrets"},
 		Columns: []schemacache.Column{{Name: "id"}, {Name: "payload"}},
 	}
-	rows, err := pool.Read(t.Context(), userRole, table)
+	result, err := pool.Read(t.Context(), userRole, table, readquery.Query{})
 	if err != nil {
 		t.Fatalf("read secrets as %s: %v", userRole, err)
 	}
-	if len(rows) != 1 {
-		t.Fatalf("got %d rows, want 1", len(rows))
+	if len(result.Rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(result.Rows))
 	}
 }
 
