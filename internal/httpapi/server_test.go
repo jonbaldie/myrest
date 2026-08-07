@@ -16,6 +16,7 @@ import (
 	"github.com/jonbaldie/myrest/internal/apitest"
 	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/httpapi"
+	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
@@ -28,25 +29,29 @@ import (
 // the service asked of it.
 type reader struct {
 	read []rows.Row
+	// total is the exact count when Prefer count=exact was asked.
+	total *int64
 	// failure is what the database says when it refuses the read.
 	failure error
 	// stoppable records whether the read carried a context a request can stop.
 	stoppable bool
 	role      schemacache.Role
 	table     schemacache.Table
+	query     readquery.Query
 }
 
 func (r *reader) Read(
 	ctx context.Context,
 	role schemacache.Role,
 	table schemacache.Table,
-) ([]rows.Row, error) {
+	query readquery.Query,
+) (readquery.Result, error) {
 	r.stoppable = ctx != nil && ctx.Done() != nil
-	r.role, r.table = role, table
+	r.role, r.table, r.query = role, table, query
 	if r.failure != nil {
-		return nil, r.failure
+		return readquery.Result{}, r.failure
 	}
-	return r.read, nil
+	return readquery.Result{Rows: r.read, Total: r.total}, nil
 }
 
 // cache holds one readable table and one the anonymous role cannot select.

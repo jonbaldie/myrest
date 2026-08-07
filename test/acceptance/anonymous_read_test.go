@@ -17,6 +17,7 @@ import (
 	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/mysqldb"
 	"github.com/jonbaldie/myrest/internal/mysqltest"
+	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
@@ -206,7 +207,7 @@ func TestTheAuthenticatorAloneCannotReadTheResource(t *testing.T) {
 		ID:      schemacache.TableID{Database: "myrest_fixture", Name: "items"},
 		Columns: []schemacache.Column{{Name: "id"}, {Name: "name"}, {Name: "name_len"}},
 	}
-	if _, err := pool.Read(context.Background(), "", table); err == nil {
+	if _, err := pool.Read(context.Background(), "", table, readquery.Query{}); err == nil {
 		t.Fatal("the authenticator read the table without a role switch")
 	}
 

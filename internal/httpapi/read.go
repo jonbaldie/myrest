@@ -2,22 +2,38 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
-	"github.com/jonbaldie/myrest/internal/rows"
+	"github.com/jonbaldie/myrest/internal/config"
+	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
-// Reader reads the rows of a resource as one database role.
+// Reader reads a resource as one database role under an ordinary-read query.
 type Reader interface {
-	Read(ctx context.Context, role schemacache.Role, table schemacache.Table) ([]rows.Row, error)
+	Read(
+		ctx context.Context,
+		role schemacache.Role,
+		table schemacache.Table,
+		query readquery.Query,
+	) (readquery.Result, error)
 }
 
-// readTable answers GET /<table>: it finds the resource of the active database
-// role in the schema cache, and reads all of its rows. A request names no
-// database, so the table comes from the default database; the profile header
-// of the parity target comes with the content negotiation ticket.
+const (
+	// codeParseFailure is the parity-target code for a bad query string.
+	codeParseFailure = "PGRST100"
+	// codeNoColumn is the parity-target code for a missing column.
+	codeNoColumn = "PGRST204"
+)
+
+// readTable answers GET and HEAD /<table>: it finds the resource of the active
+// database role in the schema cache, and reads under the ordinary-read query.
+// A request names no database, so the table comes from the default database;
+// the profile header of the parity target comes with the content negotiation
+// ticket.
 func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 	if hasPostgRESTFullTextSearchOperator(request) {
 		writeUnsupportedFeature(
@@ -26,23 +42,15 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 		)
 		return
 	}
-	if hasPostgRESTCastOrDomainSyntax(request) {
-		writeUnsupportedFeature(
-			writer,
-			"PostgREST domain and cast features are not available with MySQL",
-		)
-		return
-	}
-	if hasPostgRESTComputedFieldSyntax(request) {
-		writeUnsupportedFeature(
-			writer,
-			"PostgREST row computed-field features are not available with MySQL",
-		)
-		return
-	}
 
 	role, ok := s.requestRole(writer, request)
 	if !ok {
+		return
+	}
+
+	query, err := parseReadQuery(request, s.settings.DB.MaxRows)
+	if err != nil {
+		writeQueryFailure(writer, err)
 		return
 	}
 
@@ -56,15 +64,96 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	read, err := s.reader.Read(request.Context(), role, table)
+	read, err := s.reader.Read(request.Context(), role, table, query)
 	if err != nil {
+		if isUnknownColumn(err) {
+			writeFailure(writer, http.StatusBadRequest, codeNoColumn, err.Error())
+			return
+		}
 		// The words of the database name the accounts of the deployment,
 		// so the operator reads them and the client does not.
 		s.log.Printf("myrest: read %s.%s as %s: %v", asked.Database, asked.Name, role, err)
 		writeDatabaseFailure(writer, err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, read)
+
+	writeRead(writer, request.Method == http.MethodHead, query, read)
+}
+
+func parseReadQuery(request *http.Request, maxRows config.RowLimit) (readquery.Query, error) {
+	query, err := readquery.Parse(request.URL.Query(), request.Header.Values("Prefer"))
+	if err != nil {
+		return readquery.Query{}, err
+	}
+	if maxRows.Capped {
+		rows := uint64(maxRows.Rows)
+		query.MaxRows = &rows
+	}
+	return query, nil
+}
+
+func writeQueryFailure(writer http.ResponseWriter, err error) {
+	var parse readquery.ParseFailure
+	if errors.As(err, &parse) {
+		message := parse.Message
+		if strings.Contains(message, "not available with MySQL") {
+			writeUnsupportedFeature(writer, message)
+			return
+		}
+		writeFailure(writer, http.StatusBadRequest, codeParseFailure, message)
+		return
+	}
+	writeFailure(writer, http.StatusBadRequest, codeParseFailure, err.Error())
+}
+
+func isUnknownColumn(err error) bool {
+	return err != nil && strings.HasPrefix(err.Error(), "column not found:")
+}
+
+func writeRead(writer http.ResponseWriter, head bool, query readquery.Query, read readquery.Result) {
+	writer.Header().Set("Range-Unit", "items")
+	writer.Header().Set("Content-Range", contentRange(query, read))
+	status := readStatus(query, read)
+	if head {
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(status)
+		return
+	}
+	writeJSON(writer, status, read.Rows)
+}
+
+func contentRange(query readquery.Query, read readquery.Result) string {
+	if len(read.Rows) == 0 {
+		if read.Total != nil {
+			return "*/" + strconv.FormatInt(*read.Total, 10)
+		}
+		return "*/*"
+	}
+	start := query.Offset
+	end := start + uint64(len(read.Rows)) - 1
+	rangePart := strconv.FormatUint(start, 10) + "-" + strconv.FormatUint(end, 10)
+	if read.Total != nil {
+		return rangePart + "/" + strconv.FormatInt(*read.Total, 10)
+	}
+	return rangePart + "/*"
+}
+
+func readStatus(query readquery.Query, read readquery.Result) int {
+	if read.Total == nil {
+		return http.StatusOK
+	}
+	if len(read.Rows) == 0 {
+		if *read.Total == 0 {
+			return http.StatusOK
+		}
+		return http.StatusPartialContent
+	}
+	start := query.Offset
+	end := start + uint64(len(read.Rows)) - 1
+	if start == 0 && end+1 == uint64(*read.Total) {
+		return http.StatusOK
+	}
+	return http.StatusPartialContent
 }
 
 // noTableMessage names the object the client asked for, the way the parity
@@ -95,29 +184,4 @@ func isPostgRESTFullTextSearchOperator(operator string) bool {
 	default:
 		return false
 	}
-}
-
-// hasPostgRESTCastOrDomainSyntax finds a PostgREST cast or domain mark in the
-// select list. MySQL has no matching catalog feature, so myrest refuses it.
-func hasPostgRESTCastOrDomainSyntax(request *http.Request) bool {
-	for _, value := range request.URL.Query()["select"] {
-		if strings.Contains(value, "::") {
-			return true
-		}
-	}
-	return false
-}
-
-// hasPostgRESTComputedFieldSyntax finds a PostgREST row computed-field call in
-// select. MySQL has no row-type functions of that kind, so myrest refuses it.
-func hasPostgRESTComputedFieldSyntax(request *http.Request) bool {
-	for _, value := range request.URL.Query()["select"] {
-		for _, part := range strings.Split(value, ",") {
-			part = strings.TrimSpace(part)
-			if strings.HasSuffix(part, "()") {
-				return true
-			}
-		}
-	}
-	return false
 }

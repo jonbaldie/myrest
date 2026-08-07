@@ -2,8 +2,9 @@
 
 myrest will be an HTTP API service that exposes MySQL 8.0+ with PostgREST-compatible client contracts.
 
-The service serves Bearer JWT authentication and an **anonymous read** of one
-exposed table. Every other part of the PostgREST surface is still to come.
+The service serves Bearer JWT authentication and ordinary reads of one exposed
+table (column select, full-match filters, order, page, HEAD, and exact count).
+Every other part of the PostgREST surface is still to come.
 
 ## Requirements
 
@@ -31,8 +32,8 @@ go install github.com/quality-gates/mutago/v2/cmd/mutago@latest
 A client that sends no JWT reads a table as the **anonymous database role** of `db-anon-role`:
 
 ```bash
-curl http://127.0.0.1:3000/items
-[{"id":1,"name":"alpha"},{"id":2,"name":"beta"}]
+curl "http://127.0.0.1:3000/items?select=id,name&name=eq.alpha&order=id.asc&limit=1"
+[{"id":1,"name":"alpha"}]
 ```
 
 A client that sends a valid Bearer JWT reads as the **database role** named by the role claim (default `role`):
@@ -42,6 +43,11 @@ curl http://127.0.0.1:3000/secrets \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 [{"id":1,"payload":"top-secret"}]
 ```
+
+`HEAD` uses the same read intent and returns no body. `Prefer: count=exact`
+puts the exact total in `Content-Range`. `db-max-rows` is a hard row cap when
+set. See [Ordinary read](docs/ordinary-read.md) for the full-match filter
+operator list.
 
 myrest opens pooled MySQL connections as the **authenticator** of `db-uri` and activates the database role for each request, so MySQL grants — not a second access list — say what a client may read. After the **role switch**, grants follow the active role, but SQL `CURRENT_USER()` stays the authenticator (a documented **partial match**). See [Authentication](docs/auth.md).
 
@@ -54,7 +60,7 @@ curl http://127.0.0.1:3000/secrets
 
 When MySQL itself refuses a read — a grant taken away after start-up, for example — the client gets the same envelope with a message of myrest. What MySQL said names the accounts of the deployment, so it goes to the log of the operator and not to the client.
 
-The read is narrow for now: all columns, no filter, no order, and no page. myrest builds the **schema cache** from the MySQL catalog at start-up. Send `SIGUSR1` to reload it after DDL or grant changes; a process restart is not required for that refresh. Config changes still need a restart.
+myrest builds the **schema cache** from the MySQL catalog at start-up. Send `SIGUSR1` to reload it after DDL or grant changes; a process restart is not required for that refresh. Config changes still need a restart.
 
 ## CORS and proxy URLs
 

@@ -6,19 +6,67 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
-// readTable reads every column of every row of the table. The read is narrow
-// on purpose: no filter, no order, and no page. Later tickets add those.
-func readTable(ctx context.Context, conn *sql.Conn, table schemacache.Table) ([]rows.Row, error) {
+// ReadResult is the answer of one ordinary read.
+type ReadResult = readquery.Result
+
+// readTable reads the resource under the ordinary-read query.
+func readTable(
+	ctx context.Context,
+	conn *sql.Conn,
+	table schemacache.Table,
+	query readquery.Query,
+) (readquery.Result, error) {
 	if len(table.Columns) == 0 {
-		return nil, fmt.Errorf("the table %s.%s holds no column", table.ID.Database, table.ID.Name)
+		return readquery.Result{}, fmt.Errorf("the table %s.%s holds no column", table.ID.Database, table.ID.Name)
 	}
 
-	names := columnNames(table)
-	result, err := conn.QueryContext(ctx, selectStatement(table, names))
+	total, err := exactTotal(ctx, conn, table, query)
+	if err != nil {
+		return readquery.Result{}, err
+	}
+	read, err := selectRows(ctx, conn, table, query)
+	if err != nil {
+		return readquery.Result{}, err
+	}
+	return readquery.Result{Rows: read, Total: total}, nil
+}
+
+func exactTotal(
+	ctx context.Context,
+	conn *sql.Conn,
+	table schemacache.Table,
+	query readquery.Query,
+) (*int64, error) {
+	if !query.ExactCount {
+		return nil, nil
+	}
+	parts, err := buildCount(table, query)
+	if err != nil {
+		return nil, err
+	}
+	var counted int64
+	if err := conn.QueryRowContext(ctx, parts.statement, parts.args...).Scan(&counted); err != nil {
+		return nil, err
+	}
+	return &counted, nil
+}
+
+func selectRows(
+	ctx context.Context,
+	conn *sql.Conn,
+	table schemacache.Table,
+	query readquery.Query,
+) ([]rows.Row, error) {
+	parts, err := buildSelect(table, query)
+	if err != nil {
+		return nil, err
+	}
+	result, err := conn.QueryContext(ctx, parts.statement, parts.args...)
 	if err != nil {
 		return nil, err
 	}
@@ -26,17 +74,17 @@ func readTable(ctx context.Context, conn *sql.Conn, table schemacache.Table) ([]
 
 	read := []rows.Row{}
 	for result.Next() {
-		values, err := scanValues(result, len(names))
+		values, err := scanValues(result, len(parts.columns))
 		if err != nil {
 			return nil, err
 		}
-		read = append(read, rows.Row{Columns: names, Values: values})
+		read = append(read, rows.Row{Columns: parts.columns, Values: values})
 	}
 	return read, result.Err()
 }
 
-// selectStatement builds the read of one table. The names come from the schema
-// cache, never from the request, and MySQL quoting keeps them one identifier.
+// selectStatement builds the unbounded read of one table. Kept for unit tests
+// of identifier quoting.
 func selectStatement(table schemacache.Table, names []string) string {
 	quoted := make([]string, len(names))
 	for i, name := range names {

@@ -8,7 +8,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 
-	"github.com/jonbaldie/myrest/internal/rows"
+	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
@@ -54,23 +54,24 @@ func (p *Pool) Catalog(ctx context.Context, databases []string) (schemacache.Cat
 	return catalog, err
 }
 
-// Read gives back every row of the table, as the database role. MySQL applies
-// the grants of that role, so a table the role lost SELECT on gives an error
-// even when the schema cache still holds it.
+// Read gives back the rows of the table under the ordinary-read query, as the
+// database role. MySQL applies the grants of that role, so a table the role
+// lost SELECT on gives an error even when the schema cache still holds it.
 func (p *Pool) Read(
 	ctx context.Context,
 	role schemacache.Role,
 	table schemacache.Table,
-) ([]rows.Row, error) {
+	query readquery.Query,
+) (readquery.Result, error) {
 	statement, err := roleSwitchStatement(role)
 	if err != nil {
-		return nil, err
+		return readquery.Result{}, err
 	}
 
-	var read []rows.Row
+	var read readquery.Result
 	err = p.onConnection(ctx, statement, func(ctx context.Context, conn *sql.Conn) error {
 		var readErr error
-		read, readErr = readTable(ctx, conn, table)
+		read, readErr = readTable(ctx, conn, table, query)
 		return readErr
 	})
 	return read, err
