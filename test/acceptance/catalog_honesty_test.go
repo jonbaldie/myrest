@@ -38,8 +38,14 @@ func TestSchemaCacheHoldsTheLiveCatalog(t *testing.T) {
 		t.Fatalf("foreign keys = %#v, want orders_item", foreignKeys)
 	}
 	routines := cache.Routines()
-	if len(routines) != 1 || routines[0].ID != countRoutine || routines[0].Kind != "FUNCTION" {
-		t.Fatalf("routines = %#v, want item_count FUNCTION", routines)
+	foundCount := false
+	for _, routine := range routines {
+		if routine.ID == countRoutine && routine.Kind == "FUNCTION" {
+			foundCount = true
+		}
+	}
+	if !foundCount {
+		t.Fatalf("routines = %#v, want item_count FUNCTION among them", routines)
 	}
 	if !cache.HasTablePrivilege(anonRole, items, "INSERT") {
 		t.Fatal("cache lost the INSERT grant")

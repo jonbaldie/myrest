@@ -48,7 +48,7 @@ func writeDatabaseFailure(writer http.ResponseWriter, err error) {
 		writer,
 		mysqlErrorStatus(err),
 		codeMySQLDatabaseFailure,
-		"The database did not answer the read",
+		"The database did not answer the request",
 	)
 }
 

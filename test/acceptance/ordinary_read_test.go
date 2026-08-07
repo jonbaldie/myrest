@@ -96,6 +96,7 @@ func TestDBMaxRowsBoundsRowsOverMySQL(t *testing.T) {
 		Settings: settings,
 		Cache:    schemacache.Build(catalog),
 		Reader:   pool,
+		Caller:   pool,
 	})
 	if err != nil {
 		t.Fatalf("listen: %v", err)

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -25,12 +26,31 @@ func Get(t *testing.T, url string) (*http.Response, []byte) {
 	return Do(t, http.MethodGet, url, nil)
 }
 
+// PostJSON sends a POST with a JSON body and gives back the answer with its body.
+func PostJSON(t *testing.T, url, body string) (*http.Response, []byte) {
+	t.Helper()
+
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	return do(t, http.MethodPost, url, headers, body)
+}
+
 // Do sends a request with the given method and headers and gives back the
 // answer with its body.
 func Do(t *testing.T, method, url string, headers http.Header) (*http.Response, []byte) {
 	t.Helper()
 
-	request, err := http.NewRequest(method, url, nil)
+	return do(t, method, url, headers, "")
+}
+
+func do(t *testing.T, method, url string, headers http.Header, body string) (*http.Response, []byte) {
+	t.Helper()
+
+	var reader io.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+	request, err := http.NewRequest(method, url, reader)
 	if err != nil {
 		t.Fatalf("new %s request for %s: %v", method, url, err)
 	}
@@ -46,11 +66,11 @@ func Do(t *testing.T, method, url string, headers http.Header) (*http.Response, 
 	}
 	t.Cleanup(func() { _ = response.Body.Close() })
 
-	body, err := io.ReadAll(response.Body)
+	answer, err := io.ReadAll(response.Body)
 	if err != nil {
 		t.Fatalf("read the body of %s %s: %v", method, url, err)
 	}
-	return response, body
+	return response, answer
 }
 
 // AssertEnvelope holds the error contract of err-001: the status, the JSON

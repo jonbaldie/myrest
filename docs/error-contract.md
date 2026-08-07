@@ -3,7 +3,7 @@
 myrest sends every failure as a JSON object with these fields:
 
 ```json
-{"code":"MYREST002","message":"The database did not answer the read","details":null,"hint":null}
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
 ```
 
 `code` and `message` are text. `details` and `hint` are `null` until a

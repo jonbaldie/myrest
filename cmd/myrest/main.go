@@ -40,6 +40,7 @@ func main() {
 		Settings: settings,
 		Cache:    cache,
 		Reader:   pool,
+		Caller:   pool,
 	})
 	if err != nil {
 		log.Fatalf("myrest: listen: %v", err)

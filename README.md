@@ -2,9 +2,10 @@
 
 myrest will be an HTTP API service that exposes MySQL 8.0+ with PostgREST-compatible client contracts.
 
-The service serves Bearer JWT authentication and ordinary reads of one exposed
-table (column select, full-match filters, order, page, HEAD, and exact count).
-Every other part of the PostgREST surface is still to come.
+The service serves Bearer JWT authentication, ordinary reads of one exposed
+table (column select, full-match filters, order, page, HEAD, and exact count),
+and `POST /rpc` for functions and procedures. Every other part of the
+PostgREST surface is still to come.
 
 ## Requirements
 
@@ -61,6 +62,19 @@ curl http://127.0.0.1:3000/secrets
 When MySQL itself refuses a read — a grant taken away after start-up, for example — the client gets the same envelope with a message of myrest. What MySQL said names the accounts of the deployment, so it goes to the log of the operator and not to the client.
 
 myrest builds the **schema cache** from the MySQL catalog at start-up. Send `SIGUSR1` to reload it after DDL or grant changes; a process restart is not required for that refresh. Config changes still need a restart.
+
+## Calling a routine
+
+`POST /rpc/<name>` calls a MySQL function or procedure in the **default database** when the active **database role** holds `EXECUTE` on it. Named JSON object keys are the argument names:
+
+```bash
+curl -X POST http://127.0.0.1:3000/rpc/add_them \
+  -H 'Content-Type: application/json' \
+  -d '{"a":1,"b":2}'
+3
+```
+
+Functions match the PostgREST scalar body. Procedures use the same path and return one stable JSON object of `OUT`/`INOUT` values (or `{}` when there are none). See [Procedure RPC response shape](docs/rpc-procedures.md).
 
 ## CORS and proxy URLs
 
