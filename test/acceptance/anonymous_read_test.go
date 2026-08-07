@@ -87,6 +87,7 @@ func serveWithPoolAs(t *testing.T, role string, databases ...string) (*mysqldb.P
 		Settings: settings,
 		Cache:    cache,
 		Reader:   pool,
+		Caller:   pool,
 	})
 	if err != nil {
 		t.Fatalf("listen: %v", err)

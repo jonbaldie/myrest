@@ -219,6 +219,55 @@ func TestEmptyCatalogHoldsNoResource(t *testing.T) {
 	}
 }
 
+func routine(database, name string) schemacache.RoutineID {
+	return schemacache.RoutineID{Database: database, Name: name}
+}
+
+// A routine the active database role can EXECUTE is a routine resource.
+func TestRoutineWithExecuteIsAResource(t *testing.T) {
+	t.Parallel()
+
+	count := routine("shop", "item_count")
+	cache := schemacache.Build(schemacache.Catalog{
+		Routines: []schemacache.RoutineFact{{
+			ID:         count,
+			Kind:       "FUNCTION",
+			ReturnType: "bigint",
+			Parameters: []schemacache.ParameterFact{
+				{Ordinal: 0, DataType: "bigint"},
+			},
+		}},
+		RoutinePrivileges: []schemacache.RoutinePrivilegeFact{
+			{Role: anonRole, Routine: count, Privilege: "EXECUTE"},
+		},
+	})
+
+	found, ok := cache.Routine(anonRole, count)
+	if !ok {
+		t.Fatal("shop.item_count is not a routine resource for myrest_anon")
+	}
+	if found.ID != count || found.Kind != "FUNCTION" {
+		t.Fatalf("routine = %#v, want FUNCTION shop.item_count", found)
+	}
+}
+
+// A routine without EXECUTE is not a routine resource.
+func TestRoutineWithoutExecuteIsNotAResource(t *testing.T) {
+	t.Parallel()
+
+	secret := routine("shop", "secret_count")
+	cache := schemacache.Build(schemacache.Catalog{
+		Routines: []schemacache.RoutineFact{{
+			ID:   secret,
+			Kind: "FUNCTION",
+		}},
+	})
+
+	if _, ok := cache.Routine(anonRole, secret); ok {
+		t.Fatal("a routine without EXECUTE became a resource")
+	}
+}
+
 // Replace puts the new catalog into the cache, so a table that arrives after
 // the first build becomes a resource without a new Cache value.
 func TestReplaceShowsANewSelectGrant(t *testing.T) {

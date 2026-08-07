@@ -87,6 +87,7 @@ type Cache struct {
 	keys              map[TableID][]KeyFact
 	foreignKeys       []ForeignKeyFact
 	routines          []RoutineFact
+	routinesByID      map[RoutineID]RoutineFact
 	selects           map[Role]map[TableID]bool
 	tablePrivileges   map[Role]map[tablePrivilege]bool
 	routinePrivileges map[Role]map[routinePrivilege]bool
@@ -156,7 +157,14 @@ func (c *Cache) replaceUnlocked(catalog Catalog) {
 
 	views := append([]TableID(nil), catalog.Views...)
 	foreignKeys := append([]ForeignKeyFact(nil), catalog.ForeignKeys...)
-	routines := append([]RoutineFact(nil), catalog.Routines...)
+	routines := make([]RoutineFact, len(catalog.Routines))
+	routinesByID := make(map[RoutineID]RoutineFact, len(catalog.Routines))
+	for i, fact := range catalog.Routines {
+		copyFact := fact
+		copyFact.Parameters = append([]ParameterFact(nil), fact.Parameters...)
+		routines[i] = copyFact
+		routinesByID[fact.ID] = copyFact
+	}
 
 	c.tables = tables
 	c.views = views
@@ -165,6 +173,7 @@ func (c *Cache) replaceUnlocked(catalog Catalog) {
 	c.keys = keys
 	c.foreignKeys = foreignKeys
 	c.routines = routines
+	c.routinesByID = routinesByID
 	c.selects = selects
 	c.tablePrivileges = tablePrivileges
 	c.routinePrivileges = routinePrivileges
@@ -394,6 +403,21 @@ func (c *Cache) Routines() []RoutineFact {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return append([]RoutineFact(nil), c.routines...)
+}
+
+// Routine is the routine resource of the given name for the active database
+// role. A routine is a resource only when the role holds EXECUTE on it, of
+// itself or through a role grant.
+func (c *Cache) Routine(role Role, id RoutineID) (RoutineFact, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	routine, held := c.routinesByID[id]
+	if !held || !c.routinePrivileges[bareName(role)][routinePrivilege{routine: id, privilege: "EXECUTE"}] {
+		return RoutineFact{}, false
+	}
+	routine.Parameters = append([]ParameterFact(nil), routine.Parameters...)
+	return routine, true
 }
 
 // HasTablePrivilege says whether the role holds a table privilege the exposure

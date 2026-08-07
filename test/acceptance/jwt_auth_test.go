@@ -48,6 +48,7 @@ func serveWithJWT(t *testing.T, databases ...string) *httpapi.Service {
 		Settings: settings,
 		Cache:    cache,
 		Reader:   pool,
+		Caller:   pool,
 	})
 	if err != nil {
 		t.Fatalf("listen: %v", err)
@@ -148,6 +149,7 @@ func TestNoJWTAndNoAnonymousRoleIsRefusedWithPGRST302(t *testing.T) {
 		Settings: settings,
 		Cache:    schemacache.Build(catalog),
 		Reader:   pool,
+		Caller:   pool,
 	})
 	if err != nil {
 		t.Fatalf("listen: %v", err)
