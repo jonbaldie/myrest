@@ -11,9 +11,6 @@ import (
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
-// ReadResult is the answer of one ordinary read.
-type ReadResult = readquery.Result
-
 // readTable reads the resource under the ordinary-read query.
 func readTable(
 	ctx context.Context,

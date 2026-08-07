@@ -34,6 +34,23 @@ func TestBuildSelectAppliesFilterOrderAndPage(t *testing.T) {
 	}
 }
 
+func TestBuildSelectUsesLargeLimitWhenOnlyOffsetIsSet(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID:      schemacache.TableID{Database: "shop", Name: "items"},
+		Columns: []schemacache.Column{{Name: "id"}},
+	}
+	parts, err := buildSelect(table, readquery.Query{Offset: 1})
+	if err != nil {
+		t.Fatalf("buildSelect: %v", err)
+	}
+	want := "SELECT `id` FROM `shop`.`items` LIMIT 18446744073709551615 OFFSET 1"
+	if parts.statement != want {
+		t.Fatalf("statement = %q, want %q", parts.statement, want)
+	}
+}
+
 func TestBuildCountUsesTheSameFilters(t *testing.T) {
 	t.Parallel()
 

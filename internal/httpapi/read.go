@@ -66,8 +66,9 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 
 	read, err := s.reader.Read(request.Context(), role, table, query)
 	if err != nil {
-		if isUnknownColumn(err) {
-			writeFailure(writer, http.StatusBadRequest, codeNoColumn, err.Error())
+		var missing readquery.ColumnNotFound
+		if errors.As(err, &missing) {
+			writeFailure(writer, http.StatusBadRequest, codeNoColumn, missing.Error())
 			return
 		}
 		// The words of the database name the accounts of the deployment,
@@ -95,19 +96,14 @@ func parseReadQuery(request *http.Request, maxRows config.RowLimit) (readquery.Q
 func writeQueryFailure(writer http.ResponseWriter, err error) {
 	var parse readquery.ParseFailure
 	if errors.As(err, &parse) {
-		message := parse.Message
-		if strings.Contains(message, "not available with MySQL") {
-			writeUnsupportedFeature(writer, message)
+		if parse.Gap {
+			writeUnsupportedFeature(writer, parse.Message)
 			return
 		}
-		writeFailure(writer, http.StatusBadRequest, codeParseFailure, message)
+		writeFailure(writer, http.StatusBadRequest, codeParseFailure, parse.Message)
 		return
 	}
 	writeFailure(writer, http.StatusBadRequest, codeParseFailure, err.Error())
-}
-
-func isUnknownColumn(err error) bool {
-	return err != nil && strings.HasPrefix(err.Error(), "column not found:")
 }
 
 func writeRead(writer http.ResponseWriter, head bool, query readquery.Query, read readquery.Result) {
@@ -122,6 +118,12 @@ func writeRead(writer http.ResponseWriter, head bool, query readquery.Query, rea
 	writeJSON(writer, status, read.Rows)
 }
 
+func rowRange(query readquery.Query, rowCount int) (start, end uint64) {
+	start = query.Offset
+	end = start + uint64(rowCount) - 1
+	return start, end
+}
+
 func contentRange(query readquery.Query, read readquery.Result) string {
 	if len(read.Rows) == 0 {
 		if read.Total != nil {
@@ -129,8 +131,7 @@ func contentRange(query readquery.Query, read readquery.Result) string {
 		}
 		return "*/*"
 	}
-	start := query.Offset
-	end := start + uint64(len(read.Rows)) - 1
+	start, end := rowRange(query, len(read.Rows))
 	rangePart := strconv.FormatUint(start, 10) + "-" + strconv.FormatUint(end, 10)
 	if read.Total != nil {
 		return rangePart + "/" + strconv.FormatInt(*read.Total, 10)
@@ -148,8 +149,7 @@ func readStatus(query readquery.Query, read readquery.Result) int {
 		}
 		return http.StatusPartialContent
 	}
-	start := query.Offset
-	end := start + uint64(len(read.Rows)) - 1
+	start, end := rowRange(query, len(read.Rows))
 	if start == 0 && end+1 == uint64(*read.Total) {
 		return http.StatusOK
 	}

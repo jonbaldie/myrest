@@ -81,10 +81,16 @@ func outputNames(columns []resolvedColumn) []string {
 }
 
 func pageSQL(query readquery.Query) string {
-	var suffix string
-	if limit := query.EffectiveLimit(); limit != nil {
-		suffix += " LIMIT " + strconv.FormatUint(*limit, 10)
+	limit := query.EffectiveLimit()
+	if limit == nil && query.Offset == 0 {
+		return ""
 	}
+	// MySQL needs LIMIT with OFFSET. When the client gives only offset, use
+	// the largest unsigned 64-bit limit so the page still starts at offset.
+	if limit == nil {
+		return " LIMIT 18446744073709551615 OFFSET " + strconv.FormatUint(query.Offset, 10)
+	}
+	suffix := " LIMIT " + strconv.FormatUint(*limit, 10)
 	if query.Offset > 0 {
 		suffix += " OFFSET " + strconv.FormatUint(query.Offset, 10)
 	}
@@ -140,7 +146,7 @@ func tableHasColumn(table schemacache.Table, name string) bool {
 }
 
 func unknownColumn(name string) error {
-	return fmt.Errorf("column not found: %s", name)
+	return readquery.ColumnNotFound{Name: name}
 }
 
 func buildOrder(table schemacache.Table, orders []readquery.Order) (string, error) {

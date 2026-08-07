@@ -32,6 +32,15 @@ type Result struct {
 	Total *int64
 }
 
+// ColumnNotFound is a select, filter, or order column the resource does not hold.
+type ColumnNotFound struct {
+	Name string
+}
+
+func (e ColumnNotFound) Error() string {
+	return "column not found: " + e.Name
+}
+
 // Column is one selected column, optionally renamed.
 type Column struct {
 	Name  string

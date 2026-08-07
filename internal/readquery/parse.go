@@ -22,6 +22,9 @@ var reservedQueryKeys = map[string]bool{
 // ParseFailure is a client query that myrest cannot run.
 type ParseFailure struct {
 	Message string
+	// Gap is true when the failure is a documented MySQL semantic gap
+	// (MYREST001), not a plain query parse failure (PGRST100).
+	Gap bool
 }
 
 func (e ParseFailure) Error() string { return e.Message }
@@ -124,10 +127,16 @@ func parseSelect(raw string, query *Query) error {
 
 func parseSelectPart(part string) (Column, error) {
 	if strings.Contains(part, "::") {
-		return Column{}, ParseFailure{Message: "PostgREST domain and cast features are not available with MySQL"}
+		return Column{}, ParseFailure{
+			Message: "PostgREST domain and cast features are not available with MySQL",
+			Gap:     true,
+		}
 	}
 	if strings.HasSuffix(part, "()") {
-		return Column{}, ParseFailure{Message: "PostgREST row computed-field features are not available with MySQL"}
+		return Column{}, ParseFailure{
+			Message: "PostgREST row computed-field features are not available with MySQL",
+			Gap:     true,
+		}
 	}
 	if strings.Contains(part, "->") {
 		return Column{}, ParseFailure{Message: "JSON path select is not available in this ordinary-read ticket"}
