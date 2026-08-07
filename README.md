@@ -48,7 +48,9 @@ curl http://127.0.0.1:3000/secrets \
 `HEAD` uses the same read intent and returns no body. `Prefer: count=exact`
 puts the exact total in `Content-Range`. `db-max-rows` is a hard row cap when
 set. See [Ordinary read](docs/ordinary-read.md) for the full-match filter
-operator list.
+operator list, and [Read parity boundaries](docs/read-parity-boundaries.md)
+for the text-case and JSON path subsets and the stable refusals
+(`ilike`, JSON `->` / `->>`, and refused FTS / array / range / planned count).
 
 myrest opens pooled MySQL connections as the **authenticator** of `db-uri` and activates the database role for each request, so MySQL grants — not a second access list — say what a client may read. After the **role switch**, grants follow the active role, but SQL `CURRENT_USER()` stays the authenticator (a documented **partial match**). See [Authentication](docs/auth.md).
 

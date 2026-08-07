@@ -60,7 +60,7 @@ func selectSQL(
 func selectList(columns []resolvedColumn) string {
 	quoted := make([]string, len(columns))
 	for i, column := range columns {
-		quoted[i] = quoteIdentifier(column.Name)
+		quoted[i] = column.Expr
 		if column.Alias != "" {
 			quoted[i] += " AS " + quoteIdentifier(column.Alias)
 		}
@@ -75,7 +75,7 @@ func outputNames(columns []resolvedColumn) []string {
 			names[i] = column.Alias
 			continue
 		}
-		names[i] = column.Name
+		names[i] = column.Output
 	}
 	return names
 }
@@ -114,35 +114,96 @@ func buildCount(table schemacache.Table, query readquery.Query) (sqlParts, error
 }
 
 type resolvedColumn struct {
-	Name  string
-	Alias string
+	Expr   string
+	Output string
+	Alias  string
 }
 
 func resolveColumns(table schemacache.Table, asked []readquery.Column) ([]resolvedColumn, error) {
 	if len(asked) == 0 {
 		out := make([]resolvedColumn, len(table.Columns))
 		for i, column := range table.Columns {
-			out[i] = resolvedColumn{Name: column.Name}
+			out[i] = resolvedColumn{
+				Expr:   quoteIdentifier(column.Name),
+				Output: column.Name,
+			}
 		}
 		return out, nil
 	}
 	out := make([]resolvedColumn, 0, len(asked))
 	for _, column := range asked {
-		if !tableHasColumn(table, column.Name) {
-			return nil, unknownColumn(column.Name)
+		expr, err := columnExpr(table, column.Name, column.Path)
+		if err != nil {
+			return nil, err
 		}
-		out = append(out, resolvedColumn{Name: column.Name, Alias: column.Alias})
+		output := column.Name
+		if column.Path != nil {
+			output = defaultJSONOutputName(column.Path)
+		}
+		out = append(out, resolvedColumn{Expr: expr, Output: output, Alias: column.Alias})
 	}
 	return out, nil
 }
 
-func tableHasColumn(table schemacache.Table, name string) bool {
-	for _, column := range table.Columns {
-		if column.Name == name {
-			return true
+func defaultJSONOutputName(path *readquery.JSONPath) string {
+	last := path.Steps[len(path.Steps)-1]
+	if last.IsIndex {
+		return strconv.Itoa(last.Index)
+	}
+	return last.Key
+}
+
+func columnExpr(table schemacache.Table, name string, path *readquery.JSONPath) (string, error) {
+	column, ok := tableColumn(table, name)
+	if !ok {
+		return "", unknownColumn(name)
+	}
+	if path == nil {
+		return quoteIdentifier(name), nil
+	}
+	if !isJSONDataType(column.DataType) {
+		return "", readquery.UnsupportedFeature{
+			Message: "JSON path on a non-JSON column is not available with MySQL",
 		}
 	}
-	return false
+	return jsonPathSQL(name, path), nil
+}
+
+func tableColumn(table schemacache.Table, name string) (schemacache.Column, bool) {
+	for _, column := range table.Columns {
+		if column.Name == name {
+			return column, true
+		}
+	}
+	return schemacache.Column{}, false
+}
+
+func tableHasColumn(table schemacache.Table, name string) bool {
+	_, ok := tableColumn(table, name)
+	return ok
+}
+
+func isJSONDataType(dataType string) bool {
+	return strings.EqualFold(dataType, "json")
+}
+
+func jsonPathSQL(column string, path *readquery.JSONPath) string {
+	expr := quoteIdentifier(column)
+	for i, step := range path.Steps {
+		op := "->"
+		if path.AsText && i == len(path.Steps)-1 {
+			op = "->>"
+		}
+		expr += op + "'" + mysqlJSONPathLeg(step) + "'"
+	}
+	return expr
+}
+
+func mysqlJSONPathLeg(step readquery.PathStep) string {
+	if step.IsIndex {
+		return "$[" + strconv.Itoa(step.Index) + "]"
+	}
+	return "$." + step.Key
 }
 
 func unknownColumn(name string) error {
@@ -155,12 +216,13 @@ func buildOrder(table schemacache.Table, orders []readquery.Order) (string, erro
 	}
 	parts := make([]string, 0, len(orders))
 	for _, order := range orders {
-		if !tableHasColumn(table, order.Column) {
-			return "", unknownColumn(order.Column)
+		expr, err := columnExpr(table, order.Column, order.Path)
+		if err != nil {
+			return "", err
 		}
-		part := quoteIdentifier(order.Column) + " ASC"
+		part := expr + " ASC"
 		if order.Desc {
-			part = quoteIdentifier(order.Column) + " DESC"
+			part = expr + " DESC"
 		}
 		parts = append(parts, part)
 	}

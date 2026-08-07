@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/readquery"
@@ -35,14 +34,6 @@ const (
 // the profile header of the parity target comes with the content negotiation
 // ticket.
 func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
-	if hasPostgRESTFullTextSearchOperator(request) {
-		writeUnsupportedFeature(
-			writer,
-			"PostgREST full-text search operators are not available with MySQL",
-		)
-		return
-	}
-
 	role, ok := s.requestRole(writer, request)
 	if !ok {
 		return
@@ -69,6 +60,11 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 		var missing readquery.ColumnNotFound
 		if errors.As(err, &missing) {
 			writeFailure(writer, http.StatusBadRequest, codeNoColumn, missing.Error())
+			return
+		}
+		var gap readquery.UnsupportedFeature
+		if errors.As(err, &gap) {
+			writeUnsupportedFeature(writer, gap.Message)
 			return
 		}
 		// The words of the database name the accounts of the deployment,
@@ -160,28 +156,4 @@ func readStatus(query readquery.Query, read readquery.Result) int {
 // target does: with the database the request reads.
 func noTableMessage(asked schemacache.TableID) string {
 	return "Could not find the table '" + asked.Database + "." + asked.Name + "' in the schema cache"
-}
-
-// hasPostgRESTFullTextSearchOperator finds PostgREST full-text search
-// operators. myrest refuses them because a MySQL full-text query has different
-// semantics.
-func hasPostgRESTFullTextSearchOperator(request *http.Request) bool {
-	for _, values := range request.URL.Query() {
-		for _, value := range values {
-			operator, _, found := strings.Cut(strings.TrimPrefix(value, "not."), ".")
-			if found && isPostgRESTFullTextSearchOperator(operator) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func isPostgRESTFullTextSearchOperator(operator string) bool {
-	switch operator {
-	case "fts", "plfts", "phfts", "wfts":
-		return true
-	default:
-		return false
-	}
 }

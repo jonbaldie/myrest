@@ -1,6 +1,7 @@
 package mysqldb
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/jonbaldie/myrest/internal/readquery"
@@ -48,6 +49,65 @@ func TestBuildSelectUsesLargeLimitWhenOnlyOffsetIsSet(t *testing.T) {
 	want := "SELECT `id` FROM `shop`.`items` LIMIT 18446744073709551615 OFFSET 1"
 	if parts.statement != want {
 		t.Fatalf("statement = %q, want %q", parts.statement, want)
+	}
+}
+
+func TestBuildSelectAppliesJSONPathProjectionAndFilter(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID: schemacache.TableID{Database: "shop", Name: "items"},
+		Columns: []schemacache.Column{
+			{Name: "id"},
+			{Name: "meta", DataType: "json"},
+		},
+	}
+	parts, err := buildSelect(table, readquery.Query{
+		Columns: []readquery.Column{
+			{Name: "id"},
+			{Name: "meta", Path: &readquery.JSONPath{
+				Steps:  []readquery.PathStep{{Key: "blood_type"}},
+				AsText: true,
+			}},
+		},
+		Filters: []readquery.Filter{{
+			Column: "meta",
+			Path: &readquery.JSONPath{
+				Steps:  []readquery.PathStep{{Key: "blood_type"}},
+				AsText: true,
+			},
+			Op:    readquery.OpEq,
+			Value: "A-",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("buildSelect: %v", err)
+	}
+	want := "SELECT `id`, `meta`->>'$.blood_type' FROM `shop`.`items` WHERE `meta`->>'$.blood_type' = ?"
+	if parts.statement != want {
+		t.Fatalf("statement = %q, want %q", parts.statement, want)
+	}
+	if parts.columns[1] != "blood_type" {
+		t.Fatalf("output columns = %#v", parts.columns)
+	}
+}
+
+func TestBuildSelectRefusesJSONPathOnNonJSONColumn(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID:      schemacache.TableID{Database: "shop", Name: "items"},
+		Columns: []schemacache.Column{{Name: "name", DataType: "varchar"}},
+	}
+	_, err := buildSelect(table, readquery.Query{
+		Columns: []readquery.Column{{
+			Name: "name",
+			Path: &readquery.JSONPath{Steps: []readquery.PathStep{{Key: "x"}}, AsText: true},
+		}},
+	})
+	var gap readquery.UnsupportedFeature
+	if err == nil || !errors.As(err, &gap) {
+		t.Fatalf("err = %v, want UnsupportedFeature", err)
 	}
 }
 

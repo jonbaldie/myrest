@@ -9,14 +9,14 @@ import (
 )
 
 func filterSQL(table schemacache.Table, filter readquery.Filter) (string, []any, error) {
-	if !tableHasColumn(table, filter.Column) {
-		return "", nil, unknownColumn(filter.Column)
+	column, err := columnExpr(table, filter.Column, filter.Path)
+	if err != nil {
+		return "", nil, err
 	}
-	column := quoteIdentifier(filter.Column)
 	switch filter.Op {
 	case readquery.OpEq, readquery.OpNeq, readquery.OpGt, readquery.OpGte, readquery.OpLt, readquery.OpLte:
 		return comparisonSQL(column, filter)
-	case readquery.OpLike:
+	case readquery.OpLike, readquery.OpILike:
 		return likeSQL(column, filter)
 	case readquery.OpIn:
 		return inSQL(column, filter)
