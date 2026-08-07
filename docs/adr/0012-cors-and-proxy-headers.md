@@ -1,0 +1,5 @@
+# CORS and proxy URLs follow the parity target wire contract
+
+Operators put myrest behind a reverse proxy and browser clients send `Origin`. PostgREST already defines CORS through `server-cors-allowed-origins` and absolute discovery URLs through `openapi-server-proxy-uri`, and it does not rewrite reported URLs from `X-Forwarded-*`. **Decision** (from [CORS origins and proxy header behaviour](https://github.com/jonbaldie/myrest/issues/45)): myrest keeps that same wire contract as a **full match** — including omitting `Access-Control-Allow-Origin` for a refused origin, answering preflight as the parity target does, and never reading `X-Forwarded-Host`, `X-Forwarded-Proto`, or `Forwarded` for reported URLs. Public absolute URLs come only from `openapi-server-proxy-uri` or the listen URL.
+
+**Why:** Matching the parity target keeps existing PostgREST proxy and browser setups honest. Auto-trusting forwarded headers would be a silent second base-URL source and would break the **parity decision rule** for this surface.
