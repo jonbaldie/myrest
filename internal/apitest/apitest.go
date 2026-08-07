@@ -22,15 +22,33 @@ type Envelope struct {
 func Get(t *testing.T, url string) (*http.Response, []byte) {
 	t.Helper()
 
-	response, err := http.Get(url)
+	return Do(t, http.MethodGet, url, nil)
+}
+
+// Do sends a request with the given method and headers and gives back the
+// answer with its body.
+func Do(t *testing.T, method, url string, headers http.Header) (*http.Response, []byte) {
+	t.Helper()
+
+	request, err := http.NewRequest(method, url, nil)
 	if err != nil {
-		t.Fatalf("GET %s: %v", url, err)
+		t.Fatalf("new %s request for %s: %v", method, url, err)
+	}
+	for name, values := range headers {
+		for _, value := range values {
+			request.Header.Add(name, value)
+		}
+	}
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, url, err)
 	}
 	t.Cleanup(func() { _ = response.Body.Close() })
 
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		t.Fatalf("read the body of %s: %v", url, err)
+		t.Fatalf("read the body of %s %s: %v", method, url, err)
 	}
 	return response, body
 }

@@ -45,6 +45,10 @@ When MySQL itself refuses a read — a grant taken away after start-up, for exam
 
 The read is narrow for now: all columns, no filter, no order, and no page. myrest builds the **schema cache** from the MySQL catalog at start-up. Send `SIGUSR1` to reload it after DDL or grant changes; a process restart is not required for that refresh. Config changes still need a restart.
 
+## CORS and proxy URLs
+
+`server-cors-allowed-origins` sets the browser origin policy. An empty list accepts every origin. Allowed origins get the PostgREST CORS response and preflight headers; an origin outside the list gets no `Access-Control-Allow-Origin`. myrest never takes host or scheme from `X-Forwarded-*` or `Forwarded`. When it reports an absolute base URL, `openapi-server-proxy-uri` wins when set. See [CORS origins and proxy header behaviour](docs/cors-and-proxy.md) and [ADR 0012](docs/adr/0012-cors-and-proxy-headers.md).
+
 ## Configuration
 
 Give myrest its settings in a config file, in `MYREST_*` environment variables, or in both. The one optional argument of the process is the path of the config file. An environment variable with a value wins over the same knob in the file; an empty variable counts as a variable nobody set. A restart applies a changed value; there is no live configuration reload.
@@ -72,7 +76,7 @@ myrest serves the API only when it has all of these. If one is missing, the proc
 
 ### Other kept knobs
 
-These knobs are configurable and readable now. Later parity slices give them their behaviour.
+`server-cors-allowed-origins` and `openapi-server-proxy-uri` already have the CORS and reported-base-URL behaviour above. The other knobs are configurable and readable now; later parity slices give them their remaining behaviour.
 
 | Knob | Type | Default |
 | --- | --- | --- |

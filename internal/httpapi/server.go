@@ -55,7 +55,9 @@ func Listen(options Options) (*Service, error) {
 	mux.HandleFunc("GET /{$}", writeService)
 	mux.HandleFunc("GET /{table}", service.readTable)
 	mux.HandleFunc("/", writeNoHandler)
-	service.server = &http.Server{Handler: mux}
+	service.server = &http.Server{
+		Handler: withCORS(options.Settings.Server.CORSAllowedOrigins, mux),
+	}
 	return service, nil
 }
 
