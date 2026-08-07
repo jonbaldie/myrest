@@ -50,6 +50,7 @@ func (r *reader) Read(
 }
 
 // cache holds one readable table and one the anonymous role cannot select.
+// myrest_user can read secrets, so a JWT for that role proves grant switching.
 func cache() *schemacache.Cache {
 	items := schemacache.TableID{Database: "shop", Name: "items"}
 	secrets := schemacache.TableID{Database: "shop", Name: "secrets"}
@@ -61,7 +62,11 @@ func cache() *schemacache.Cache {
 			{Table: items, Name: "name"},
 			{Table: secrets, Name: "payload"},
 		},
-		Selects: []schemacache.SelectFact{{Role: "myrest_anon", Table: items}},
+		Selects: []schemacache.SelectFact{
+			{Role: "myrest_anon", Table: items},
+			{Role: "myrest_user", Table: items},
+			{Role: "myrest_user", Table: secrets},
+		},
 	})
 }
 
@@ -214,7 +219,7 @@ func TestReadWithoutAnAnonymousDatabaseRoleIsRefused(t *testing.T) {
 
 	response, body := get(t, serve(t, &reader{}, withoutAnon), "/items")
 
-	apitest.AssertEnvelope(t, response, body, http.StatusUnauthorized, "PGRST301")
+	apitest.AssertEnvelope(t, response, body, http.StatusUnauthorized, "PGRST302")
 }
 
 // err-001: a failing read answers with the error envelope, not with rows.

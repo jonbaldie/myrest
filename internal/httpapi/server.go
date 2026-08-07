@@ -3,11 +3,13 @@
 package httpapi
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 
 	"github.com/jonbaldie/myrest/internal/config"
+	"github.com/jonbaldie/myrest/internal/jwt"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
@@ -30,6 +32,7 @@ type Service struct {
 	settings config.Settings
 	cache    *schemacache.Cache
 	reader   Reader
+	verifier *jwt.Verifier
 	log      *log.Logger
 }
 
@@ -44,11 +47,29 @@ func Listen(options Options) (*Service, error) {
 	if logger == nil {
 		logger = log.Default()
 	}
+
+	var verifier *jwt.Verifier
+	if options.Settings.JWT.Secret != "" {
+		built, err := jwt.New(jwt.Options{
+			Secret:          options.Settings.JWT.Secret,
+			SecretIsBase64:  options.Settings.JWT.SecretIsBase64,
+			Aud:             options.Settings.JWT.Aud,
+			RoleClaimKey:    options.Settings.JWT.RoleClaimKey,
+			CacheMaxEntries: options.Settings.JWT.CacheMaxEntries,
+		})
+		if err != nil {
+			_ = listener.Close()
+			return nil, fmt.Errorf("jwt settings: %w", err)
+		}
+		verifier = built
+	}
+
 	service := &Service{
 		listener: listener,
 		settings: options.Settings,
 		cache:    options.Cache,
 		reader:   options.Reader,
+		verifier: verifier,
 		log:      logger,
 	}
 	mux := http.NewServeMux()

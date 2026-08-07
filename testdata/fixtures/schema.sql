@@ -69,3 +69,9 @@ GRANT EXECUTE ON FUNCTION myrest_fixture.item_count TO 'myrest_anon';
 GRANT SHOW_ROUTINE ON *.* TO 'authenticator'@'%';
 GRANT SELECT ON myrest_hidden.outside_items TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.items TO 'web-anon';
+
+-- A JWT role with SELECT on secrets, so auth-001 can prove grant switching.
+CREATE ROLE IF NOT EXISTS 'myrest_user';
+GRANT 'myrest_user' TO 'authenticator'@'%';
+GRANT SELECT ON myrest_fixture.items TO 'myrest_user';
+GRANT SELECT ON myrest_fixture.secrets TO 'myrest_user';

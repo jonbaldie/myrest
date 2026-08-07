@@ -13,7 +13,13 @@ documented failure gives them a value.
 
 myrest uses a `PGRST*` code only when the failure has the same PostgREST
 meaning. For example, `PGRST205` means that a resource is not in the schema
-cache, and `PGRST301` means that no anonymous database role is configured.
+cache. JWT failures use the PostgREST JWT group:
+
+| Code | HTTP status | Meaning |
+| --- | --- | --- |
+| `PGRST301` | 401 | The Bearer JWT could not be decoded or verified. |
+| `PGRST302` | 401 | The request has no usable JWT and anonymous access is disabled. |
+| `PGRST303` | 401 | JWT claims validation failed (expired, audience, and related checks). |
 
 The myrest gap codes are:
 
@@ -30,6 +36,9 @@ error envelope.
 For example, myrest refuses the PostgREST `fts`, `plfts`, `phfts`, and `wfts`
 full-text search operators, including their `not.` forms, with `MYREST001`.
 MySQL has full-text search, but it does not have the same PostgREST semantics.
+The same gap code refuses Postgres row-level security (`Prefer: row-security`),
+request GUC / `request.jwt.claims` injection (`Prefer: jwt-claims`), and
+non-Bearer credential schemes. See [Authentication](auth.md).
 
 ## MySQL SQLSTATE to HTTP status
 

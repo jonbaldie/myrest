@@ -15,9 +15,6 @@ const (
 	// codeNoTable is the code of the parity target for a table the schema
 	// cache does not hold.
 	codeNoTable = "PGRST205"
-	// codeNoAnonymousRole says that the request carries no usable JWT and
-	// that no anonymous database role is configured.
-	codeNoAnonymousRole = "PGRST301"
 	// codeMySQLDatabaseFailure says that MySQL returned an error for which
 	// myrest cannot claim PostgreSQL semantics.
 	codeMySQLDatabaseFailure = "MYREST002"
