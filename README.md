@@ -144,7 +144,7 @@ myrest serves the API only when it has all of these. If one is missing, the proc
 | `jwt-cache-max-entries` | count | `1000` |
 | `db-aggregates-enabled` | boolean | `false` |
 | `db-max-rows` | count | no cap |
-| `db-pre-request` | text | none |
+| `db-pre-request` | text (`database.routine`) | none |
 | `db-tx-end` | `commit`, `commit-allow-override`, `rollback`, `rollback-allow-override` | `commit` |
 | `server-cors-allowed-origins` | list | every origin |
 | `openapi-mode` | `follow-privileges`, `ignore-privileges`, `disabled` | `follow-privileges` |

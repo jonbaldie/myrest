@@ -25,7 +25,7 @@ func (p *Pool) Call(
 	}
 
 	var result any
-	err = p.onConnection(ctx, statement, func(ctx context.Context, conn *sql.Conn) error {
+	err = p.onRequest(ctx, statement, func(ctx context.Context, conn *sql.Conn) error {
 		var callErr error
 		result, callErr = callRoutine(ctx, conn, routine, args)
 		return callErr

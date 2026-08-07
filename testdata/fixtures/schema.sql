@@ -120,6 +120,31 @@ BEGIN
   SET label = CONCAT(label, '!');
 END;
 
+-- db-pre-request fixtures: a marker log and zero-argument procedures.
+CREATE TABLE pre_request_log (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  note VARCHAR(255) NOT NULL,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE PROCEDURE before_request()
+  MODIFIES SQL DATA
+BEGIN
+  INSERT INTO pre_request_log (note) VALUES ('hook');
+END;
+
+CREATE PROCEDURE before_request_fail()
+BEGIN
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'pre-request refused';
+END;
+
+-- EXECUTE is never granted to myrest_anon: proves the hook needs the grant.
+CREATE PROCEDURE before_request_denied()
+  MODIFIES SQL DATA
+BEGIN
+  INSERT INTO pre_request_log (note) VALUES ('denied');
+END;
+
 -- In a configured database, but the anonymous database role gets no SELECT.
 CREATE TABLE secrets (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -169,6 +194,9 @@ GRANT EXECUTE ON PROCEDURE myrest_fixture.ping TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.echo_name TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.bump_label TO 'myrest_anon';
 GRANT INSERT ON myrest_fixture.addresses TO 'myrest_anon';
+GRANT SELECT, INSERT, DELETE ON myrest_fixture.pre_request_log TO 'myrest_anon';
+GRANT EXECUTE ON PROCEDURE myrest_fixture.before_request TO 'myrest_anon';
+GRANT EXECUTE ON PROCEDURE myrest_fixture.before_request_fail TO 'myrest_anon';
 GRANT SHOW_ROUTINE ON *.* TO 'authenticator'@'%';
 GRANT SELECT ON myrest_hidden.outside_items TO 'myrest_anon';
 GRANT INSERT ON myrest_hidden.outside_items TO 'myrest_anon';

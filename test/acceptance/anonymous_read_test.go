@@ -75,6 +75,7 @@ func serveWithPoolAs(t *testing.T, role string, databases ...string) (*mysqldb.P
 		t.Fatalf("open the authenticator pool: %v", err)
 	}
 	t.Cleanup(func() { _ = pool.Close() })
+	pool.SetPreRequest(settings.DB.PreRequest)
 
 	catalog, err := pool.Catalog(t.Context(), settings.DB.Schemas)
 	if err != nil {

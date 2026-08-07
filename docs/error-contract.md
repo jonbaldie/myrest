@@ -43,7 +43,9 @@ forms outside the named MySQL subset. See
 [Read parity boundaries](read-parity-boundaries.md).
 The same gap code refuses Postgres row-level security (`Prefer: row-security`),
 request GUC / `request.jwt.claims` injection (`Prefer: jwt-claims`), and
-non-Bearer credential schemes. See [Authentication](auth.md).
+non-Bearer credential schemes. See [Authentication](auth.md). A failing
+`db-pre-request` hook is a MySQL database error and uses `MYREST002`; see
+[Authentication](auth.md#pre-request-hook).
 
 Embed failures that match PostgREST use `PGRST*` codes: `PGRST200` when no
 declared foreign-key path exists, and `PGRST201` when more than one
@@ -63,7 +65,7 @@ this table. It then matches the SQLSTATE class. The number rule has priority.
 
 | MySQL error number or SQLSTATE | HTTP status | Meaning |
 | --- | --- | --- |
-| `1044`, `1045`, `1142`, `1227` | 403 | Access denied |
+| `1044`, `1045`, `1142`, `1227`, `1370` | 403 | Access denied (including missing EXECUTE) |
 | `1062`, `1451`, `1452`, `1213` | 409 | Duplicate key, foreign-key conflict, or deadlock |
 | `08*` | 503 | Connection error |
 | `22*`, `42*` | 400 | Data or syntax error |

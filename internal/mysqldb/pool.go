@@ -17,6 +17,9 @@ import (
 // role switch gives it.
 type Pool struct {
 	connections *sql.DB
+	// preRequest is the database.routine name of the optional db-pre-request
+	// procedure. Empty means no hook.
+	preRequest string
 }
 
 // Open starts a pool from a db-uri and proves that the authenticator can log
@@ -69,7 +72,7 @@ func (p *Pool) Read(
 	}
 
 	var read readquery.Result
-	err = p.onConnection(ctx, statement, func(ctx context.Context, conn *sql.Conn) error {
+	err = p.onRequest(ctx, statement, func(ctx context.Context, conn *sql.Conn) error {
 		var readErr error
 		read, readErr = readTable(ctx, conn, table, query)
 		return readErr

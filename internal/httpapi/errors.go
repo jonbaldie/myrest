@@ -87,7 +87,7 @@ func mysqlErrorStatus(err error) int {
 // database error maps to one status regardless of request state.
 func mysqlStatus(number uint16, state string) int {
 	switch number {
-	case 1044, 1045, 1142, 1227:
+	case 1044, 1045, 1142, 1227, 1370:
 		return http.StatusForbidden
 	case 1062, 1451, 1452, 1213:
 		return http.StatusConflict

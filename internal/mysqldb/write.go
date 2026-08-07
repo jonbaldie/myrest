@@ -25,7 +25,7 @@ func (p *Pool) Insert(
 	}
 
 	var inserted int
-	err = p.onConnection(ctx, statement, func(ctx context.Context, conn *sql.Conn) error {
+	err = p.onRequest(ctx, statement, func(ctx context.Context, conn *sql.Conn) error {
 		var insertErr error
 		inserted, insertErr = insertRows(ctx, conn, table, rows)
 		return insertErr
@@ -47,7 +47,7 @@ func (p *Pool) Update(
 	}
 
 	var updated int64
-	err = p.onConnection(ctx, statement, func(ctx context.Context, conn *sql.Conn) error {
+	err = p.onRequest(ctx, statement, func(ctx context.Context, conn *sql.Conn) error {
 		var updateErr error
 		updated, updateErr = updateRows(ctx, conn, table, patch, query)
 		return updateErr
@@ -68,7 +68,7 @@ func (p *Pool) Delete(
 	}
 
 	var deleted int64
-	err = p.onConnection(ctx, statement, func(ctx context.Context, conn *sql.Conn) error {
+	err = p.onRequest(ctx, statement, func(ctx context.Context, conn *sql.Conn) error {
 		var deleteErr error
 		deleted, deleteErr = deleteRows(ctx, conn, table, query)
 		return deleteErr

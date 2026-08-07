@@ -249,6 +249,16 @@ func TestMySQLAccessErrorGivesThePublishedStatusAndGapCode(t *testing.T) {
 	apitest.AssertEnvelope(t, response, body, http.StatusForbidden, "MYREST002")
 }
 
+// Missing EXECUTE on a routine (including db-pre-request) is access denied.
+func TestMySQLExecuteDeniedGivesForbiddenAndGapCode(t *testing.T) {
+	t.Parallel()
+
+	source := &reader{failure: mysqlError(1370, "42000", "execute command denied")}
+	response, body := get(t, serve(t, source, settings()), "/items")
+
+	apitest.AssertEnvelope(t, response, body, http.StatusForbidden, "MYREST002")
+}
+
 // err-005: a MySQL SQLSTATE outside the published table has the documented
 // fallback status and keeps the same client error envelope.
 func TestUnmappedMySQLErrorGivesTheFallbackStatusAndGapCode(t *testing.T) {
