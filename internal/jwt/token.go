@@ -94,20 +94,32 @@ func (v *Verifier) Role(token string) (schemacache.Role, error) {
 }
 
 func (v *Verifier) parse(token string) (map[string]any, error) {
+	if err := checkTokenShape(token); err != nil {
+		return nil, err
+	}
+	if claims, hit := v.cache.get(token); hit {
+		return claims, v.checkClaims(claims)
+	}
+
+	claims, err := v.verifySignature(token)
+	if err != nil {
+		return nil, err
+	}
+	v.cache.put(token, claims)
+	return claims, v.checkClaims(claims)
+}
+
+func checkTokenShape(token string) error {
 	if token == "" {
-		return nil, fmt.Errorf("%w: empty token", ErrInvalidToken)
+		return fmt.Errorf("%w: empty token", ErrInvalidToken)
 	}
 	if parts := strings.Count(token, ".") + 1; parts != 3 {
-		return nil, fmt.Errorf("%w: expected 3 parts, got %d", ErrInvalidToken, parts)
+		return fmt.Errorf("%w: expected 3 parts, got %d", ErrInvalidToken, parts)
 	}
+	return nil
+}
 
-	if claims, hit := v.cache.get(token); hit {
-		if err := v.checkClaims(claims); err != nil {
-			return nil, err
-		}
-		return claims, nil
-	}
-
+func (v *Verifier) verifySignature(token string) (map[string]any, error) {
 	parsed, err := gojwt.Parse(token, func(t *gojwt.Token) (any, error) {
 		if t.Method == nil || t.Method.Alg() != gojwt.SigningMethodHS256.Alg() {
 			return nil, fmt.Errorf("%w: unsupported algorithm", ErrInvalidToken)
@@ -122,39 +134,32 @@ func (v *Verifier) parse(token string) (map[string]any, error) {
 	if !ok {
 		return nil, fmt.Errorf("%w: claims are not a JSON object", ErrClaimsFailed)
 	}
-	claims := map[string]any(mapClaims)
-	v.cache.put(token, claims)
-
-	if err := v.checkClaims(claims); err != nil {
-		return nil, err
-	}
-	return claims, nil
+	return map[string]any(mapClaims), nil
 }
 
 func (v *Verifier) checkClaims(claims map[string]any) error {
 	now := v.now().Unix()
+	skewSeconds := int64(skew.Seconds())
 
 	if err := checkTimeClaim(claims, "exp", func(value int64) bool {
-		return now-int64(skew.Seconds()) > value
+		return now-skewSeconds > value
 	}, "JWT expired"); err != nil {
 		return err
 	}
 	if err := checkTimeClaim(claims, "nbf", func(value int64) bool {
-		return now+int64(skew.Seconds()) < value
+		return now+skewSeconds < value
 	}, "JWT not yet valid"); err != nil {
 		return err
 	}
 	if err := checkTimeClaim(claims, "iat", func(value int64) bool {
-		return now+int64(skew.Seconds()) < value
+		return now+skewSeconds < value
 	}, "JWT issued at future"); err != nil {
 		return err
 	}
-	if v.aud != "" {
-		if err := checkAudience(claims, v.aud); err != nil {
-			return err
-		}
+	if v.aud == "" {
+		return nil
 	}
-	return nil
+	return checkAudience(claims, v.aud)
 }
 
 func checkTimeClaim(claims map[string]any, name string, invalid func(int64) bool, message string) error {
@@ -177,25 +182,33 @@ func checkAudience(claims map[string]any, want string) error {
 	if !held || raw == nil {
 		return nil
 	}
+	matched, typed := audienceMatches(raw, want)
+	if !typed {
+		return fmt.Errorf("%w: the JWT aud claim must be a string or an array of strings", ErrClaimsFailed)
+	}
+	if !matched {
+		return fmt.Errorf("%w: JWT not in audience", ErrClaimsFailed)
+	}
+	return nil
+}
+
+func audienceMatches(raw any, want string) (matched, typed bool) {
 	switch value := raw.(type) {
 	case string:
-		if value == want {
-			return nil
-		}
-		return fmt.Errorf("%w: JWT not in audience", ErrClaimsFailed)
+		return value == want, true
 	case []any:
 		if len(value) == 0 {
-			return nil
+			return true, true
 		}
 		for _, one := range value {
 			text, ok := one.(string)
 			if ok && text == want {
-				return nil
+				return true, true
 			}
 		}
-		return fmt.Errorf("%w: JWT not in audience", ErrClaimsFailed)
+		return false, true
 	default:
-		return fmt.Errorf("%w: the JWT aud claim must be a string or an array of strings", ErrClaimsFailed)
+		return false, false
 	}
 }
 
@@ -222,31 +235,39 @@ func roleClaim(claims map[string]any, path string) (string, bool) {
 		return "", false
 	}
 	parts := strings.Split(strings.TrimPrefix(path, "."), ".")
+	current, ok := walkClaimPath(claims, parts)
+	if !ok {
+		return "", false
+	}
+	return claimAsString(current)
+}
+
+func walkClaimPath(claims map[string]any, parts []string) (any, bool) {
 	var current any = claims
 	for _, part := range parts {
 		if part == "" {
-			return "", false
+			return nil, false
 		}
 		object, ok := current.(map[string]any)
 		if !ok {
-			return "", false
+			return nil, false
 		}
 		current, ok = object[part]
 		if !ok {
-			return "", false
+			return nil, false
 		}
 	}
-	switch value := current.(type) {
+	return current, true
+}
+
+func claimAsString(value any) (string, bool) {
+	switch typed := value.(type) {
 	case string:
-		return value, true
-	case float64, bool:
-		encoded, _ := json.Marshal(value)
-		return string(encoded), true
+		return typed, true
+	case nil:
+		return "", false
 	default:
-		if value == nil {
-			return "", false
-		}
-		encoded, err := json.Marshal(value)
+		encoded, err := json.Marshal(typed)
 		if err != nil {
 			return "", false
 		}
@@ -293,13 +314,21 @@ func (c *tokenCache) put(token string, claims map[string]any) {
 	if _, held := c.entries[token]; held {
 		return
 	}
-	for len(c.entries) >= c.max && len(c.order) > 0 {
+	c.evictToMakeRoom()
+	c.entries[token] = claims
+	c.order = append(c.order, token)
+}
+
+func (c *tokenCache) evictToMakeRoom() {
+	for c.full() {
 		oldest := c.order[0]
 		c.order = c.order[1:]
 		delete(c.entries, oldest)
 	}
-	c.entries[token] = claims
-	c.order = append(c.order, token)
+}
+
+func (c *tokenCache) full() bool {
+	return len(c.entries) >= c.max && len(c.order) > 0
 }
 
 // Len reports how many tokens the cache holds. Tests use it to prove the bound.

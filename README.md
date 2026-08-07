@@ -123,4 +123,4 @@ The authenticator must hold every database role myrest activates, because MySQL 
 
 ## Fixture DDL
 
-`testdata/fixtures/schema.sql` creates the databases `myrest_fixture` and `myrest_hidden`, the tables the tests read, the authenticator login, and the anonymous database role. Parent-spec fixtures stay intent-only; this file is the concrete DDL for the harness.
+`testdata/fixtures/schema.sql` creates the databases `myrest_fixture` and `myrest_hidden`, the tables the tests read, the authenticator login, the anonymous database role, and the JWT role `myrest_user`. Parent-spec fixtures stay intent-only; this file is the concrete DDL for the harness.

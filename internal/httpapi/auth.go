@@ -20,37 +20,55 @@ const (
 // valid Bearer token, or the anonymous database role when there is no usable
 // JWT. Non-Bearer schemes and Postgres-only authz Prefer values are refused.
 func (s *Service) requestRole(writer http.ResponseWriter, request *http.Request) (schemacache.Role, bool) {
+	if refused := refuseUnsupportedAuth(writer, request); refused {
+		return "", false
+	}
+
+	token, hasBearer, ok := bearerToken(writer, request)
+	if !ok {
+		return "", false
+	}
+	if !hasBearer {
+		return s.anonymousRole(writer)
+	}
+	return s.roleFromBearer(writer, token)
+}
+
+func refuseUnsupportedAuth(writer http.ResponseWriter, request *http.Request) bool {
 	if preferAsksForRowSecurity(request) {
 		writeUnsupportedFeature(
 			writer,
 			"Postgres row-level security is not available with MySQL",
 		)
-		return "", false
+		return true
 	}
 	if preferAsksForRequestGUCs(request) {
 		writeUnsupportedFeature(
 			writer,
 			"Request GUCs and request.jwt.claims are not available with MySQL",
 		)
-		return "", false
+		return true
 	}
+	return false
+}
 
+// bearerToken reads a Bearer credential. hasBearer is false when the header is
+// absent. ok is false when the header is present but not a Bearer scheme.
+func bearerToken(writer http.ResponseWriter, request *http.Request) (token string, hasBearer, ok bool) {
 	authorization := request.Header.Get("Authorization")
 	if authorization == "" {
-		return s.anonymousRole(writer)
+		return "", false, true
 	}
 
-	scheme, token, found := strings.Cut(authorization, " ")
-	if !found || scheme == "" {
+	scheme, value, found := strings.Cut(authorization, " ")
+	if !found || scheme == "" || !strings.EqualFold(scheme, "Bearer") {
 		writeUnsupportedFeature(writer, "Only Bearer JWT credentials are supported")
-		return "", false
+		return "", false, false
 	}
-	if !strings.EqualFold(scheme, "Bearer") {
-		writeUnsupportedFeature(writer, "Only Bearer JWT credentials are supported")
-		return "", false
-	}
-	token = strings.TrimSpace(token)
+	return strings.TrimSpace(value), true, true
+}
 
+func (s *Service) roleFromBearer(writer http.ResponseWriter, token string) (schemacache.Role, bool) {
 	if s.verifier == nil {
 		writeFailure(
 			writer, http.StatusInternalServerError, "PGRST300",
