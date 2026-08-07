@@ -33,36 +33,21 @@ func (s *Service) callRoutine(writer http.ResponseWriter, request *http.Request)
 	if !ok {
 		return
 	}
-	s.runRoutine(writer, request, args, false)
+	role, asked, routine, ok := s.lookupRoutine(writer, request)
+	if !ok {
+		return
+	}
+	s.invokeRoutine(writer, request, role, asked, routine, args)
 }
 
 // getRoutine answers GET /rpc/<name>: named query-string arguments, only when
 // the routine is read-safe under MySQL SQL_DATA_ACCESS.
 func (s *Service) getRoutine(writer http.ResponseWriter, request *http.Request) {
-	s.runRoutine(writer, request, namedQueryArgs(request), true)
-}
-
-func (s *Service) runRoutine(
-	writer http.ResponseWriter,
-	request *http.Request,
-	args map[string]any,
-	getOnly bool,
-) {
-	role, ok := s.requestRole(writer, request)
+	role, asked, routine, ok := s.lookupRoutine(writer, request)
 	if !ok {
 		return
 	}
-
-	asked := schemacache.RoutineID{
-		Database: s.settings.DefaultDatabase(),
-		Name:     request.PathValue("name"),
-	}
-	routine, isResource := s.cache.Routine(role, asked)
-	if !isResource {
-		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
-		return
-	}
-	if getOnly && !routine.ReadSafe() {
+	if !routine.ReadSafe() {
 		writeFailure(
 			writer,
 			http.StatusBadRequest,
@@ -71,6 +56,37 @@ func (s *Service) runRoutine(
 		)
 		return
 	}
+	s.invokeRoutine(writer, request, role, asked, routine, namedQueryArgs(request))
+}
+
+func (s *Service) lookupRoutine(
+	writer http.ResponseWriter,
+	request *http.Request,
+) (schemacache.Role, schemacache.RoutineID, schemacache.RoutineFact, bool) {
+	role, ok := s.requestRole(writer, request)
+	if !ok {
+		return "", schemacache.RoutineID{}, schemacache.RoutineFact{}, false
+	}
+	asked := schemacache.RoutineID{
+		Database: s.settings.DefaultDatabase(),
+		Name:     request.PathValue("name"),
+	}
+	routine, isResource := s.cache.Routine(role, asked)
+	if !isResource {
+		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
+		return "", schemacache.RoutineID{}, schemacache.RoutineFact{}, false
+	}
+	return role, asked, routine, true
+}
+
+func (s *Service) invokeRoutine(
+	writer http.ResponseWriter,
+	request *http.Request,
+	role schemacache.Role,
+	asked schemacache.RoutineID,
+	routine schemacache.RoutineFact,
+	args map[string]any,
+) {
 	if _, missing := missingRequiredArgument(routine, args); missing {
 		// The parity target treats a signature mismatch as a missing routine.
 		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
@@ -106,10 +122,6 @@ func missingRequiredArgument(routine schemacache.RoutineFact, args map[string]an
 func namedQueryArgs(request *http.Request) map[string]any {
 	args := map[string]any{}
 	for name, values := range request.URL.Query() {
-		if len(values) == 0 {
-			args[name] = ""
-			continue
-		}
 		args[name] = values[0]
 	}
 	return args
