@@ -135,4 +135,25 @@ func TestWriteWithoutGrantDeniedOverMySQL(t *testing.T) {
 	// secrets has no INSERT for the anonymous role.
 	response, body := apitest.PostJSON(t, service.URL()+"/secrets", `{"payload":"nope"}`)
 	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
+
+	// orders is readable and insertable, but has no UPDATE grant.
+	request, err := http.NewRequest(
+		http.MethodPatch,
+		service.URL()+"/orders?id=eq.1",
+		strings.NewReader(`{"item_id":2}`),
+	)
+	if err != nil {
+		t.Fatalf("new PATCH: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err = io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
 }

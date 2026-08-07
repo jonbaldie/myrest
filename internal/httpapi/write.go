@@ -86,15 +86,6 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 		return
 	}
 
-	query, err := parseMutateQuery(request)
-	if err != nil {
-		writeQueryFailure(writer, err)
-		return
-	}
-	if refuseUnbounded(writer, request, query) {
-		return
-	}
-
 	asked := schemacache.TableID{
 		Database: s.settings.DefaultDatabase(),
 		Name:     request.PathValue("table"),
@@ -102,6 +93,15 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 	table, isResource := s.cache.TableWithPrivilege(role, asked, "UPDATE")
 	if !isResource {
 		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(asked))
+		return
+	}
+
+	query, err := parseMutateQuery(request)
+	if err != nil {
+		writeQueryFailure(writer, err)
+		return
+	}
+	if refuseUnbounded(writer, request, query) {
 		return
 	}
 
@@ -129,15 +129,6 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 
-	query, err := parseMutateQuery(request)
-	if err != nil {
-		writeQueryFailure(writer, err)
-		return
-	}
-	if refuseUnbounded(writer, request, query) {
-		return
-	}
-
 	asked := schemacache.TableID{
 		Database: s.settings.DefaultDatabase(),
 		Name:     request.PathValue("table"),
@@ -145,6 +136,15 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 	table, isResource := s.cache.TableWithPrivilege(role, asked, "DELETE")
 	if !isResource {
 		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(asked))
+		return
+	}
+
+	query, err := parseMutateQuery(request)
+	if err != nil {
+		writeQueryFailure(writer, err)
+		return
+	}
+	if refuseUnbounded(writer, request, query) {
 		return
 	}
 
@@ -228,7 +228,7 @@ func readPatchObject(writer http.ResponseWriter, request *http.Request) (map[str
 		writeFailure(writer, http.StatusBadRequest, codeBadBody, "Could not parse the JSON body")
 		return nil, false
 	}
-	if patch == nil {
+	if patch == nil || len(patch) == 0 {
 		writeFailure(writer, http.StatusBadRequest, codeBadBody, "Empty body")
 		return nil, false
 	}

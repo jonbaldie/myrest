@@ -99,7 +99,7 @@ func insertRows(
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return len(rows), nil
+		return 0, err
 	}
 	return int(affected), nil
 }
@@ -195,7 +195,7 @@ func buildInsert(table schemacache.Table, columns []string, rows []map[string]an
 
 func buildUpdate(table schemacache.Table, patch map[string]any, query readquery.Query) (sqlParts, error) {
 	if len(patch) == 0 {
-		return sqlParts{}, fmt.Errorf("PATCH needs at least one column")
+		return sqlParts{}, fmt.Errorf("update needs at least one column")
 	}
 	names := make([]string, 0, len(patch))
 	for name := range patch {

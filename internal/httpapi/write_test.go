@@ -319,6 +319,45 @@ func TestPreferAllRowsAllowsUnboundedDelete(t *testing.T) {
 	}
 }
 
+// Grant denial wins over the unbounded-write gate.
+func TestWriteWithoutGrantBeatsUnboundedGate(t *testing.T) {
+	t.Parallel()
+
+	items := schemacache.TableID{Database: "shop", Name: "items"}
+	cache := schemacache.Build(schemacache.Catalog{
+		Tables: []schemacache.TableID{items},
+		Columns: []schemacache.ColumnFact{
+			{Table: items, Name: "id"},
+			{Table: items, Name: "name"},
+		},
+		Selects: []schemacache.SelectFact{
+			{Role: "myrest_anon", Table: items},
+		},
+		TablePrivileges: []schemacache.TablePrivilegeFact{
+			{Role: "myrest_anon", Table: items, Privilege: "SELECT"},
+		},
+	})
+	sink := &writer{}
+	service, err := httpapi.Listen(httpapi.Options{
+		Addr:     "127.0.0.1:0",
+		Settings: settings(),
+		Cache:    cache,
+		Reader:   &reader{},
+		Writer:   sink,
+	})
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go func() { _ = service.Serve() }()
+	t.Cleanup(func() { _ = service.Close() })
+
+	response, body := apitest.Do(t, http.MethodDelete, service.URL()+"/items", nil)
+	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
+	if sink.called != "" {
+		t.Fatalf("writer must not run without DELETE; called %q", sink.called)
+	}
+}
+
 // A write without the matching grant is denied.
 func TestWriteWithoutGrantIsDenied(t *testing.T) {
 	t.Parallel()

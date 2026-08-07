@@ -9,7 +9,7 @@ import (
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
-// sqlParts holds one parameterized SELECT or COUNT statement.
+// sqlParts holds one parameterized SQL statement and its arguments.
 type sqlParts struct {
 	statement string
 	args      []any
