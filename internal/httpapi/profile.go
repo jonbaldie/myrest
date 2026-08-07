@@ -27,10 +27,8 @@ func (s *Service) requestDatabase(
 	if profile == "" {
 		return s.settings.DefaultDatabase(), true
 	}
-	for _, database := range s.settings.DB.Schemas {
-		if database == profile {
-			return profile, true
-		}
+	if s.settings.HasDatabase(profile) {
+		return profile, true
 	}
 	writeFailure(
 		writer,

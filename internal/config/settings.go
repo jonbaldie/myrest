@@ -107,6 +107,16 @@ func (s Settings) DefaultDatabase() string {
 	return s.DB.Schemas[0]
 }
 
+// HasDatabase reports whether name is in db-schemas.
+func (s Settings) HasDatabase(name string) bool {
+	for _, database := range s.DB.Schemas {
+		if database == name {
+			return true
+		}
+	}
+	return false
+}
+
 // Defaults holds the value of every knob that nobody has set, as the parity
 // target documents them.
 func Defaults() Settings {

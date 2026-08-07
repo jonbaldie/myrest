@@ -44,27 +44,8 @@ const (
 // Content-Profile selects the database; with no header the table comes from
 // the default database.
 func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request) {
-	role, ok := s.requestRole(writer, request)
+	role, asked, table, ok := s.lookupWriteTable(writer, request, "INSERT")
 	if !ok {
-		return
-	}
-	if s.writer == nil {
-		writeNoHandler(writer, request)
-		return
-	}
-
-	database, ok := s.requestDatabase(writer, request, headerContentProfile)
-	if !ok {
-		return
-	}
-
-	asked := schemacache.TableID{
-		Database: database,
-		Name:     request.PathValue("table"),
-	}
-	table, isResource := s.cache.TableWithPrivilege(role, asked, "INSERT")
-	if !isResource {
-		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(asked))
 		return
 	}
 
@@ -86,27 +67,8 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 // Content-Profile selects the database; with no header the table comes from
 // the default database.
 func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) {
-	role, ok := s.requestRole(writer, request)
+	role, asked, table, ok := s.lookupWriteTable(writer, request, "UPDATE")
 	if !ok {
-		return
-	}
-	if s.writer == nil {
-		writeNoHandler(writer, request)
-		return
-	}
-
-	database, ok := s.requestDatabase(writer, request, headerContentProfile)
-	if !ok {
-		return
-	}
-
-	asked := schemacache.TableID{
-		Database: database,
-		Name:     request.PathValue("table"),
-	}
-	table, isResource := s.cache.TableWithPrivilege(role, asked, "UPDATE")
-	if !isResource {
-		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(asked))
 		return
 	}
 
@@ -136,27 +98,8 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 // Content-Profile selects the database; with no header the table comes from
 // the default database.
 func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request) {
-	role, ok := s.requestRole(writer, request)
+	role, asked, table, ok := s.lookupWriteTable(writer, request, "DELETE")
 	if !ok {
-		return
-	}
-	if s.writer == nil {
-		writeNoHandler(writer, request)
-		return
-	}
-
-	database, ok := s.requestDatabase(writer, request, headerContentProfile)
-	if !ok {
-		return
-	}
-
-	asked := schemacache.TableID{
-		Database: database,
-		Name:     request.PathValue("table"),
-	}
-	table, isResource := s.cache.TableWithPrivilege(role, asked, "DELETE")
-	if !isResource {
-		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(asked))
 		return
 	}
 
@@ -176,6 +119,37 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 	writeMinimal(writer, http.StatusNoContent)
+}
+
+// lookupWriteTable finds the table for a write under Content-Profile. It also
+// checks that a Writer is configured and that the role holds the privilege.
+func (s *Service) lookupWriteTable(
+	writer http.ResponseWriter,
+	request *http.Request,
+	privilege string,
+) (schemacache.Role, schemacache.TableID, schemacache.Table, bool) {
+	role, ok := s.requestRole(writer, request)
+	if !ok {
+		return "", schemacache.TableID{}, schemacache.Table{}, false
+	}
+	if s.writer == nil {
+		writeNoHandler(writer, request)
+		return "", schemacache.TableID{}, schemacache.Table{}, false
+	}
+	database, ok := s.requestDatabase(writer, request, headerContentProfile)
+	if !ok {
+		return "", schemacache.TableID{}, schemacache.Table{}, false
+	}
+	asked := schemacache.TableID{
+		Database: database,
+		Name:     request.PathValue("table"),
+	}
+	table, isResource := s.cache.TableWithPrivilege(role, asked, privilege)
+	if !isResource {
+		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(asked))
+		return "", schemacache.TableID{}, schemacache.Table{}, false
+	}
+	return role, asked, table, true
 }
 
 func refuseUnbounded(writer http.ResponseWriter, request *http.Request, query readquery.Query) bool {
