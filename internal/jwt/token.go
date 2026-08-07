@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +31,32 @@ var (
 	// available to fall back to (PGRST302).
 	ErrNoRole = errors.New("jwt: no role claim")
 )
+
+// ClaimsFailure is a claims validation failure with the PostgREST message.
+type ClaimsFailure struct {
+	Message string
+}
+
+func (e ClaimsFailure) Error() string {
+	return fmt.Sprintf("%s: %s", ErrClaimsFailed, e.Message)
+}
+
+func (e ClaimsFailure) Unwrap() error {
+	return ErrClaimsFailed
+}
+
+// DecodeFailure is a decode or signature failure with the PostgREST message.
+type DecodeFailure struct {
+	Message string
+}
+
+func (e DecodeFailure) Error() string {
+	return fmt.Sprintf("%s: %s", ErrInvalidToken, e.Message)
+}
+
+func (e DecodeFailure) Unwrap() error {
+	return ErrInvalidToken
+}
 
 // Options are the JWT knobs a verifier needs.
 type Options struct {
@@ -111,10 +138,10 @@ func (v *Verifier) parse(token string) (map[string]any, error) {
 
 func checkTokenShape(token string) error {
 	if token == "" {
-		return fmt.Errorf("%w: empty token", ErrInvalidToken)
+		return DecodeFailure{Message: "Empty JWT is sent in Authorization header"}
 	}
 	if parts := strings.Count(token, ".") + 1; parts != 3 {
-		return fmt.Errorf("%w: expected 3 parts, got %d", ErrInvalidToken, parts)
+		return DecodeFailure{Message: "Expected 3 parts in JWT; got " + strconv.Itoa(parts)}
 	}
 	return nil
 }
@@ -122,17 +149,21 @@ func checkTokenShape(token string) error {
 func (v *Verifier) verifySignature(token string) (map[string]any, error) {
 	parsed, err := gojwt.Parse(token, func(t *gojwt.Token) (any, error) {
 		if t.Method == nil || t.Method.Alg() != gojwt.SigningMethodHS256.Alg() {
-			return nil, fmt.Errorf("%w: unsupported algorithm", ErrInvalidToken)
+			return nil, DecodeFailure{Message: "Wrong or unsupported encoding algorithm"}
 		}
 		return v.key, nil
 	}, gojwt.WithoutClaimsValidation())
-	if err != nil || !parsed.Valid {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
+	if err != nil || parsed == nil || !parsed.Valid {
+		var decode DecodeFailure
+		if errors.As(err, &decode) {
+			return nil, decode
+		}
+		return nil, DecodeFailure{Message: "JWT cryptographic operation failed"}
 	}
 
 	mapClaims, ok := parsed.Claims.(gojwt.MapClaims)
 	if !ok {
-		return nil, fmt.Errorf("%w: claims are not a JSON object", ErrClaimsFailed)
+		return nil, ClaimsFailure{Message: "Parsing claims failed"}
 	}
 	return map[string]any(mapClaims), nil
 }
@@ -169,10 +200,10 @@ func checkTimeClaim(claims map[string]any, name string, invalid func(int64) bool
 	}
 	value, ok := asInt64(raw)
 	if !ok {
-		return fmt.Errorf("%w: the JWT %q claim must be a number", ErrClaimsFailed, name)
+		return ClaimsFailure{Message: "The JWT '" + name + "' claim must be a number"}
 	}
 	if invalid(value) {
-		return fmt.Errorf("%w: %s", ErrClaimsFailed, message)
+		return ClaimsFailure{Message: message}
 	}
 	return nil
 }
@@ -180,14 +211,15 @@ func checkTimeClaim(claims map[string]any, name string, invalid func(int64) bool
 func checkAudience(claims map[string]any, want string) error {
 	raw, held := claims["aud"]
 	if !held || raw == nil {
+		// The parity target treats a missing aud as allowed for every audience.
 		return nil
 	}
 	matched, typed := audienceMatches(raw, want)
 	if !typed {
-		return fmt.Errorf("%w: the JWT aud claim must be a string or an array of strings", ErrClaimsFailed)
+		return ClaimsFailure{Message: "The JWT 'aud' claim must be a string or an array of strings"}
 	}
 	if !matched {
-		return fmt.Errorf("%w: JWT not in audience", ErrClaimsFailed)
+		return ClaimsFailure{Message: "JWT not in audience"}
 	}
 	return nil
 }

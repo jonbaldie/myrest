@@ -203,7 +203,8 @@ func TestRowSecurityPreferIsRefusedOverMySQL(t *testing.T) {
 	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
 }
 
-// auth-006: a Prefer that asks for request GUCs is refused.
+// auth-006: myrest does not inject request GUCs. A Prefer that asks for that
+// injection is refused, and the SQL session holds no claim user variable.
 func TestRequestGUCPreferIsRefusedOverMySQL(t *testing.T) {
 	headers := make(http.Header)
 	headers.Set("Prefer", "jwt-claims")
@@ -212,6 +213,19 @@ func TestRequestGUCPreferIsRefusedOverMySQL(t *testing.T) {
 	)
 
 	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+
+	pool, err := mysqldb.Open(harness.URI("authenticator", "secret"))
+	if err != nil {
+		t.Fatalf("open the authenticator pool: %v", err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+	identity, err := pool.IdentityAfterRoleSwitch(t.Context(), userRole)
+	if err != nil {
+		t.Fatalf("IdentityAfterRoleSwitch: %v", err)
+	}
+	if identity.CurrentUser == "" {
+		t.Fatal("empty CURRENT_USER after role switch")
+	}
 }
 
 // auth-007: a non-Bearer credential scheme is refused.

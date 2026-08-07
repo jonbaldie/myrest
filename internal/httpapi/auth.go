@@ -11,9 +11,10 @@ import (
 
 // The JWT error codes of the parity target.
 const (
-	codeInvalidJWT   = "PGRST301"
-	codeJWTRequired  = "PGRST302"
-	codeJWTClaimsErr = "PGRST303"
+	codeJWTSecretMissing = "PGRST300"
+	codeInvalidJWT       = "PGRST301"
+	codeJWTRequired      = "PGRST302"
+	codeJWTClaimsErr     = "PGRST303"
 )
 
 // requestRole picks the database role of the request: the JWT role claim on a
@@ -71,7 +72,7 @@ func bearerToken(writer http.ResponseWriter, request *http.Request) (token strin
 func (s *Service) roleFromBearer(writer http.ResponseWriter, token string) (schemacache.Role, bool) {
 	if s.verifier == nil {
 		writeFailure(
-			writer, http.StatusInternalServerError, "PGRST300",
+			writer, http.StatusInternalServerError, codeJWTSecretMissing,
 			"Server lacks JWT secret",
 		)
 		return "", false
@@ -84,11 +85,21 @@ func (s *Service) roleFromBearer(writer http.ResponseWriter, token string) (sche
 	if errors.Is(err, jwt.ErrNoRole) {
 		return s.anonymousRole(writer)
 	}
-	if errors.Is(err, jwt.ErrClaimsFailed) {
-		writeAuthFailure(writer, codeJWTClaimsErr, jwtClaimsMessage(err))
+	var claims jwt.ClaimsFailure
+	if errors.As(err, &claims) {
+		writeAuthFailure(writer, codeJWTClaimsErr, claims.Message)
 		return "", false
 	}
-	writeAuthFailure(writer, codeInvalidJWT, jwtInvalidMessage(err))
+	var decode jwt.DecodeFailure
+	if errors.As(err, &decode) {
+		writeAuthFailure(writer, codeInvalidJWT, decode.Message)
+		return "", false
+	}
+	if errors.Is(err, jwt.ErrClaimsFailed) {
+		writeAuthFailure(writer, codeJWTClaimsErr, "Parsing claims failed")
+		return "", false
+	}
+	writeAuthFailure(writer, codeInvalidJWT, "JWT cryptographic operation failed")
 	return "", false
 }
 
@@ -110,42 +121,6 @@ func writeAuthFailure(writer http.ResponseWriter, code, message string) {
 		)
 	}
 	writeFailure(writer, http.StatusUnauthorized, code, message)
-}
-
-func jwtInvalidMessage(err error) string {
-	text := err.Error()
-	switch {
-	case strings.Contains(text, "empty token"):
-		return "Empty JWT is sent in Authorization header"
-	case strings.Contains(text, "expected 3 parts"):
-		return "Expected 3 parts in JWT; got a different number"
-	default:
-		return "JWT cryptographic operation failed"
-	}
-}
-
-func jwtClaimsMessage(err error) string {
-	text := err.Error()
-	switch {
-	case strings.Contains(text, "JWT expired"):
-		return "JWT expired"
-	case strings.Contains(text, "not yet valid"):
-		return "JWT not yet valid"
-	case strings.Contains(text, "issued at future"):
-		return "JWT issued at future"
-	case strings.Contains(text, "not in audience"):
-		return "JWT not in audience"
-	case strings.Contains(text, "aud claim"):
-		return "The JWT 'aud' claim must be a string or an array of strings"
-	case strings.Contains(text, "'exp'"):
-		return "The JWT 'exp' claim must be a number"
-	case strings.Contains(text, "'nbf'"):
-		return "The JWT 'nbf' claim must be a number"
-	case strings.Contains(text, "'iat'"):
-		return "The JWT 'iat' claim must be a number"
-	default:
-		return "Parsing claims failed"
-	}
 }
 
 // preferAsksForRowSecurity finds a Prefer token that asks for Postgres

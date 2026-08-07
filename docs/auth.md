@@ -38,6 +38,8 @@ the JWT role.
 
 | Feature | Refusal |
 | --- | --- |
-| Postgres row-level security | Prefer `row-security` → `MYREST001`. myrest offers no fake RLS. |
-| Request GUCs / `request.jwt.claims` in SQL | Prefer `jwt-claims` → `MYREST001`. Claims stay on the HTTP wire. |
+| Postgres row-level security | Prefer `row-security` → `MYREST001`. myrest offers no fake RLS. Authorization is only MySQL grants of the active role. |
+| Request GUCs / `request.jwt.claims` in SQL | Prefer `jwt-claims` → `MYREST001`. myrest never injects claims or headers into SQL. Claims stay on the HTTP wire. |
 | Non-Bearer credential schemes | `Authorization` schemes other than Bearer → `MYREST001`. |
+
+The Prefer names above are myrest refuse probes for Postgres-only authz features that have no PostgREST client opt-in header. Ordinary Prefer values that the read and write tickets own are unchanged.
