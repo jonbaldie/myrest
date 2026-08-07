@@ -40,6 +40,7 @@ func main() {
 		Settings: settings,
 		Cache:    cache,
 		Reader:   pool,
+		Writer:   pool,
 		Caller:   pool,
 	})
 	if err != nil {
