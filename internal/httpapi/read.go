@@ -42,10 +42,7 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 		// The words of the database name the accounts of the deployment,
 		// so the operator reads them and the client does not.
 		s.log.Printf("myrest: read %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		writeFailure(
-			writer, http.StatusInternalServerError, codeDatabaseFailure,
-			"The database did not answer the read",
-		)
+		writeDatabaseFailure(writer, err)
 		return
 	}
 	writeJSON(writer, http.StatusOK, read)
