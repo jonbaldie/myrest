@@ -235,3 +235,86 @@ func TestGetRPCNonReadSafeRoutineRefusesStably(t *testing.T) {
 		t.Fatalf("caller ran for %v, want no call", source.routine.ID)
 	}
 }
+
+// rpc-007: a single unnamed JSON/jsonb whole-body argument refuses stably.
+func TestPostRPCWholeBodyJSONArgumentRefusesStably(t *testing.T) {
+	t.Parallel()
+
+	source := &caller{body: int64(1)}
+	response, body := apitest.PostJSON(
+		t,
+		serveRPC(t, source).URL()+"/rpc/add_them",
+		`[1, 2]`,
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if want := "A single unnamed JSON RPC argument is not supported"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+	if source.routine.ID.Name != "" {
+		t.Fatalf("caller ran for %v, want no call", source.routine.ID)
+	}
+}
+
+// rpc-008: a single unnamed bytea whole-body argument refuses stably.
+func TestPostRPCWholeBodyByteaArgumentRefusesStably(t *testing.T) {
+	t.Parallel()
+
+	source := &caller{body: int64(1)}
+	response, body := apitest.Post(
+		t,
+		serveRPC(t, source).URL()+"/rpc/add_them",
+		"application/octet-stream",
+		"\x00\x01\x02",
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if want := "A single unnamed bytea RPC argument is not supported"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+	if source.routine.ID.Name != "" {
+		t.Fatalf("caller ran for %v, want no call", source.routine.ID)
+	}
+}
+
+// rpc-009: a single unnamed text whole-body argument refuses stably.
+func TestPostRPCWholeBodyTextArgumentRefusesStably(t *testing.T) {
+	t.Parallel()
+
+	source := &caller{body: int64(1)}
+	response, body := apitest.Post(
+		t,
+		serveRPC(t, source).URL()+"/rpc/add_them",
+		"text/plain",
+		"hello",
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if want := "A single unnamed text RPC argument is not supported"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+	if source.routine.ID.Name != "" {
+		t.Fatalf("caller ran for %v, want no call", source.routine.ID)
+	}
+}
+
+// rpc-010: a single unnamed xml whole-body argument refuses stably.
+func TestPostRPCWholeBodyXMLArgumentRefusesStably(t *testing.T) {
+	t.Parallel()
+
+	source := &caller{body: int64(1)}
+	response, body := apitest.Post(
+		t,
+		serveRPC(t, source).URL()+"/rpc/add_them",
+		"text/xml",
+		"<a/>",
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if want := "A single unnamed xml RPC argument is not supported"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+	if source.routine.ID.Name != "" {
+		t.Fatalf("caller ran for %v, want no call", source.routine.ID)
+	}
+}

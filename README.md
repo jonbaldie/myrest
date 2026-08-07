@@ -96,6 +96,8 @@ Functions match the PostgREST scalar body. Procedures use the same path and retu
 
 `GET /rpc/<name>` is a **partial match**: it runs only when the routine is **read-safe** under MySQL `SQL_DATA_ACCESS`. Named query-string keys are the argument names. A non-read-safe routine refuses stably. See [GET /rpc read-safe routines](docs/rpc-get.md).
 
+Unusual whole-body `POST /rpc` argument modes (single unnamed `json`/`jsonb`/`bytea`/`text`/`xml`) are **not supported** and refuse stably. See [RPC whole-body argument modes](docs/rpc-body-modes.md).
+
 ## CORS and proxy URLs
 
 `server-cors-allowed-origins` sets the browser origin policy. An empty list accepts every origin. Allowed origins get the PostgREST CORS response and preflight headers; an origin outside the list gets no `Access-Control-Allow-Origin`. myrest never takes host or scheme from `X-Forwarded-*` or `Forwarded`. When it reports an absolute base URL, `openapi-server-proxy-uri` wins when set. See [CORS origins and proxy header behaviour](docs/cors-and-proxy.md) and [ADR 0012](docs/adr/0012-cors-and-proxy-headers.md).

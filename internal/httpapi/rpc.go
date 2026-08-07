@@ -128,9 +128,15 @@ func namedQueryArgs(request *http.Request) map[string]any {
 }
 
 // readNamedJSONArgs reads the PostgREST named-argument object. An empty body
-// means no arguments.
+// means no arguments. Unusual whole-body argument modes are not supported and
+// refuse with MYREST001 (see docs/rpc-body-modes.md).
 func readNamedJSONArgs(writer http.ResponseWriter, request *http.Request) (map[string]any, bool) {
 	defer func() { _ = request.Body.Close() }()
+
+	if message, refused := refusedWholeBodyMode(request.Header.Get("Content-Type")); refused {
+		writeFailure(writer, http.StatusBadRequest, codePostgresOnlyFeature, message)
+		return nil, false
+	}
 
 	body, err := io.ReadAll(io.LimitReader(request.Body, 1<<20))
 	if err != nil {
@@ -141,15 +147,38 @@ func readNamedJSONArgs(writer http.ResponseWriter, request *http.Request) (map[s
 		return map[string]any{}, true
 	}
 
-	var args map[string]any
-	if err := json.Unmarshal(body, &args); err != nil {
+	var decoded any
+	if err := json.Unmarshal(body, &decoded); err != nil {
 		writeFailure(writer, http.StatusBadRequest, codeParseFailure, "Could not parse the JSON body")
 		return nil, false
 	}
-	if args == nil {
-		return map[string]any{}, true
+	args, isObject := decoded.(map[string]any)
+	if !isObject {
+		writeFailure(
+			writer,
+			http.StatusBadRequest,
+			codePostgresOnlyFeature,
+			"A single unnamed JSON RPC argument is not supported",
+		)
+		return nil, false
 	}
 	return args, true
+}
+
+// refusedWholeBodyMode reports a stable refusal for PostgREST single-unnamed
+// bytea, text, and xml body modes. JSON whole-body is detected after parse.
+func refusedWholeBodyMode(contentType string) (string, bool) {
+	mediaType, _, _ := strings.Cut(contentType, ";")
+	switch strings.ToLower(strings.TrimSpace(mediaType)) {
+	case "application/octet-stream":
+		return "A single unnamed bytea RPC argument is not supported", true
+	case "text/plain":
+		return "A single unnamed text RPC argument is not supported", true
+	case "text/xml", "application/xml":
+		return "A single unnamed xml RPC argument is not supported", true
+	default:
+		return "", false
+	}
 }
 
 // noRoutineMessage names the routine the client asked for, the way the parity
