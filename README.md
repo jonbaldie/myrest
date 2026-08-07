@@ -4,8 +4,9 @@ myrest will be an HTTP API service that exposes MySQL 8.0+ with PostgREST-compat
 
 The service serves Bearer JWT authentication, ordinary reads of one exposed
 table (column select, full-match filters, order, page, HEAD, and exact count),
-and `POST /rpc` for functions and procedures. Every other part of the
-PostgREST surface is still to come.
+**embed** of related resources over declared foreign keys, and `POST /rpc` for
+functions and procedures. Every other part of the PostgREST surface is still
+to come.
 
 ## Requirements
 
@@ -51,6 +52,21 @@ set. See [Ordinary read](docs/ordinary-read.md) for the full-match filter
 operator list, and [Read parity boundaries](docs/read-parity-boundaries.md)
 for the text-case and JSON path subsets and the stable refusals
 (`ilike`, JSON `->` / `->>`, and refused FTS / array / range / planned count).
+
+## Embed
+
+A nested select loads related rows when a **relationship** is in the **schema
+cache**. Relationships come only from declared foreign keys:
+
+```bash
+curl "http://127.0.0.1:3000/orders?select=id,items(id,name)&id=eq.1"
+[{"id":1,"items":{"id":1,"name":"alpha"}}]
+```
+
+Nested filter, order, and limit use the embed name as a prefix
+(`orders.order=id.desc&orders.limit=1`). Many-to-many uses a declared join
+table. When more than one foreign key applies, disambiguate with `!fk_name`.
+See [Embed](docs/embed.md).
 
 myrest opens pooled MySQL connections as the **authenticator** of `db-uri` and activates the database role for each request, so MySQL grants — not a second access list — say what a client may read. After the **role switch**, grants follow the active role, but SQL `CURRENT_USER()` stays the authenticator (a documented **partial match**). See [Authentication](docs/auth.md).
 

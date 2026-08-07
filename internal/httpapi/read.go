@@ -55,26 +55,58 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	read, err := s.reader.Read(request.Context(), role, table, query)
+	read, err := s.readWithEmbeds(request.Context(), role, table, query)
 	if err != nil {
-		var missing readquery.ColumnNotFound
-		if errors.As(err, &missing) {
-			writeFailure(writer, http.StatusBadRequest, codeNoColumn, missing.Error())
-			return
-		}
-		var gap readquery.UnsupportedFeature
-		if errors.As(err, &gap) {
-			writeUnsupportedFeature(writer, gap.Message)
-			return
-		}
-		// The words of the database name the accounts of the deployment,
-		// so the operator reads them and the client does not.
-		s.log.Printf("myrest: read %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		writeDatabaseFailure(writer, err)
+		s.writeReadFailure(writer, asked, role, err)
 		return
 	}
-
 	writeRead(writer, request.Method == http.MethodHead, query, read)
+}
+
+func (s *Service) readWithEmbeds(
+	ctx context.Context,
+	role schemacache.Role,
+	table schemacache.Table,
+	query readquery.Query,
+) (readquery.Result, error) {
+	plan, err := s.planEmbeds(role, table.ID, query.Embeds)
+	if err != nil {
+		return readquery.Result{}, err
+	}
+	query, injected := withJoinColumns(table, query, plan)
+	read, err := s.reader.Read(ctx, role, table, query)
+	if err != nil {
+		return readquery.Result{}, err
+	}
+	nested, err := s.nestEmbeds(ctx, role, table, read.Rows, plan)
+	if err != nil {
+		return readquery.Result{}, err
+	}
+	read.Rows = dropInjectedColumns(nested, injected)
+	return read, nil
+}
+
+func (s *Service) writeReadFailure(
+	writer http.ResponseWriter,
+	asked schemacache.TableID,
+	role schemacache.Role,
+	err error,
+) {
+	if writeEmbedPlanFailure(writer, err) {
+		return
+	}
+	var missing readquery.ColumnNotFound
+	if errors.As(err, &missing) {
+		writeFailure(writer, http.StatusBadRequest, codeNoColumn, missing.Error())
+		return
+	}
+	var gap readquery.UnsupportedFeature
+	if errors.As(err, &gap) {
+		writeUnsupportedFeature(writer, gap.Message)
+		return
+	}
+	s.log.Printf("myrest: read %s.%s as %s: %v", asked.Database, asked.Name, role, err)
+	writeDatabaseFailure(writer, err)
 }
 
 func parseReadQuery(request *http.Request, maxRows config.RowLimit) (readquery.Query, error) {

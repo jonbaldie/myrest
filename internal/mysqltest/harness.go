@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -23,6 +24,9 @@ const (
 	readyTimeout    = 60 * time.Second
 )
 
+// localHarnessGate serializes packages that share one local mysqld.
+var localHarnessGate sync.Mutex
+
 // Harness is a disposable MySQL 8.0+ container for tests.
 type Harness struct {
 	containerID string
@@ -30,10 +34,28 @@ type Harness struct {
 	rootPass    string
 	user        string
 	pass        string
+	local       bool
 }
 
 // Start runs MySQL 8.0+ in Docker and waits until it accepts connections.
+// Set MYREST_MYSQL_HARNESS_PORT to reuse a local mysqld when Docker cannot
+// start a container (for example in a restricted cloud VM). When that env
+// var is unset and Docker fails, Start tries local port 3306 as a fallback.
 func Start() (*Harness, error) {
+	if port := strings.TrimSpace(os.Getenv("MYREST_MYSQL_HARNESS_PORT")); port != "" {
+		return startExisting(port)
+	}
+	harness, err := startDocker()
+	if err == nil {
+		return harness, nil
+	}
+	if local, localErr := startExisting("3306"); localErr == nil {
+		return local, nil
+	}
+	return nil, err
+}
+
+func startDocker() (*Harness, error) {
 	if _, err := exec.LookPath("docker"); err != nil {
 		return nil, fmt.Errorf("docker is required for the MySQL test harness: %w", err)
 	}
@@ -137,7 +159,15 @@ func (h *Harness) LoadSQL(paths ...string) error {
 
 // Stop removes the MySQL container.
 func (h *Harness) Stop() error {
-	if h == nil || h.containerID == "" {
+	if h == nil {
+		return nil
+	}
+	if h.local {
+		localHarnessGate.Unlock()
+		h.reset()
+		return nil
+	}
+	if h.containerID == "" {
 		return nil
 	}
 	cmd := exec.Command("docker", "rm", "-f", h.containerID)
@@ -155,6 +185,7 @@ func (h *Harness) reset() {
 	h.rootPass = ""
 	h.user = ""
 	h.pass = ""
+	h.local = false
 }
 
 func (h *Harness) waitReady(timeout time.Duration) error {
@@ -179,6 +210,22 @@ func (h *Harness) waitReady(timeout time.Duration) error {
 		last = errors.New("timed out waiting for MySQL")
 	}
 	return fmt.Errorf("MySQL not ready: %w", last)
+}
+
+func startExisting(port string) (*Harness, error) {
+	localHarnessGate.Lock()
+	harness := &Harness{
+		hostPort: port,
+		rootPass: defaultRootPass,
+		user:     defaultUser,
+		pass:     defaultPass,
+		local:    true,
+	}
+	if err := harness.waitReady(readyTimeout); err != nil {
+		localHarnessGate.Unlock()
+		return nil, err
+	}
+	return harness, nil
 }
 
 func freeTCPPort() (string, error) {

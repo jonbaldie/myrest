@@ -34,8 +34,14 @@ func TestSchemaCacheHoldsTheLiveCatalog(t *testing.T) {
 		t.Fatalf("keys of items = %#v, want one PRIMARY key", got)
 	}
 	foreignKeys := cache.ForeignKeys()
-	if len(foreignKeys) != 1 || foreignKeys[0].Name != "orders_item" || foreignKeys[0].Table != orders {
-		t.Fatalf("foreign keys = %#v, want orders_item", foreignKeys)
+	foundOrdersItem := false
+	for _, foreignKey := range foreignKeys {
+		if foreignKey.Name == "orders_item" && foreignKey.Table == orders {
+			foundOrdersItem = true
+		}
+	}
+	if !foundOrdersItem {
+		t.Fatalf("foreign keys = %#v, want orders_item among them", foreignKeys)
 	}
 	routines := cache.Routines()
 	foundCount := false

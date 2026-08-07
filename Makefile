@@ -1,8 +1,10 @@
 .PHONY: test messgo mutago mysql-fixtures build
 
 # Run the Go test suite (HTTP seam + MySQL fixture harness).
+# -p 1 keeps packages from sharing one local mysqld at the same time when
+# Docker is unavailable and the harness falls back to port 3306.
 test:
-	go test ./...
+	go test -p 1 ./...
 
 # Build the myrest service binary.
 build:
