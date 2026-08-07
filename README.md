@@ -70,11 +70,16 @@ See [Embed](docs/embed.md).
 
 myrest opens pooled MySQL connections as the **authenticator** of `db-uri` and activates the database role for each request, so MySQL grants — not a second access list — say what a client may read. After the **role switch**, grants follow the active role, but SQL `CURRENT_USER()` stays the authenticator (a documented **partial match**). See [Authentication](docs/auth.md).
 
-A table is a **resource** of the request only when it is in the **default database** (the first of `db-schemas`) and the active role holds `SELECT` on it, of itself or through a role granted to it. A table of another configured database waits for the content negotiation that names its database. Any other name gets the PostgREST error envelope:
+A table is a **resource** of the request only when it is in the selected MySQL database and the active role holds `SELECT` on it, of itself or through a role granted to it. With no profile header the selected database is the **default database** (the first of `db-schemas`). `Accept-Profile` selects the database for a read; `Content-Profile` selects it for a write. A profile outside `db-schemas` refuses with `PGRST106`. Any other table name gets the PostgREST error envelope:
 
 ```bash
 curl http://127.0.0.1:3000/secrets
 {"code":"PGRST205","message":"Could not find the table 'shop.secrets' in the schema cache","details":null,"hint":null}
+```
+
+```bash
+curl http://127.0.0.1:3000/items -H 'Accept-Profile: warehouse'
+# reads warehouse.items when warehouse is in db-schemas
 ```
 
 When MySQL itself refuses a read — a grant taken away after start-up, for example — the client gets the same envelope with a message of myrest. What MySQL said names the accounts of the deployment, so it goes to the log of the operator and not to the client.
@@ -83,7 +88,7 @@ myrest builds the **schema cache** from the MySQL catalog at start-up. Send `SIG
 
 ## Calling a routine
 
-`POST /rpc/<name>` calls a MySQL function or procedure in the **default database** when the active **database role** holds `EXECUTE` on it. Named JSON object keys are the argument names:
+`POST /rpc/<name>` calls a MySQL function or procedure in the selected database when the active **database role** holds `EXECUTE` on it. With no profile header that database is the **default database**. `Content-Profile` selects the database for `POST /rpc`; `Accept-Profile` selects it for `GET /rpc`. Named JSON object keys are the argument names:
 
 ```bash
 curl -X POST http://127.0.0.1:3000/rpc/add_them \

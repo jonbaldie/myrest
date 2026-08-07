@@ -41,6 +41,8 @@ const (
 )
 
 // insertTable answers POST /<table>: one JSON object or a JSON array of objects.
+// Content-Profile selects the database; with no header the table comes from
+// the default database.
 func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request) {
 	role, ok := s.requestRole(writer, request)
 	if !ok {
@@ -51,8 +53,13 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 
+	database, ok := s.requestDatabase(writer, request, headerContentProfile)
+	if !ok {
+		return
+	}
+
 	asked := schemacache.TableID{
-		Database: s.settings.DefaultDatabase(),
+		Database: database,
 		Name:     request.PathValue("table"),
 	}
 	table, isResource := s.cache.TableWithPrivilege(role, asked, "INSERT")
@@ -76,6 +83,8 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 }
 
 // patchTable answers PATCH /<table> with the ordinary-read filter surface.
+// Content-Profile selects the database; with no header the table comes from
+// the default database.
 func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) {
 	role, ok := s.requestRole(writer, request)
 	if !ok {
@@ -86,8 +95,13 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 		return
 	}
 
+	database, ok := s.requestDatabase(writer, request, headerContentProfile)
+	if !ok {
+		return
+	}
+
 	asked := schemacache.TableID{
-		Database: s.settings.DefaultDatabase(),
+		Database: database,
 		Name:     request.PathValue("table"),
 	}
 	table, isResource := s.cache.TableWithPrivilege(role, asked, "UPDATE")
@@ -119,6 +133,8 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 }
 
 // deleteTable answers DELETE /<table> with the ordinary-read filter surface.
+// Content-Profile selects the database; with no header the table comes from
+// the default database.
 func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request) {
 	role, ok := s.requestRole(writer, request)
 	if !ok {
@@ -129,8 +145,13 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 
+	database, ok := s.requestDatabase(writer, request, headerContentProfile)
+	if !ok {
+		return
+	}
+
 	asked := schemacache.TableID{
-		Database: s.settings.DefaultDatabase(),
+		Database: database,
 		Name:     request.PathValue("table"),
 	}
 	table, isResource := s.cache.TableWithPrivilege(role, asked, "DELETE")

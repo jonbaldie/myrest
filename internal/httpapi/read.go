@@ -30,11 +30,15 @@ const (
 
 // readTable answers GET and HEAD /<table>: it finds the resource of the active
 // database role in the schema cache, and reads under the ordinary-read query.
-// A request names no database, so the table comes from the default database;
-// the profile header of the parity target comes with the content negotiation
-// ticket.
+// Accept-Profile selects the database; with no header the table comes from
+// the default database.
 func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 	role, ok := s.requestRole(writer, request)
+	if !ok {
+		return
+	}
+
+	database, ok := s.requestDatabase(writer, request, headerAcceptProfile)
 	if !ok {
 		return
 	}
@@ -46,7 +50,7 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 	}
 
 	asked := schemacache.TableID{
-		Database: s.settings.DefaultDatabase(),
+		Database: database,
 		Name:     request.PathValue("table"),
 	}
 	table, isResource := s.cache.Resource(role, asked)

@@ -139,8 +139,8 @@ func TestTableOutsideTheConfiguredDatabasesIsNotReachable(t *testing.T) {
 }
 
 // A request names no database, so the read goes to the default database: the
-// first of db-schemas. A table of the second database is not reachable, even
-// with SELECT on it, until content negotiation names its database.
+// first of db-schemas. A table of the second database is not reachable without
+// Accept-Profile, even with SELECT on it.
 func TestReadGoesToTheDefaultDatabaseOnly(t *testing.T) {
 	response, body := get(t, serve(t, "myrest_fixture", "myrest_hidden"), "/outside_items")
 
