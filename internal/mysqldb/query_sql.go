@@ -17,7 +17,7 @@ type sqlParts struct {
 }
 
 func buildSelect(table schemacache.Table, query readquery.Query) (sqlParts, error) {
-	columns, err := resolveColumns(table, query.Columns)
+	columns, err := resolveColumns(table, query)
 	if err != nil {
 		return sqlParts{}, err
 	}
@@ -119,8 +119,13 @@ type resolvedColumn struct {
 	Alias  string
 }
 
-func resolveColumns(table schemacache.Table, asked []readquery.Column) ([]resolvedColumn, error) {
+func resolveColumns(table schemacache.Table, query readquery.Query) ([]resolvedColumn, error) {
+	asked := query.Columns
 	if len(asked) == 0 {
+		if !query.SelectAll && len(query.Embeds) > 0 {
+			// Only embeds: join columns should already be injected into Columns.
+			return []resolvedColumn{}, nil
+		}
 		out := make([]resolvedColumn, len(table.Columns))
 		for i, column := range table.Columns {
 			out[i] = resolvedColumn{

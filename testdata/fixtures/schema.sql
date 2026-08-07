@@ -1,6 +1,9 @@
 -- Fixture databases, an authenticator login, and an anonymous database role.
-CREATE DATABASE IF NOT EXISTS myrest_fixture;
-CREATE DATABASE IF NOT EXISTS myrest_hidden;
+-- Drop first so a reused local mysqld (MYREST_MYSQL_HARNESS_PORT) starts clean.
+DROP DATABASE IF EXISTS myrest_fixture;
+DROP DATABASE IF EXISTS myrest_hidden;
+CREATE DATABASE myrest_fixture;
+CREATE DATABASE myrest_hidden;
 
 USE myrest_fixture;
 
@@ -34,7 +37,46 @@ CREATE TABLE orders (
   CONSTRAINT orders_item FOREIGN KEY (item_id) REFERENCES items (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-INSERT INTO orders (item_id) VALUES (1);
+INSERT INTO orders (item_id) VALUES (1), (1), (2);
+
+CREATE TABLE tags (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT INTO tags (name) VALUES ('hot'), ('cold');
+
+-- Join table for many-to-many: both FKs are part of the primary key.
+CREATE TABLE item_tags (
+  item_id BIGINT UNSIGNED NOT NULL,
+  tag_id BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (item_id, tag_id),
+  CONSTRAINT item_tags_item FOREIGN KEY (item_id) REFERENCES items (id),
+  CONSTRAINT item_tags_tag FOREIGN KEY (tag_id) REFERENCES tags (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT INTO item_tags (item_id, tag_id) VALUES (1, 1), (1, 2), (2, 1);
+
+CREATE TABLE addresses (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  label VARCHAR(255) NOT NULL,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT INTO addresses (label) VALUES ('from-here'), ('to-there');
+
+-- Two foreign keys to the same table: embed needs disambiguation.
+CREATE TABLE deliveries (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  from_address_id BIGINT UNSIGNED NOT NULL,
+  to_address_id BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (id),
+  CONSTRAINT deliveries_from FOREIGN KEY (from_address_id) REFERENCES addresses (id),
+  CONSTRAINT deliveries_to FOREIGN KEY (to_address_id) REFERENCES addresses (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT INTO deliveries (from_address_id, to_address_id) VALUES (1, 2);
 
 CREATE FUNCTION item_count() RETURNS BIGINT
   DETERMINISTIC
@@ -101,6 +143,11 @@ SET DEFAULT ROLE NONE TO 'authenticator'@'%';
 
 GRANT SELECT ON myrest_fixture.items TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.profiles TO 'myrest_anon';
+GRANT SELECT ON myrest_fixture.orders TO 'myrest_anon';
+GRANT SELECT ON myrest_fixture.tags TO 'myrest_anon';
+GRANT SELECT ON myrest_fixture.item_tags TO 'myrest_anon';
+GRANT SELECT ON myrest_fixture.addresses TO 'myrest_anon';
+GRANT SELECT ON myrest_fixture.deliveries TO 'myrest_anon';
 GRANT INSERT ON myrest_fixture.items TO 'myrest_anon';
 GRANT INSERT ON myrest_fixture.orders TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.items_view TO 'myrest_anon';
@@ -118,4 +165,5 @@ CREATE ROLE IF NOT EXISTS 'myrest_user';
 GRANT 'myrest_user' TO 'authenticator'@'%';
 GRANT SELECT ON myrest_fixture.items TO 'myrest_user';
 GRANT SELECT ON myrest_fixture.profiles TO 'myrest_user';
+GRANT SELECT ON myrest_fixture.orders TO 'myrest_user';
 GRANT SELECT ON myrest_fixture.secrets TO 'myrest_user';

@@ -28,16 +28,21 @@ const (
 // failure is the error envelope of the parity target. Every field is written,
 // and details and hint stay null until a ticket gives them a value.
 type failure struct {
-	Code    string  `json:"code"`
-	Message string  `json:"message"`
-	Details *string `json:"details"`
-	Hint    *string `json:"hint"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Details any    `json:"details"`
+	Hint    any    `json:"hint"`
 }
 
 // writeFailure answers with the error envelope. Only myrest writes the
 // message: what the database says goes to the log of the operator.
 func writeFailure(writer http.ResponseWriter, status int, code, message string) {
 	writeJSON(writer, status, failure{Code: code, Message: message})
+}
+
+// writeFailureExtra answers with details and hint set.
+func writeFailureExtra(writer http.ResponseWriter, status int, code, message string, details, hint any) {
+	writeJSON(writer, status, failure{Code: code, Message: message, Details: details, Hint: hint})
 }
 
 // writeDatabaseFailure answers a database error without disclosing database

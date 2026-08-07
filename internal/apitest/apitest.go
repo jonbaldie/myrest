@@ -13,10 +13,10 @@ import (
 
 // Envelope is the error body of the parity target.
 type Envelope struct {
-	Code    string  `json:"code"`
-	Message string  `json:"message"`
-	Details *string `json:"details"`
-	Hint    *string `json:"hint"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Details any    `json:"details"`
+	Hint    any    `json:"hint"`
 }
 
 // Get reads a URL and gives back the answer with its body.

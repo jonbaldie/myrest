@@ -44,6 +44,11 @@ The same gap code refuses Postgres row-level security (`Prefer: row-security`),
 request GUC / `request.jwt.claims` injection (`Prefer: jwt-claims`), and
 non-Bearer credential schemes. See [Authentication](auth.md).
 
+Embed failures that match PostgREST use `PGRST*` codes: `PGRST200` when no
+declared foreign-key path exists, and `PGRST201` when more than one
+relationship applies and the request does not disambiguate. A computed
+relationship embed is a MySQL gap and uses `MYREST001`. See [Embed](embed.md).
+
 ## MySQL SQLSTATE to HTTP status
 
 For a MySQL database error, myrest first matches the MySQL error number in

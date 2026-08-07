@@ -29,6 +29,8 @@ sudo chmod 666 /var/run/docker.sock   # let the ubuntu user reach the socket
 
 The daemon uses the `fuse-overlayfs` storage driver with the containerd snapshotter off (`/etc/docker/daemon.json`); Docker 29 needs the snapshotter off for `fuse-overlayfs`. Without a running daemon, `make test`, `make mysql-fixtures`, and `make mutago` stop with a Docker error.
 
+When Docker cannot start a container (no FUSE device, no iptables), install MySQL 8 locally, set root and `myrest` passwords to `myrest`, and let the harness fall back to `127.0.0.1:3306`, or set `MYREST_MYSQL_HARNESS_PORT=3306` explicitly.
+
 ### PATH for messgo and mutago
 
 The update script puts `messgo` and `mutago` in `$(go env GOPATH)/bin` (`~/go/bin`). `~/.bashrc` adds that directory to `PATH`, so a login shell finds the tools for `make messgo` and `make mutago`. A non-login shell must add it first:
