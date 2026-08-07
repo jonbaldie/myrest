@@ -14,6 +14,17 @@ COMMENT='stock rows';
 
 INSERT INTO items (name) VALUES ('alpha'), ('beta');
 
+CREATE TABLE profiles (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  meta JSON NOT NULL,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+COMMENT='json path fixture rows';
+
+INSERT INTO profiles (meta) VALUES
+  (CAST('{"blood_type":"A-","tag":"Alpha","phones":[{"number":"917-929-5745"}]}' AS JSON)),
+  (CAST('{"blood_type":"O+","tag":"Beta","phones":[{"number":"512-446-4988"}]}' AS JSON));
+
 CREATE VIEW items_view AS SELECT id, name FROM items;
 
 CREATE TABLE orders (
@@ -89,6 +100,7 @@ GRANT 'web-anon' TO 'authenticator'@'%';
 SET DEFAULT ROLE NONE TO 'authenticator'@'%';
 
 GRANT SELECT ON myrest_fixture.items TO 'myrest_anon';
+GRANT SELECT ON myrest_fixture.profiles TO 'myrest_anon';
 GRANT INSERT ON myrest_fixture.items TO 'myrest_anon';
 GRANT INSERT ON myrest_fixture.orders TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.items_view TO 'myrest_anon';
@@ -105,4 +117,5 @@ GRANT SELECT ON myrest_fixture.items TO 'web-anon';
 CREATE ROLE IF NOT EXISTS 'myrest_user';
 GRANT 'myrest_user' TO 'authenticator'@'%';
 GRANT SELECT ON myrest_fixture.items TO 'myrest_user';
+GRANT SELECT ON myrest_fixture.profiles TO 'myrest_user';
 GRANT SELECT ON myrest_fixture.secrets TO 'myrest_user';

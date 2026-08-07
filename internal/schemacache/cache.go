@@ -23,6 +23,7 @@ type TableID struct {
 type Column struct {
 	Name      string
 	DataType  string
+	Collation string
 	Nullable  bool
 	Default   *string
 	Comment   string
@@ -41,6 +42,7 @@ type ColumnFact struct {
 	Table     TableID
 	Name      string
 	DataType  string
+	Collation string
 	Nullable  bool
 	Default   *string
 	Comment   string
@@ -131,6 +133,7 @@ func (c *Cache) replaceUnlocked(catalog Catalog) {
 		columns[fact.Table] = append(columns[fact.Table], Column{
 			Name:      fact.Name,
 			DataType:  fact.DataType,
+			Collation: fact.Collation,
 			Nullable:  fact.Nullable,
 			Default:   fact.Default,
 			Comment:   fact.Comment,

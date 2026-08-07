@@ -1,6 +1,6 @@
 // Package readquery holds the PostgREST-shaped ordinary-read query: column
-// select, full-match filters, order, page, and exact count. HTTP and SQL stay
-// outside this package.
+// select, full-match and named partial-match filters, JSON path fields, order,
+// page, and exact count. HTTP and SQL stay outside this package.
 package readquery
 
 import "github.com/jonbaldie/myrest/internal/rows"
@@ -41,16 +41,17 @@ func (e ColumnNotFound) Error() string {
 	return "column not found: " + e.Name
 }
 
-// Column is one selected column, optionally renamed.
+// Column is one selected column, optionally renamed, optionally a JSON path.
 type Column struct {
 	Name  string
 	Alias string
+	Path  *JSONPath
 }
 
-// Operator is a full-match filter operator of this ticket.
+// Operator is a filter operator of an ordinary read.
 type Operator string
 
-// Full-match filter operators claimed by the ordinary-read ticket.
+// Filter operators claimed as full match, plus the text-case partial match.
 const (
 	OpEq         Operator = "eq"
 	OpNeq        Operator = "neq"
@@ -59,20 +60,28 @@ const (
 	OpLt         Operator = "lt"
 	OpLte        Operator = "lte"
 	OpLike       Operator = "like"
+	OpILike      Operator = "ilike"
 	OpIn         Operator = "in"
 	OpIs         Operator = "is"
 	OpIsDistinct Operator = "isdistinct"
 )
 
-// FullMatchOperators lists every filter operator this ticket claims as a
-// full match. Ticket #28 owns text-case, JSON path, FTS, and array/range.
+// FullMatchOperators lists every filter operator the ordinary-read ticket
+// claims as a full match.
 var FullMatchOperators = []Operator{
 	OpEq, OpNeq, OpGt, OpGte, OpLt, OpLte, OpLike, OpIn, OpIs, OpIsDistinct,
 }
 
-// Filter is one column comparison.
+// PartialMatchOperators lists filter operators claimed as a named MySQL
+// partial match (see docs/read-parity-boundaries.md).
+var PartialMatchOperators = []Operator{
+	OpILike,
+}
+
+// Filter is one column comparison, optionally on a JSON path.
 type Filter struct {
 	Column  string
+	Path    *JSONPath
 	Op      Operator
 	Value   string
 	Values  []string // for in.(...)
@@ -87,9 +96,11 @@ type Group struct {
 	Negated bool
 }
 
-// Order is one sort key. Ascending is the default.
+// Order is one sort key. Ascending is the default. Path holds a JSON path when
+// the client orders by an extracted JSON value.
 type Order struct {
 	Column string
+	Path   *JSONPath
 	Desc   bool
 }
 

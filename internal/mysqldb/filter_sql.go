@@ -9,14 +9,19 @@ import (
 )
 
 func filterSQL(table schemacache.Table, filter readquery.Filter) (string, []any, error) {
-	if !tableHasColumn(table, filter.Column) {
-		return "", nil, unknownColumn(filter.Column)
+	column, err := columnExpr(table, filter.Column, filter.Path)
+	if err != nil {
+		return "", nil, err
 	}
-	column := quoteIdentifier(filter.Column)
+	if filter.Op == readquery.OpILike {
+		if err := requireCaseInsensitiveCollation(table, filter.Column); err != nil {
+			return "", nil, err
+		}
+	}
 	switch filter.Op {
 	case readquery.OpEq, readquery.OpNeq, readquery.OpGt, readquery.OpGte, readquery.OpLt, readquery.OpLte:
 		return comparisonSQL(column, filter)
-	case readquery.OpLike:
+	case readquery.OpLike, readquery.OpILike:
 		return likeSQL(column, filter)
 	case readquery.OpIn:
 		return inSQL(column, filter)
@@ -28,6 +33,24 @@ func filterSQL(table schemacache.Table, filter readquery.Filter) (string, []any,
 	default:
 		return "", nil, fmt.Errorf("filter operator %q is not supported", filter.Op)
 	}
+}
+
+func requireCaseInsensitiveCollation(table schemacache.Table, name string) error {
+	column, ok := tableColumn(table, name)
+	if !ok {
+		return unknownColumn(name)
+	}
+	if !isMySQLCaseInsensitiveCollation(column.Collation) {
+		return readquery.UnsupportedFeature{
+			Message: "ilike needs a MySQL Unicode case-insensitive (*_ci) column collation",
+		}
+	}
+	return nil
+}
+
+func isMySQLCaseInsensitiveCollation(collation string) bool {
+	lower := strings.ToLower(collation)
+	return strings.HasSuffix(lower, "_ci")
 }
 
 func comparisonSQL(column string, filter readquery.Filter) (string, []any, error) {

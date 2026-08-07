@@ -6,6 +6,10 @@ import (
 )
 
 func parseFilter(column, raw string) (Filter, error) {
+	name, path, err := parseField(column)
+	if err != nil {
+		return Filter{}, err
+	}
 	negated := false
 	body := raw
 	if strings.HasPrefix(body, "not.") {
@@ -16,13 +20,11 @@ func parseFilter(column, raw string) (Filter, error) {
 	if !found {
 		return Filter{}, ParseFailure{Message: fmt.Sprintf("filter for '%s' needs an operator", column)}
 	}
-	op := Operator(opText)
-	if !isFullMatchOperator(op) {
-		return Filter{}, ParseFailure{
-			Message: fmt.Sprintf("filter operator '%s' is not a full-match ordinary-read operator", opText),
-		}
+	op, err := classifyOperator(opText)
+	if err != nil {
+		return Filter{}, err
 	}
-	filter := Filter{Column: column, Op: op, Negated: negated}
+	filter := Filter{Column: name, Path: path, Op: op, Negated: negated}
 	if op == OpIn {
 		values, err := parseInList(value)
 		if err != nil {
@@ -35,13 +37,68 @@ func parseFilter(column, raw string) (Filter, error) {
 	return filter, nil
 }
 
-func isFullMatchOperator(op Operator) bool {
-	for _, known := range FullMatchOperators {
+func classifyOperator(opText string) (Operator, error) {
+	op := Operator(opText)
+	if isListedOperator(op, FullMatchOperators) || isListedOperator(op, PartialMatchOperators) {
+		return op, nil
+	}
+	if isPostgRESTFullTextSearchOperator(opText) {
+		return "", ParseFailure{
+			Message: "PostgREST full-text search operators are not available with MySQL",
+			Gap:     true,
+		}
+	}
+	if isPostgresArrayOrRangeOperator(opText) {
+		return "", ParseFailure{
+			Message: "PostgREST array and range operators are not available with MySQL",
+			Gap:     true,
+		}
+	}
+	if isPostgresRegexTextOperator(opText) {
+		return "", ParseFailure{
+			Message: "PostgREST match and imatch regex operators are not available with MySQL",
+			Gap:     true,
+		}
+	}
+	return "", ParseFailure{
+		Message: fmt.Sprintf("filter operator '%s' is not a supported ordinary-read operator", opText),
+	}
+}
+
+func isListedOperator(op Operator, listed []Operator) bool {
+	for _, known := range listed {
 		if op == known {
 			return true
 		}
 	}
 	return false
+}
+
+func isPostgRESTFullTextSearchOperator(operator string) bool {
+	switch operator {
+	case "fts", "plfts", "phfts", "wfts":
+		return true
+	default:
+		return false
+	}
+}
+
+func isPostgresArrayOrRangeOperator(operator string) bool {
+	switch operator {
+	case "cs", "cd", "ov", "sl", "sr", "nxr", "nxl", "adj":
+		return true
+	default:
+		return false
+	}
+}
+
+func isPostgresRegexTextOperator(operator string) bool {
+	switch operator {
+	case "match", "imatch":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseInList(raw string) ([]string, error) {

@@ -1,6 +1,7 @@
 package readquery_test
 
 import (
+	"errors"
 	"net/url"
 	"testing"
 
@@ -68,9 +69,31 @@ func TestParsePreferCountExact(t *testing.T) {
 func TestParseRejectsUnknownOperator(t *testing.T) {
 	t.Parallel()
 
-	_, err := readquery.Parse(url.Values{"name": []string{"ilike.alpha"}}, nil)
+	_, err := readquery.Parse(url.Values{"name": []string{"bogus.alpha"}}, nil)
 	if err == nil {
-		t.Fatal("Parse accepted ilike")
+		t.Fatal("Parse accepted an unknown operator")
+	}
+}
+
+func TestParseAcceptsILikeAsPartialMatch(t *testing.T) {
+	t.Parallel()
+
+	query, err := readquery.Parse(url.Values{"name": []string{"ilike.ALPHA"}}, nil)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(query.Filters) != 1 || query.Filters[0].Op != readquery.OpILike || query.Filters[0].Value != "ALPHA" {
+		t.Fatalf("filters = %#v", query.Filters)
+	}
+}
+
+func TestParseRefusesPreferCountPlanned(t *testing.T) {
+	t.Parallel()
+
+	_, err := readquery.Parse(url.Values{}, []string{"count=planned"})
+	var failure readquery.ParseFailure
+	if err == nil || !errors.As(err, &failure) || !failure.Gap {
+		t.Fatalf("err = %v, want a gap ParseFailure", err)
 	}
 }
 
@@ -91,5 +114,35 @@ func TestFullMatchOperatorsAreListed(t *testing.T) {
 
 	if len(readquery.FullMatchOperators) != 10 {
 		t.Fatalf("FullMatchOperators = %#v", readquery.FullMatchOperators)
+	}
+}
+
+func TestParseJSONPathRefusals(t *testing.T) {
+	t.Parallel()
+	cases := []string{`meta#>>{blood_type}`, `meta->"blood type"`, `meta->*`}
+	for _, selectPart := range cases {
+		_, err := readquery.Parse(url.Values{"select": []string{selectPart}}, nil)
+		var failure readquery.ParseFailure
+		if err == nil || !errors.As(err, &failure) || !failure.Gap {
+			t.Fatalf("select %q err = %v, want gap", selectPart, err)
+		}
+	}
+}
+
+func TestParseJSONPathSelectAndFilter(t *testing.T) {
+	t.Parallel()
+	values := url.Values{
+		"select":            []string{"id,meta->>blood_type"},
+		"meta->>blood_type": []string{"eq.A-"},
+	}
+	query, err := readquery.Parse(values, nil)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(query.Columns) != 2 || query.Columns[1].Path == nil || !query.Columns[1].Path.AsText {
+		t.Fatalf("columns = %#v", query.Columns)
+	}
+	if len(query.Filters) != 1 || query.Filters[0].Path == nil || query.Filters[0].Value != "A-" {
+		t.Fatalf("filters = %#v", query.Filters)
 	}
 }

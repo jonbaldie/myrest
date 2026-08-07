@@ -35,9 +35,9 @@ A method stays available only when the active **database role** holds the
 matching grant. Exposure of a **resource** does not imply every method; a
 table without `SELECT` is not a usable resource (`PGRST205`).
 
-## Left for later tickets
+## Related partial matches and refusals
 
 Ticket [#28](https://github.com/jonbaldie/myrest/issues/28) owns text-case and
 JSON path subsets, and the refusals for FTS, array/range operators, and
-`count=planned` / `count=estimated`. Operators outside the full-match list
-above are not claimed here.
+`count=planned` / `count=estimated`. See
+[Read parity boundaries](read-parity-boundaries.md).

@@ -36,6 +36,10 @@ error envelope.
 For example, myrest refuses the PostgREST `fts`, `plfts`, `phfts`, and `wfts`
 full-text search operators, including their `not.` forms, with `MYREST001`.
 MySQL has full-text search, but it does not have the same PostgREST semantics.
+The same gap code refuses Postgres array and range operators, Prefer
+`count=planned` / `count=estimated`, Postgres `match` / `imatch`, and JSON path
+forms outside the named MySQL subset. See
+[Read parity boundaries](read-parity-boundaries.md).
 The same gap code refuses Postgres row-level security (`Prefer: row-security`),
 request GUC / `request.jwt.claims` injection (`Prefer: jwt-claims`), and
 non-Bearer credential schemes. See [Authentication](auth.md).

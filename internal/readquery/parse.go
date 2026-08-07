@@ -42,7 +42,9 @@ func Parse(values url.Values, prefer []string) (Query, error) {
 	if err := parseLimitOffset(values, &query); err != nil {
 		return Query{}, err
 	}
-	query.ExactCount = preferHoldsCountExact(prefer)
+	if err := parsePreferCount(prefer, &query); err != nil {
+		return Query{}, err
+	}
 	if err := parseColumnFilters(values, &query); err != nil {
 		return Query{}, err
 	}
@@ -95,16 +97,25 @@ func sortedKeys(values url.Values) []string {
 	return keys
 }
 
-func preferHoldsCountExact(prefer []string) bool {
+func parsePreferCount(prefer []string, query *Query) error {
 	for _, header := range prefer {
 		for _, part := range strings.Split(header, ",") {
 			name, value, found := strings.Cut(strings.TrimSpace(part), "=")
-			if found && strings.EqualFold(name, "count") && strings.EqualFold(value, "exact") {
-				return true
+			if !found || !strings.EqualFold(name, "count") {
+				continue
+			}
+			switch strings.ToLower(value) {
+			case "exact":
+				query.ExactCount = true
+			case "planned", "estimated":
+				return ParseFailure{
+					Message: "Prefer count=planned and count=estimated are not available with MySQL",
+					Gap:     true,
+				}
 			}
 		}
 	}
-	return false
+	return nil
 }
 
 func parseSelect(raw string, query *Query) error {
@@ -138,14 +149,17 @@ func parseSelectPart(part string) (Column, error) {
 			Gap:     true,
 		}
 	}
-	if strings.Contains(part, "->") {
-		return Column{}, ParseFailure{Message: "JSON path select is not available in this ordinary-read ticket"}
+	alias := ""
+	field := part
+	if name, rest, found := strings.Cut(part, ":"); found {
+		alias = name
+		field = rest
 	}
-	alias, name, found := strings.Cut(part, ":")
-	if found {
-		return Column{Name: name, Alias: alias}, nil
+	columnName, path, err := parseField(field)
+	if err != nil {
+		return Column{}, err
 	}
-	return Column{Name: part}, nil
+	return Column{Name: columnName, Alias: alias, Path: path}, nil
 }
 
 func parseOrder(raw string, query *Query) error {
@@ -167,13 +181,17 @@ func parseOrder(raw string, query *Query) error {
 }
 
 func parseOrderPart(part string) (Order, error) {
-	name, direction, found := strings.Cut(part, ".")
-	order := Order{Column: name}
-	if !found {
-		return order, nil
+	field, direction, err := splitOrderDirection(part)
+	if err != nil {
+		return Order{}, err
 	}
-	switch strings.ToLower(direction) {
-	case "asc":
+	name, path, err := parseField(field)
+	if err != nil {
+		return Order{}, err
+	}
+	order := Order{Column: name, Path: path}
+	switch direction {
+	case "", "asc":
 		return order, nil
 	case "desc":
 		order.Desc = true
@@ -183,6 +201,26 @@ func parseOrderPart(part string) (Order, error) {
 	default:
 		return Order{}, ParseFailure{Message: fmt.Sprintf("unknown order direction '%s'", direction)}
 	}
+}
+
+func splitOrderDirection(part string) (field, direction string, err error) {
+	lower := strings.ToLower(part)
+	for _, suffix := range []string{
+		".asc.nullsfirst", ".asc.nullslast", ".desc.nullsfirst", ".desc.nullslast",
+		".asc", ".desc",
+	} {
+		if strings.HasSuffix(lower, suffix) {
+			return part[:len(part)-len(suffix)], strings.TrimPrefix(suffix, "."), nil
+		}
+	}
+	if strings.Contains(part, "->") {
+		return part, "", nil
+	}
+	name, direction, found := strings.Cut(part, ".")
+	if !found {
+		return part, "", nil
+	}
+	return name, direction, nil
 }
 
 func parseLimitOffset(values url.Values, query *Query) error {
