@@ -60,6 +60,7 @@ type Writer interface {
 		row map[string]any,
 		primaryKey []string,
 		resolution UpsertResolution,
+		options writequery.Options,
 	) (inserted bool, err error)
 }
 
@@ -198,19 +199,30 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request) {
 	if !ok {
 		return
 	}
+	prefer, ok := s.readWritePrefer(writer, request)
+	if !ok {
+		return
+	}
 	row, primaryKey, ok := readPutRow(writer, request, s.cache, asked)
 	if !ok {
 		return
 	}
 
 	inserted, err := s.writer.Upsert(
-		request.Context(), role, table, row, primaryKey, resolution,
+		request.Context(),
+		role,
+		table,
+		row,
+		primaryKey,
+		resolution,
+		writequery.Options{PreferTx: prefer.Tx},
 	)
 	if err != nil {
 		s.log.Printf("myrest: upsert %s.%s as %s: %v", asked.Database, asked.Name, role, err)
 		s.writeWriteFailure(writer, err)
 		return
 	}
+	setPreferenceApplied(writer, prefer)
 	if inserted {
 		writeMinimal(writer, http.StatusCreated)
 		return
@@ -219,7 +231,7 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (s *Service) readWritePrefer(writer http.ResponseWriter, request *http.Request) (writePrefer, bool) {
-	prefer, err := parseWritePrefer(request.Header.Values("Prefer"))
+	prefer, err := parseWritePrefer(request.Header.Values("Prefer"), s.settings.DB.TxEnd)
 	if err != nil {
 		var invalid invalidPreferError
 		if errors.As(err, &invalid) {
@@ -253,6 +265,7 @@ func (s *Service) buildWriteOptions(
 	options := writequery.Options{
 		PrimaryKey:     primaryKey,
 		MissingDefault: prefer.MissingDefault,
+		PreferTx:       prefer.Tx,
 	}
 	if prefer.Strict && prefer.MaxAffected != nil {
 		options.MaxAffected = prefer.MaxAffected

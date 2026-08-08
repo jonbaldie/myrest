@@ -376,6 +376,7 @@ func (c *rootSpecCaller) Call(
 	role schemacache.Role,
 	routine schemacache.RoutineFact,
 	_ map[string]any,
+	_ httpapi.CallOptions,
 ) (any, error) {
 	c.role, c.routine = role, routine
 	return c.result, c.err

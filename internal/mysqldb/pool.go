@@ -8,6 +8,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 
+	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
@@ -20,6 +21,8 @@ type Pool struct {
 	// preRequest is the database.routine name of the optional db-pre-request
 	// procedure. Empty means no hook.
 	preRequest string
+	// txEnd ends write and RPC request transactions (knob db-tx-end).
+	txEnd config.TxEnd
 }
 
 // Open starts a pool from a db-uri and proves that the authenticator can log

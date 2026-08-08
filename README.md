@@ -173,7 +173,7 @@ myrest serves the API only when it has all of these. If one is missing, the proc
 
 ### Other kept knobs
 
-`server-cors-allowed-origins` and `openapi-server-proxy-uri` already have the CORS and reported-base-URL behaviour above. The JWT knobs (`jwt-secret-is-base64`, `jwt-aud`, `jwt-role-claim-key`, `jwt-cache-max-entries`) already drive Bearer JWT verification; see [Authentication](docs/auth.md). The OpenAPI knobs (`openapi-mode`, `openapi-security-active`, `openapi-server-proxy-uri`, `db-root-spec`) drive discovery; see [Discovery: OPTIONS and OpenAPI](docs/discovery.md). The other knobs are configurable and readable now; later parity slices give them their remaining behaviour.
+`server-cors-allowed-origins` and `openapi-server-proxy-uri` already have the CORS and reported-base-URL behaviour above. The JWT knobs (`jwt-secret-is-base64`, `jwt-aud`, `jwt-role-claim-key`, `jwt-cache-max-entries`) already drive Bearer JWT verification; see [Authentication](docs/auth.md). The OpenAPI knobs (`openapi-mode`, `openapi-security-active`, `openapi-server-proxy-uri`, `db-root-spec`) drive discovery; see [Discovery: OPTIONS and OpenAPI](docs/discovery.md). `db-tx-end` ends write and **RPC** request transactions; see [Transaction end and isolation](docs/transactions.md). The other knobs are configurable and readable now; later parity slices give them their remaining behaviour.
 
 | Knob | Type | Default |
 | --- | --- | --- |

@@ -29,6 +29,7 @@ func serveWithPreRequest(t *testing.T, routine string) *httpapi.Service {
 	}
 	t.Cleanup(func() { _ = pool.Close() })
 	pool.SetPreRequest(settings.DB.PreRequest)
+	pool.SetTxEnd(settings.DB.TxEnd)
 
 	catalog, err := pool.Catalog(t.Context(), settings.DB.Schemas)
 	if err != nil {

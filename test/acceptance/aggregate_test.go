@@ -26,6 +26,7 @@ func serveWithAggregates(t *testing.T, databases ...string) *httpapi.Service {
 		t.Fatalf("open the authenticator pool: %v", err)
 	}
 	t.Cleanup(func() { _ = pool.Close() })
+	pool.SetTxEnd(settings.DB.TxEnd)
 
 	catalog, err := pool.Catalog(t.Context(), settings.DB.Schemas)
 	if err != nil {

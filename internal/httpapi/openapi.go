@@ -59,7 +59,13 @@ func (s *Service) writeRootSpec(
 		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
 		return
 	}
-	result, err := s.caller.Call(request.Context(), role, routine, map[string]any{})
+	result, err := s.caller.Call(
+		request.Context(),
+		role,
+		routine,
+		map[string]any{},
+		CallOptions{},
+	)
 	if err != nil {
 		s.log.Printf("db-root-spec %s: %v", name, err)
 		writeDatabaseFailure(writer, err)

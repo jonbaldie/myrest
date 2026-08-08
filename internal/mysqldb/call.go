@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
@@ -19,6 +20,7 @@ func (p *Pool) Call(
 	role schemacache.Role,
 	routine schemacache.RoutineFact,
 	args map[string]any,
+	options httpapi.CallOptions,
 ) (any, error) {
 	statement, err := roleSwitchStatement(role)
 	if err != nil {
@@ -26,9 +28,9 @@ func (p *Pool) Call(
 	}
 
 	var result any
-	err = p.onRequest(ctx, statement, func(ctx context.Context, conn *sql.Conn) error {
+	err = p.withRequestTx(ctx, statement, options.PreferTx, func(ctx context.Context, tx *sql.Tx) error {
 		var callErr error
-		result, callErr = callRoutine(ctx, conn, routine, args)
+		result, callErr = callRoutine(ctx, tx, routine, args)
 		return callErr
 	})
 	return result, err
@@ -36,15 +38,15 @@ func (p *Pool) Call(
 
 func callRoutine(
 	ctx context.Context,
-	conn *sql.Conn,
+	tx *sql.Tx,
 	routine schemacache.RoutineFact,
 	args map[string]any,
 ) (any, error) {
 	switch strings.ToUpper(routine.Kind) {
 	case "FUNCTION":
-		return callFunction(ctx, conn, routine, args)
+		return callFunction(ctx, tx, routine, args)
 	case "PROCEDURE":
-		return callProcedure(ctx, conn, routine, args)
+		return callProcedure(ctx, tx, routine, args)
 	default:
 		return nil, fmt.Errorf("unknown routine kind %q", routine.Kind)
 	}
@@ -52,7 +54,7 @@ func callRoutine(
 
 func callFunction(
 	ctx context.Context,
-	conn *sql.Conn,
+	tx *sql.Tx,
 	routine schemacache.RoutineFact,
 	args map[string]any,
 ) (any, error) {
@@ -62,7 +64,7 @@ func callFunction(
 		return nil, err
 	}
 
-	row := conn.QueryRowContext(ctx, functionCallStatement(routine, len(params)), values...)
+	row := tx.QueryRowContext(ctx, functionCallStatement(routine, len(params)), values...)
 	var value any
 	if err := row.Scan(&value); err != nil {
 		return nil, err
@@ -79,15 +81,15 @@ type procedureCall struct {
 
 func callProcedure(
 	ctx context.Context,
-	conn *sql.Conn,
+	tx *sql.Tx,
 	routine schemacache.RoutineFact,
 	args map[string]any,
 ) (any, error) {
-	built, err := buildProcedureCall(ctx, conn, callableParameters(routine), args)
+	built, err := buildProcedureCall(ctx, tx, callableParameters(routine), args)
 	if err != nil {
 		return nil, err
 	}
-	result, err := conn.QueryContext(
+	result, err := tx.QueryContext(
 		ctx,
 		procedureCallStatement(routine, built.placeholders),
 		built.bound...,
@@ -107,7 +109,7 @@ func callProcedure(
 	if tabular {
 		return set, nil
 	}
-	return readProcedureOutputs(ctx, conn, built.outNames, built.outVars)
+	return readProcedureOutputs(ctx, tx, built.outNames, built.outVars)
 }
 
 // readFirstResultSet reads the first CALL result set. A set with column
@@ -139,7 +141,7 @@ func readFirstResultSet(result *sql.Rows) ([]rows.Row, bool, error) {
 
 func buildProcedureCall(
 	ctx context.Context,
-	conn *sql.Conn,
+	tx *sql.Tx,
 	params []schemacache.ParameterFact,
 	args map[string]any,
 ) (procedureCall, error) {
@@ -157,7 +159,7 @@ func buildProcedureCall(
 			built.placeholders[i] = "?"
 			built.bound = append(built.bound, value)
 		case "OUT", "INOUT":
-			if err := bindOutParameter(ctx, conn, &built, i, param, args); err != nil {
+			if err := bindOutParameter(ctx, tx, &built, i, param, args); err != nil {
 				return procedureCall{}, err
 			}
 		default:
@@ -169,7 +171,7 @@ func buildProcedureCall(
 
 func bindOutParameter(
 	ctx context.Context,
-	conn *sql.Conn,
+	tx *sql.Tx,
 	built *procedureCall,
 	index int,
 	param schemacache.ParameterFact,
@@ -181,10 +183,10 @@ func bindOutParameter(
 		if err != nil {
 			return err
 		}
-		if _, err := conn.ExecContext(ctx, "SET "+name+" = ?", value); err != nil {
+		if _, err := tx.ExecContext(ctx, "SET "+name+" = ?", value); err != nil {
 			return err
 		}
-	} else if _, err := conn.ExecContext(ctx, "SET "+name+" = NULL"); err != nil {
+	} else if _, err := tx.ExecContext(ctx, "SET "+name+" = NULL"); err != nil {
 		return err
 	}
 	built.placeholders[index] = name
@@ -195,13 +197,13 @@ func bindOutParameter(
 
 func readProcedureOutputs(
 	ctx context.Context,
-	conn *sql.Conn,
+	tx *sql.Tx,
 	outNames, outVars []string,
 ) (rows.Row, error) {
 	values := make([]any, len(outNames))
 	for i := range outNames {
 		var value any
-		if err := conn.QueryRowContext(ctx, "SELECT "+outVars[i]).Scan(&value); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT "+outVars[i]).Scan(&value); err != nil {
 			return rows.Row{}, err
 		}
 		values[i] = jsonValue(value, nil)

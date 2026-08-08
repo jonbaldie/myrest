@@ -3,9 +3,11 @@ package httpapi_test
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/jonbaldie/myrest/internal/apitest"
+	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
@@ -20,6 +22,7 @@ type caller struct {
 	role      schemacache.Role
 	routine   schemacache.RoutineFact
 	args      map[string]any
+	options   httpapi.CallOptions
 }
 
 func (c *caller) Call(
@@ -27,9 +30,10 @@ func (c *caller) Call(
 	role schemacache.Role,
 	routine schemacache.RoutineFact,
 	args map[string]any,
+	options httpapi.CallOptions,
 ) (any, error) {
 	c.stoppable = ctx != nil && ctx.Done() != nil
-	c.role, c.routine, c.args = role, routine, args
+	c.role, c.routine, c.args, c.options = role, routine, args, options
 	if c.failure != nil {
 		return nil, c.failure
 	}
@@ -108,10 +112,19 @@ func rpcCache() *schemacache.Cache {
 
 func serveRPC(t *testing.T, source httpapi.Caller) *httpapi.Service {
 	t.Helper()
+	return serveRPCWithSettings(t, source, settings())
+}
+
+func serveRPCWithSettings(
+	t *testing.T,
+	source httpapi.Caller,
+	resolved config.Settings,
+) *httpapi.Service {
+	t.Helper()
 
 	service, err := httpapi.Listen(httpapi.Options{
 		Addr:     "127.0.0.1:0",
-		Settings: settings(),
+		Settings: resolved,
 		Cache:    rpcCache(),
 		Reader:   &reader{},
 		Caller:   source,
@@ -159,6 +172,38 @@ func TestPostRPCFunctionWithNamedJSONArgsSucceeds(t *testing.T) {
 	}
 	if !source.stoppable {
 		t.Error("the call carries no context a request can stop")
+	}
+}
+
+func TestPostRPCPassesPreferTxAndSetsPreferenceApplied(t *testing.T) {
+	t.Parallel()
+
+	source := &caller{body: map[string]any{}}
+	resolved := settings()
+	resolved.DB.TxEnd = config.TxEndCommitAllowOverride
+	request, err := http.NewRequest(
+		http.MethodPost,
+		serveRPCWithSettings(t, source, resolved).URL()+"/rpc/ping",
+		strings.NewReader(`{}`),
+	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "tx=rollback")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	if source.options.PreferTx != "rollback" {
+		t.Fatalf("Call PreferTx = %q, want rollback", source.options.PreferTx)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "tx=rollback" {
+		t.Fatalf("Preference-Applied = %q, want tx=rollback", got)
 	}
 }
 
