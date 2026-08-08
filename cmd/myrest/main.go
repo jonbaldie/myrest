@@ -29,6 +29,7 @@ func main() {
 	}
 	defer func() { _ = pool.Close() }()
 	pool.SetPreRequest(settings.DB.PreRequest)
+	pool.SetTxEnd(settings.DB.TxEnd)
 
 	catalog, err := pool.Catalog(context.Background(), settings.DB.Schemas)
 	if err != nil {

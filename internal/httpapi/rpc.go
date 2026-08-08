@@ -22,6 +22,12 @@ const codeNoRoutine = "PGRST202"
 // on a scalar or non-tabular RPC result (rpc-006).
 const messageRowSetFeaturesRequired = "Filter, order, pagination, and embed need a row-set RPC result"
 
+// CallOptions carries Prefer-driven RPC behaviour into the database layer.
+type CallOptions struct {
+	// PreferTx is Prefer: tx=commit|rollback when the client sent it.
+	PreferTx string
+}
+
 // Caller runs a routine as one database role with named JSON arguments.
 type Caller interface {
 	Call(
@@ -29,6 +35,7 @@ type Caller interface {
 		role schemacache.Role,
 		routine schemacache.RoutineFact,
 		args map[string]any,
+		options CallOptions,
 	) (any, error)
 }
 
@@ -124,13 +131,24 @@ func (s *Service) invokeRoutine(
 		return
 	}
 
-	result, err := s.caller.Call(request.Context(), role, routine, args)
+	prefer, ok := s.readWritePrefer(writer, request)
+	if !ok {
+		return
+	}
+	result, err := s.caller.Call(
+		request.Context(),
+		role,
+		routine,
+		args,
+		CallOptions{PreferTx: prefer.Tx},
+	)
 	if err != nil {
 		s.log.Printf("myrest: rpc %s.%s as %s: %v", asked.Database, asked.Name, role, err)
 		writeDatabaseFailure(writer, err)
 		return
 	}
 
+	setPreferenceApplied(writer, prefer)
 	set, tabular := rowSetResult(result)
 	if readquery.HasRowSetFeatures(query) && !tabular {
 		writeUnsupportedFeature(writer, messageRowSetFeaturesRequired)

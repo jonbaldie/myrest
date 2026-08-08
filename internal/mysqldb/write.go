@@ -23,8 +23,8 @@ func (p *Pool) Insert(
 	bodyRows []map[string]any,
 	options writequery.Options,
 ) (writequery.Result, error) {
-	return p.withWriteConn(ctx, role, func(ctx context.Context, conn *sql.Conn) (writequery.Result, error) {
-		return insertRows(ctx, conn, table, bodyRows, options)
+	return p.withWriteTx(ctx, role, options.PreferTx, func(ctx context.Context, tx *sql.Tx) (writequery.Result, error) {
+		return insertRows(ctx, tx, table, bodyRows, options)
 	})
 }
 
@@ -37,8 +37,8 @@ func (p *Pool) Update(
 	query readquery.Query,
 	options writequery.Options,
 ) (writequery.Result, error) {
-	return p.withWriteConn(ctx, role, func(ctx context.Context, conn *sql.Conn) (writequery.Result, error) {
-		return updateRows(ctx, conn, table, patch, query, options)
+	return p.withWriteTx(ctx, role, options.PreferTx, func(ctx context.Context, tx *sql.Tx) (writequery.Result, error) {
+		return updateRows(ctx, tx, table, patch, query, options)
 	})
 }
 
@@ -50,24 +50,25 @@ func (p *Pool) Delete(
 	query readquery.Query,
 	options writequery.Options,
 ) (writequery.Result, error) {
-	return p.withWriteConn(ctx, role, func(ctx context.Context, conn *sql.Conn) (writequery.Result, error) {
-		return deleteRows(ctx, conn, table, query, options)
+	return p.withWriteTx(ctx, role, options.PreferTx, func(ctx context.Context, tx *sql.Tx) (writequery.Result, error) {
+		return deleteRows(ctx, tx, table, query, options)
 	})
 }
 
-func (p *Pool) withWriteConn(
+func (p *Pool) withWriteTx(
 	ctx context.Context,
 	role schemacache.Role,
-	work func(context.Context, *sql.Conn) (writequery.Result, error),
+	preferTx string,
+	work func(context.Context, *sql.Tx) (writequery.Result, error),
 ) (writequery.Result, error) {
 	statement, err := roleSwitchStatement(role)
 	if err != nil {
 		return writequery.Result{}, err
 	}
 	var result writequery.Result
-	err = p.onRequest(ctx, statement, func(ctx context.Context, conn *sql.Conn) error {
+	err = p.withRequestTx(ctx, statement, preferTx, func(ctx context.Context, tx *sql.Tx) error {
 		var workErr error
-		result, workErr = work(ctx, conn)
+		result, workErr = work(ctx, tx)
 		return workErr
 	})
 	return result, err
@@ -84,6 +85,7 @@ func (p *Pool) Upsert(
 	row map[string]any,
 	primaryKey []string,
 	resolution httpapi.UpsertResolution,
+	options writequery.Options,
 ) (bool, error) {
 	statement, err := roleSwitchStatement(role)
 	if err != nil {
@@ -91,9 +93,9 @@ func (p *Pool) Upsert(
 	}
 
 	var inserted bool
-	err = p.onRequest(ctx, statement, func(ctx context.Context, conn *sql.Conn) error {
+	err = p.withRequestTx(ctx, statement, options.PreferTx, func(ctx context.Context, tx *sql.Tx) error {
 		var upsertErr error
-		inserted, upsertErr = upsertRow(ctx, conn, table, row, primaryKey, resolution)
+		inserted, upsertErr = upsertRow(ctx, tx, table, row, primaryKey, resolution)
 		return upsertErr
 	})
 	return inserted, err
@@ -101,7 +103,7 @@ func (p *Pool) Upsert(
 
 func insertRows(
 	ctx context.Context,
-	conn *sql.Conn,
+	tx *sql.Tx,
 	table schemacache.Table,
 	bodyRows []map[string]any,
 	options writequery.Options,
@@ -118,11 +120,9 @@ func insertRows(
 		return writequery.Result{}, err
 	}
 	if !options.ReturnRepresentation && !options.ReturnKeys {
-		return execWrite(ctx, conn, parts)
+		return execTxWrite(ctx, tx, parts, nil)
 	}
-	return withTx(ctx, conn, func(ctx context.Context, tx *sql.Tx) (writequery.Result, error) {
-		return finishInsert(ctx, tx, table, bodyRows, options, parts)
-	})
+	return finishInsert(ctx, tx, table, bodyRows, options, parts)
 }
 
 func finishInsert(
@@ -155,7 +155,7 @@ func finishInsert(
 
 func updateRows(
 	ctx context.Context,
-	conn *sql.Conn,
+	tx *sql.Tx,
 	table schemacache.Table,
 	patch map[string]any,
 	query readquery.Query,
@@ -165,35 +165,30 @@ func updateRows(
 	if err != nil {
 		return writequery.Result{}, err
 	}
-	if !options.ReturnRepresentation && options.MaxAffected == nil {
-		return execWrite(ctx, conn, parts)
-	}
-	return withTx(ctx, conn, func(ctx context.Context, tx *sql.Tx) (writequery.Result, error) {
-		var keys []map[string]any
-		if options.ReturnRepresentation {
-			keys, err = selectKeyMaps(ctx, tx, table, options.PrimaryKey, query)
-			if err != nil {
-				return writequery.Result{}, err
-			}
-		}
-		result, err := execTxWrite(ctx, tx, parts, options.MaxAffected)
+	var keys []map[string]any
+	if options.ReturnRepresentation {
+		keys, err = selectKeyMaps(ctx, tx, table, options.PrimaryKey, query)
 		if err != nil {
 			return writequery.Result{}, err
 		}
-		result.Keys = keys
-		if options.ReturnRepresentation {
-			result.Rows, err = selectByKeys(ctx, tx, table, options.PrimaryKey, keys)
-			if err != nil {
-				return writequery.Result{}, err
-			}
+	}
+	result, err := execTxWrite(ctx, tx, parts, options.MaxAffected)
+	if err != nil {
+		return writequery.Result{}, err
+	}
+	result.Keys = keys
+	if options.ReturnRepresentation {
+		result.Rows, err = selectByKeys(ctx, tx, table, options.PrimaryKey, keys)
+		if err != nil {
+			return writequery.Result{}, err
 		}
-		return result, nil
-	})
+	}
+	return result, nil
 }
 
 func deleteRows(
 	ctx context.Context,
-	conn *sql.Conn,
+	tx *sql.Tx,
 	table schemacache.Table,
 	query readquery.Query,
 	options writequery.Options,
@@ -202,43 +197,26 @@ func deleteRows(
 	if err != nil {
 		return writequery.Result{}, err
 	}
-	if !options.ReturnRepresentation && options.MaxAffected == nil {
-		return execWrite(ctx, conn, parts)
-	}
-	return withTx(ctx, conn, func(ctx context.Context, tx *sql.Tx) (writequery.Result, error) {
-		var readRows []rows.Row
-		if options.ReturnRepresentation {
-			// Re-read every column. The client select list is applied after the
-			// write for representation embeds, and join columns must remain.
-			readQuery := readquery.Query{
-				SelectAll: true,
-				Filters:   query.Filters,
-				Groups:    query.Groups,
-			}
-			readRows, err = selectMatching(ctx, tx, table, readQuery)
-			if err != nil {
-				return writequery.Result{}, err
-			}
+	var readRows []rows.Row
+	if options.ReturnRepresentation {
+		// Re-read every column. The client select list is applied after the
+		// write for representation embeds, and join columns must remain.
+		readQuery := readquery.Query{
+			SelectAll: true,
+			Filters:   query.Filters,
+			Groups:    query.Groups,
 		}
-		result, err := execTxWrite(ctx, tx, parts, options.MaxAffected)
+		readRows, err = selectMatching(ctx, tx, table, readQuery)
 		if err != nil {
 			return writequery.Result{}, err
 		}
-		result.Rows = readRows
-		return result, nil
-	})
-}
-
-func execWrite(ctx context.Context, conn *sql.Conn, parts sqlParts) (writequery.Result, error) {
-	execResult, err := conn.ExecContext(ctx, parts.statement, parts.args...)
+	}
+	result, err := execTxWrite(ctx, tx, parts, options.MaxAffected)
 	if err != nil {
 		return writequery.Result{}, err
 	}
-	affected, err := execResult.RowsAffected()
-	if err != nil {
-		return writequery.Result{}, err
-	}
-	return writequery.Result{Affected: affected}, nil
+	result.Rows = readRows
+	return result, nil
 }
 
 func execTxWrite(
@@ -259,26 +237,6 @@ func execTxWrite(
 		return writequery.Result{}, err
 	}
 	return writequery.Result{Affected: affected}, nil
-}
-
-func withTx(
-	ctx context.Context,
-	conn *sql.Conn,
-	work func(context.Context, *sql.Tx) (writequery.Result, error),
-) (writequery.Result, error) {
-	tx, err := conn.BeginTx(ctx, nil)
-	if err != nil {
-		return writequery.Result{}, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	result, err := work(ctx, tx)
-	if err != nil {
-		return writequery.Result{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return writequery.Result{}, err
-	}
-	return result, nil
 }
 
 func checkMaxAffected(affected int64, max *int64) error {
@@ -628,7 +586,7 @@ func unwrapValue(value any) any {
 
 func upsertRow(
 	ctx context.Context,
-	conn *sql.Conn,
+	tx *sql.Tx,
 	table schemacache.Table,
 	row map[string]any,
 	primaryKey []string,
@@ -638,7 +596,7 @@ func upsertRow(
 	if err != nil {
 		return false, err
 	}
-	result, err := conn.ExecContext(ctx, parts.statement, parts.args...)
+	result, err := tx.ExecContext(ctx, parts.statement, parts.args...)
 	if err != nil {
 		return false, err
 	}

@@ -17,6 +17,8 @@ type Options struct {
 	MissingDefault bool
 	// MaxAffected, when set, refuses the write when more rows would change.
 	MaxAffected *int64
+	// PreferTx is Prefer: tx=commit|rollback when the client sent it.
+	PreferTx string
 }
 
 // Result is what a write produced for the HTTP response.

@@ -7,6 +7,11 @@ import (
 	"strings"
 )
 
+// execContext runs a statement that needs no result rows.
+type execContext interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 // SetPreRequest names the zero-argument procedure myrest calls after the role
 // switch and before the main statement of a request. An empty name turns the
 // hook off.
@@ -29,7 +34,7 @@ func (p *Pool) onRequest(
 	})
 }
 
-func (p *Pool) runPreRequest(ctx context.Context, conn *sql.Conn) error {
+func (p *Pool) runPreRequest(ctx context.Context, exec execContext) error {
 	if p.preRequest == "" {
 		return nil
 	}
@@ -37,7 +42,7 @@ func (p *Pool) runPreRequest(ctx context.Context, conn *sql.Conn) error {
 	if err != nil {
 		return err
 	}
-	if _, err := conn.ExecContext(ctx, statement); err != nil {
+	if _, err := exec.ExecContext(ctx, statement); err != nil {
 		return err
 	}
 	return nil

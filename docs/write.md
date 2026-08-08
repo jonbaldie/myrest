@@ -109,6 +109,12 @@ this claim.
 | `handling=strict` | **full match** | Unknown or invalid Prefer tokens refuse with `PGRST122`. |
 | `handling=lenient` (default) | **full match** | Unknown Prefer tokens are ignored. |
 
+## Prefer: tx and transaction bounds
+
+Each ordinary write runs as one request transaction. `db-tx-end` and
+`Prefer: tx=commit|rollback` end that unit. See
+[Transaction end and isolation](transactions.md).
+
 ## Unbounded-write gate
 
 A `PATCH` or `DELETE` with no filter and no `Prefer: all-rows` is refused with

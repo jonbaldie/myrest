@@ -106,11 +106,13 @@ func (w *writer) Upsert(
 	row map[string]any,
 	primaryKey []string,
 	resolution httpapi.UpsertResolution,
+	options writequery.Options,
 ) (bool, error) {
 	w.stoppable = ctx != nil && ctx.Done() != nil
 	w.called = "upsert"
 	w.role, w.table = role, table
 	w.row, w.primaryKey, w.resolution = row, primaryKey, resolution
+	w.options = options
 	if w.failure != nil {
 		return false, w.failure
 	}

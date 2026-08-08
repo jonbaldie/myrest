@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/jonbaldie/myrest/internal/config"
 )
 
 // Write preference tokens claimed by this service for ordinary writes.
@@ -26,6 +28,8 @@ type writePrefer struct {
 	MaxAffected    *int64
 	Strict         bool
 	AllRows        bool
+	// Tx is Prefer: tx=commit|rollback when the client sent a valid value.
+	Tx string
 	// applied lists Preference-Applied tokens in stable order.
 	applied []string
 }
@@ -54,17 +58,19 @@ type preferTokens struct {
 	maxSet        bool
 	handlingValue string
 	handlingSet   bool
+	txValue       string
+	txSet         bool
 	allRows       bool
 	invalid       []string
 }
 
-func parseWritePrefer(headers []string) (writePrefer, error) {
+func parseWritePrefer(headers []string, txEnd config.TxEnd) (writePrefer, error) {
 	tokens := collectPreferTokens(headers)
 	prefer, invalid := applyPreferTokens(tokens)
 	if prefer.Strict && len(invalid) > 0 {
 		return writePrefer{}, invalidPreferError{tokens: invalid}
 	}
-	prefer.applied = preferenceApplied(prefer, tokens)
+	prefer.applied = preferenceApplied(prefer, tokens, txEnd)
 	return prefer, nil
 }
 
@@ -111,6 +117,9 @@ func collectKnownToken(tokens *preferTokens, name, value string, hasValue bool, 
 	case "handling":
 		tokens.handlingValue = strings.ToLower(value)
 		tokens.handlingSet = true
+	case "tx":
+		tokens.txValue = strings.ToLower(value)
+		tokens.txSet = true
 	}
 }
 
@@ -121,7 +130,21 @@ func applyPreferTokens(tokens preferTokens) (writePrefer, []string) {
 	invalid = append(invalid, applyReturn(&prefer, tokens)...)
 	invalid = append(invalid, applyMissing(&prefer, tokens)...)
 	invalid = append(invalid, applyMaxAffected(&prefer, tokens)...)
+	invalid = append(invalid, applyTx(&prefer, tokens)...)
 	return prefer, invalid
+}
+
+func applyTx(prefer *writePrefer, tokens preferTokens) []string {
+	if !tokens.txSet {
+		return nil
+	}
+	switch tokens.txValue {
+	case config.PreferTxCommit, config.PreferTxRollback:
+		prefer.Tx = tokens.txValue
+		return nil
+	default:
+		return []string{"tx=" + tokens.txValue}
+	}
 }
 
 func applyHandling(prefer *writePrefer, tokens preferTokens) []string {
@@ -175,7 +198,7 @@ func applyMaxAffected(prefer *writePrefer, tokens preferTokens) []string {
 	return nil
 }
 
-func preferenceApplied(prefer writePrefer, tokens preferTokens) []string {
+func preferenceApplied(prefer writePrefer, tokens preferTokens, txEnd config.TxEnd) []string {
 	var applied []string
 	if prefer.Strict {
 		applied = append(applied, "handling=strict")
@@ -191,6 +214,9 @@ func preferenceApplied(prefer writePrefer, tokens preferTokens) []string {
 			applied,
 			"max-affected="+strconv.FormatInt(*prefer.MaxAffected, 10),
 		)
+	}
+	if _, txApplied := config.DecideTxEnd(txEnd, prefer.Tx); txApplied {
+		applied = append(applied, "tx="+prefer.Tx)
 	}
 	return applied
 }

@@ -76,6 +76,7 @@ func serveWithPoolAs(t *testing.T, role string, databases ...string) (*mysqldb.P
 	}
 	t.Cleanup(func() { _ = pool.Close() })
 	pool.SetPreRequest(settings.DB.PreRequest)
+	pool.SetTxEnd(settings.DB.TxEnd)
 
 	catalog, err := pool.Catalog(t.Context(), settings.DB.Schemas)
 	if err != nil {

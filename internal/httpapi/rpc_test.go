@@ -27,6 +27,7 @@ func (c *caller) Call(
 	role schemacache.Role,
 	routine schemacache.RoutineFact,
 	args map[string]any,
+	_ httpapi.CallOptions,
 ) (any, error) {
 	c.stoppable = ctx != nil && ctx.Done() != nil
 	c.role, c.routine, c.args = role, routine, args
