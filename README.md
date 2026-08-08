@@ -115,9 +115,11 @@ Write Prefer values:
 - `return=minimal` (default) and `return=headers-only` are **full match**
 - `return=representation` is **partial match**: honest body only when myrest
   can re-read affected rows (primary key + `SELECT` for insert/update)
+- Embed after write with `return=representation` is **full match** when the
+  **relationship** is in the **schema cache**; otherwise myrest refuses
 - `missing=default`, `max-affected`, and `handling=strict|lenient` are **full match**
 
-See [Ordinary write](docs/write.md).
+See [Ordinary write](docs/write.md) and [Embed](docs/embed.md).
 
 ## Calling a routine
 

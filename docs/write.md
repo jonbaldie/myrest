@@ -88,6 +88,18 @@ refuses:
 The body never invents column values. If myrest cannot re-read the affected
 rows from MySQL, it refuses instead of guessing.
 
+### Embed after write (full match)
+
+With `Prefer: return=representation`, a nested select nests related rows in the
+write body when the **relationship** is in the **schema cache**. Nested
+filters, order, and page on that representation follow the same embed read
+rules as `GET`. See [Embed](embed.md).
+
+When the nested select has no cache relationship, myrest refuses with
+`PGRST200` and does not write. myrest never invents a relationship for a write
+response. Embed after write without an honest representation body is outside
+this claim.
+
 ## Prefer: missing, max-affected, handling
 
 | Prefer | Label | Behaviour |

@@ -208,7 +208,14 @@ func deleteRows(
 	return withTx(ctx, conn, func(ctx context.Context, tx *sql.Tx) (writequery.Result, error) {
 		var readRows []rows.Row
 		if options.ReturnRepresentation {
-			readRows, err = selectMatching(ctx, tx, table, query)
+			// Re-read every column. The client select list is applied after the
+			// write for representation embeds, and join columns must remain.
+			readQuery := readquery.Query{
+				SelectAll: true,
+				Filters:   query.Filters,
+				Groups:    query.Groups,
+			}
+			readRows, err = selectMatching(ctx, tx, table, readQuery)
 			if err != nil {
 				return writequery.Result{}, err
 			}

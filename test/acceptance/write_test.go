@@ -1,8 +1,11 @@
 package acceptance_test
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -438,6 +441,159 @@ func TestPreferReturnRepresentationOverMySQL(t *testing.T) {
 	}
 }
 
+// write-011: return=representation with a nested select over a cache
+// relationship nests the related rows.
+func TestPreferReturnRepresentationWithEmbedOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	request, err := http.NewRequest(
+		http.MethodPost,
+		service.URL()+"/orders?select=id,items(id,name)",
+		strings.NewReader(`{"item_id":1}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d; body = %s", response.StatusCode, body)
+	}
+	if !strings.Contains(string(body), `"items":{"id":1,"name":"alpha"}`) {
+		t.Fatalf("body = %s, want nested items", body)
+	}
+}
+
+// Nested filter and order on a write representation follow embed read rules.
+func TestPreferReturnRepresentationEmbedNestedFilterOrderOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	// Own item and orders so package-shared fixture writes cannot change the nest.
+	request, err := http.NewRequest(
+		http.MethodPost,
+		service.URL()+"/items?select=id",
+		strings.NewReader(`{"name":"embed-order-owner"}`),
+	)
+	if err != nil {
+		t.Fatalf("new item POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("item POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read item body: %v", err)
+	}
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("item status = %d; body = %s", response.StatusCode, body)
+	}
+	itemID := jsonNumberField(t, body, "id")
+
+	var orderIDs []string
+	for range 3 {
+		request, err = http.NewRequest(
+			http.MethodPost,
+			service.URL()+"/orders?select=id",
+			strings.NewReader(`{"item_id":`+itemID+`}`),
+		)
+		if err != nil {
+			t.Fatalf("new order POST: %v", err)
+		}
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Prefer", "return=representation")
+		response, err = http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatalf("order POST: %v", err)
+		}
+		t.Cleanup(func() { _ = response.Body.Close() })
+		body, err = io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatalf("read order body: %v", err)
+		}
+		if response.StatusCode != http.StatusCreated {
+			t.Fatalf("order status = %d; body = %s", response.StatusCode, body)
+		}
+		orderIDs = append(orderIDs, jsonNumberField(t, body, "id"))
+	}
+
+	request, err = http.NewRequest(
+		http.MethodPatch,
+		service.URL()+"/items?id=eq."+itemID+
+			"&select=id,orders(id)&orders.order=id.desc&orders.limit=1&orders.id=gt."+orderIDs[0],
+		strings.NewReader(`{"name":"embed-order-owner"}`),
+	)
+	if err != nil {
+		t.Fatalf("new PATCH: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err = io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d; body = %s", response.StatusCode, body)
+	}
+	// id=gt.first keeps the second and third orders; desc + limit 1 keeps the third.
+	want := `[{"id":` + itemID + `,"orders":[{"id":` + orderIDs[2] + `}]}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+// write-012: return=representation with a nested select and no cache
+// relationship refuses stably.
+func TestPreferReturnRepresentationEmbedWithoutRelationshipRefusesOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	request, err := http.NewRequest(
+		http.MethodPost,
+		service.URL()+"/items?select=id,profiles(id)",
+		strings.NewReader(`{"name":"no-embed"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST200")
+
+	response, body = get(t, service, "/items?select=name&name=eq.no-embed")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("read-back status = %d; body = %s", response.StatusCode, body)
+	}
+	if string(body) != "[]\n" {
+		t.Fatalf("read-back body = %s, want no inserted row", body)
+	}
+}
+
 // write-009: return=representation refuses when an honest body is not available.
 func TestPreferReturnRepresentationWithoutPrimaryKeyRefusesOverMySQL(t *testing.T) {
 	service := serve(t, "myrest_fixture")
@@ -539,4 +695,25 @@ func TestPreferMissingMaxAffectedAndHandlingOverMySQL(t *testing.T) {
 		t.Fatalf("read body: %v", err)
 	}
 	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST122")
+}
+
+func jsonNumberField(t *testing.T, body []byte, field string) string {
+	t.Helper()
+	var rows []map[string]any
+	if err := json.Unmarshal(body, &rows); err != nil {
+		t.Fatalf("decode body: %v; body = %s", err, body)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("body rows = %d; body = %s", len(rows), body)
+	}
+	value, ok := rows[0][field]
+	if !ok {
+		t.Fatalf("missing %s in %s", field, body)
+	}
+	switch typed := value.(type) {
+	case float64:
+		return strconv.FormatInt(int64(typed), 10)
+	default:
+		return fmt.Sprint(typed)
+	}
 }
