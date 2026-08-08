@@ -81,7 +81,7 @@ func serveDiscovery(t *testing.T, resolved config.Settings, caller ...httpapi.Ca
 	return service
 }
 
-// OPTIONS on a table reports only methods the active role can use.
+// discovery-001: OPTIONS on a table reports only methods the active role can use.
 func TestOptionsReportsMethodsFromPrivileges(t *testing.T) {
 	t.Parallel()
 
@@ -233,7 +233,9 @@ func TestOptionsOnRoutineReportsMethods(t *testing.T) {
 	}
 }
 
-// The OpenAPI document lists only resources the active role can use.
+// discovery-002, discovery-003, and discovery-004: the OpenAPI document lists
+// only resources the active role can use, keeps a fixed info block (not schema
+// comments), takes path verbs from grants, and omits parameters/definitions.
 func TestOpenAPIListsOnlyPrivilegedResources(t *testing.T) {
 	t.Parallel()
 
@@ -248,6 +250,10 @@ func TestOpenAPIListsOnlyPrivilegedResources(t *testing.T) {
 	doc := decodeOpenAPI(t, body)
 	if doc["swagger"] != "2.0" {
 		t.Fatalf("swagger = %v, want 2.0", doc["swagger"])
+	}
+	info, _ := doc["info"].(map[string]any)
+	if info["title"] != "myrest API" {
+		t.Fatalf("info.title = %v, want myrest API (schema comments are not claimed)", info["title"])
 	}
 	paths, _ := doc["paths"].(map[string]any)
 	if _, held := paths["/items"]; !held {
@@ -272,6 +278,11 @@ func TestOpenAPIListsOnlyPrivilegedResources(t *testing.T) {
 	for _, method := range []string{"patch", "delete"} {
 		if _, held := item[method]; held {
 			t.Fatalf("/items must not advertise %s without the grant", method)
+		}
+	}
+	for _, key := range []string{"definitions", "parameters", "consumes", "produces", "externalDocs"} {
+		if _, held := doc[key]; held {
+			t.Fatalf("OpenAPI held %s; that document depth is not supported", key)
 		}
 	}
 }

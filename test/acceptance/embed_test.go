@@ -112,7 +112,7 @@ func TestNestedEmbedOverDeclaredForeignKeys(t *testing.T) {
 	}
 }
 
-// View-chain embed with no declared FK refuses like any missing path.
+// embed-003: view-chain embed with no declared FK refuses like any missing path.
 func TestEmbedThroughViewWithoutForeignKeyRefuses(t *testing.T) {
 	response, body := get(
 		t,

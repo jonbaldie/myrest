@@ -34,6 +34,13 @@ is not supported. A computed relationship is not supported.
 
 Aggregate plus embed is owned by the Read area. See [Aggregates](aggregates.md).
 
+## Gap list rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| Embed with no declared foreign-key path | not supported | embed-003 |
+| Computed relationship embed | not supported | embed-004 |
+
 ## Embed after write
 
 A write with `Prefer: return=representation` may use the same nested select

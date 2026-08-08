@@ -74,8 +74,8 @@ func postJSONWithPrefer(t *testing.T, url, body, prefer string) (*http.Response,
 	return response, answer
 }
 
-// A write under db-tx-end=rollback answers successfully and then rolls back
-// as one unit: a later read does not see the row.
+// tx-001: a write under db-tx-end=rollback answers successfully and then rolls
+// back as one unit: a later read does not see the row.
 func TestWriteRollsBackAsOneUnitWhenTxEndIsRollback(t *testing.T) {
 	service := serveWithTxEnd(t, config.TxEndRollback)
 
@@ -213,5 +213,40 @@ func TestWriteCommitsWhenTxEndIsCommit(t *testing.T) {
 	_, body = get(t, service, "/items?select=name&name=eq.tx-commit-keep")
 	if !strings.Contains(string(body), `"name":"tx-commit-keep"`) {
 		t.Fatalf("committed write missing: %s", body)
+	}
+}
+
+// tx-002: Prefer tx= on an ordinary GET is not a request-transaction control.
+// Ordinary reads stay outside db-tx-end units.
+func TestPreferTxOnOrdinaryReadIsNotApplied(t *testing.T) {
+	service := serveWithTxEnd(t, config.TxEndRollback)
+
+	headers := http.Header{}
+	headers.Set("Prefer", "tx=rollback")
+	response, body := apitest.Do(t, http.MethodGet, service.URL()+"/items?select=id&limit=1", headers)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if got := response.Header.Get("Preference-Applied"); strings.Contains(got, "tx=") {
+		t.Fatalf("Preference-Applied = %q, want no tx= on an ordinary read", got)
+	}
+}
+
+// tx-003: myrest offers no role-level or routine-level isolation override.
+// Write units stay at the default READ COMMITTED request transaction.
+func TestIsolationOverridesAreNotOffered(t *testing.T) {
+	service := serveWithTxEnd(t, config.TxEndCommit)
+
+	response, body := postJSONWithPrefer(
+		t,
+		service.URL()+"/items",
+		`{"name":"tx-isolation-default"}`,
+		"return=representation",
+	)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
+	}
+	if got := response.Header.Get("Preference-Applied"); strings.Contains(strings.ToLower(got), "isolation") {
+		t.Fatalf("Preference-Applied = %q, want no isolation override offer", got)
 	}
 }

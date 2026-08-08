@@ -34,3 +34,12 @@ only the media type before `;`.
 
 See [ADR 0006](adr/0006-write-and-rpc-parity-boundaries.md) and parent deferred
 item 7 (unusual RPC whole-body argument modes).
+
+## Gap list rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| Single unnamed `json` / `jsonb` whole-body argument | not supported | rpc-007 |
+| Single unnamed `bytea` whole-body argument | not supported | rpc-008 |
+| Single unnamed `text` whole-body argument | not supported | rpc-009 |
+| Single unnamed `xml` whole-body argument | not supported | rpc-010 |

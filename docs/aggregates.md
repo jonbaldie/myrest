@@ -38,3 +38,9 @@ refuses with `PGRST123` and the message
 | Aggregate inside a one-to-many or many-to-many spread (`...resource(...)`) | not supported (`PGRST127`) |
 
 Spread embeds beyond that refuse path are not part of this ticket.
+
+## Gap list rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| Aggregate inside a one-to-many or many-to-many spread | not supported | read-013 |

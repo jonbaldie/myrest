@@ -55,3 +55,12 @@ is unset, myrest calls nothing.
 | Non-Bearer credential schemes | `Authorization` schemes other than Bearer → `MYREST001`. |
 
 The Prefer names above are myrest refuse probes for Postgres-only authz features that have no PostgREST client opt-in header. Ordinary Prefer values that the read and write tickets own are unchanged.
+
+## Gap list rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| Role impersonation identity (`CURRENT_USER`) | partial match | auth-004 |
+| Postgres row-level security | not supported | auth-005 |
+| Request GUCs / `request.jwt.claims` in SQL | not supported | auth-006 |
+| Non-Bearer credential schemes | not supported | auth-007 |

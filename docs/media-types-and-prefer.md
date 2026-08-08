@@ -53,8 +53,13 @@ Prefer values already locked elsewhere (`return`, `count`, `resolution`,
 
 ## Gap list rows
 
-**Not supported:** `application/geo+json`; plan media types; custom media type
-handlers; unclaimed `Accept` values; Prefer `timezone`.
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| `application/geo+json` | not supported | repr-007 |
+| Plan media types | not supported | repr-007 |
+| Custom media type handlers | not supported | repr-007 |
+| Unclaimed `Accept` values | not supported | repr-007 |
+| Prefer `timezone` | not supported | prefer-001 |
 
-**Partial match:** none added by this page. Write Prefer `return=representation`
-honesty limits stay in [Ordinary write](write.md).
+Write Prefer `return=representation` honesty limits stay in
+[Ordinary write](write.md).
