@@ -35,8 +35,8 @@ type writePrefer struct {
 }
 
 // knownPreferNames are Prefer names myrest recognises on a write. Unknown
-// names are invalid under handling=strict. Deferred Prefer values stay in
-// the known set so a strict client does not fail on them until their ticket.
+// names are invalid under handling=strict. Prefer timezone is refused before
+// this map runs (see preferAsksForTimezone).
 var knownPreferNames = map[string]bool{
 	"return":       true,
 	"missing":      true,
@@ -46,7 +46,6 @@ var knownPreferNames = map[string]bool{
 	"count":        true,
 	"resolution":   true,
 	"tx":           true,
-	"timezone":     true,
 }
 
 type preferTokens struct {

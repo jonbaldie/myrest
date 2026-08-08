@@ -7,7 +7,8 @@ myrest sends every failure as a JSON object with these fields:
 ```
 
 `code` and `message` are text. `details` and `hint` are `null` until a
-documented failure gives them a value.
+documented failure gives them a value. Singular-object refusals (`PGRST116`)
+set `details` to the row count text.
 
 ## Code catalog
 
@@ -26,6 +27,8 @@ cache. JWT failures use the PostgREST JWT group:
 | `PGRST100` | 400 | Query or Prefer value cannot be parsed (including an unknown `resolution` value, and the unbounded write gate). |
 | `PGRST122` | 400 | `Prefer: handling=strict` saw an invalid or unknown preference token. |
 | `PGRST124` | 400 | `Prefer: max-affected` under `handling=strict` and the write would change too many rows. |
+| `PGRST107` | 415 | `Accept` names no media type myrest claims for that response. |
+| `PGRST116` | 406 | `Accept: application/vnd.pgrst.object+json` when the result is not exactly one row. |
 
 The myrest gap codes are:
 
@@ -73,6 +76,8 @@ as not updatable (`IS_UPDATABLE ≠ YES`) uses the same gap code with message
 
 `Prefer: return=representation` on a write shape where myrest cannot return
 affected rows honestly also uses `MYREST001`. See [Ordinary write](write.md).
+Prefer `timezone` uses the same gap code. See
+[Media types and the remaining Prefer values](media-types-and-prefer.md).
 
 ## MySQL SQLSTATE to HTTP status
 
