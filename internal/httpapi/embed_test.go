@@ -62,6 +62,7 @@ func serveEmbed(t *testing.T, source httpapi.Reader) *httpapi.Service {
 	return service
 }
 
+// embed-003: embed with no declared FK path refuses at the HTTP seam.
 func TestEmbedWithoutRelationshipRefusesAtHTTP(t *testing.T) {
 	t.Parallel()
 	response, body := get(t, serveEmbed(t, &reader{}), "/items?select=id,profiles(id)")

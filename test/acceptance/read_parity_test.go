@@ -55,7 +55,7 @@ func TestPostgresOnlyJSONPathOverMySQL(t *testing.T) {
 	}
 }
 
-// read-007: FTS family operators refuse over MySQL.
+// read-007 and smoke-006: FTS family operators refuse over MySQL.
 func TestFTSOperatorOverMySQL(t *testing.T) {
 	response, body := get(t, serve(t, "myrest_fixture"), "/items?name=fts.english.alpha")
 	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")

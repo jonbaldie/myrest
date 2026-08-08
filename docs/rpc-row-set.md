@@ -53,3 +53,9 @@ Argument names stay out of the filter surface:
 
 When the result is not a row set, any of filter, order, pagination, or embed
 refuses with HTTP 400, the error envelope, and code `MYREST001`.
+
+## Gap list rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| Filter, order, pagination, or embed on scalar or non-tabular RPC results | not supported | rpc-006 |

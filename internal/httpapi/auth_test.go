@@ -66,7 +66,7 @@ func TestMissingJWTReadsAsTheAnonymousRole(t *testing.T) {
 	}
 }
 
-// auth-003: an invalid JWT gives PGRST301.
+// auth-003 and err-002: an invalid JWT gives PGRST301.
 func TestInvalidJWTGivesPGRST301(t *testing.T) {
 	t.Parallel()
 

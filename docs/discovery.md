@@ -54,9 +54,9 @@ claim.
 
 ## Gap list rows
 
-| Item | Parity label |
-| --- | --- |
-| OPTIONS method source (grants, not object-kind / view triggers) | partial match |
-| OpenAPI `info` from schema comments | partial match |
-| OpenAPI path verbs from grants vs insertable flags | partial match |
-| OpenAPI parameters, definitions, consumes/produces matrix, examples, externalDocs | not supported |
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| OPTIONS method source (grants, not object-kind / view triggers) | partial match | discovery-001 |
+| OpenAPI `info` from schema comments | partial match | discovery-002 |
+| OpenAPI path verbs from grants vs insertable flags | partial match | discovery-003 |
+| OpenAPI parameters, definitions, consumes/produces matrix, examples, externalDocs | not supported | discovery-004 |

@@ -26,9 +26,11 @@ go install github.com/quality-gates/mutago/v2/cmd/mutago@latest
 | --- | --- |
 | `go run ./cmd/myrest [config-file]` | Start the myrest service (`MYREST_LISTEN`, default `127.0.0.1:3000`) |
 | `make test` | Run tests (unit tests, process tests, and the MySQL 8 acceptance tests in `test/acceptance`) |
+| `make scenarios` | Run every normative scenario at the HTTP seam (`test/acceptance`) plus the Verification roll-up checks |
 | `make messgo` | Run messgo `design` and `codesize` rulesets (must report no violations) |
 | `make mutago` | Run mutago on the production packages with `--coverage --min-covered-msi 80` |
 | `make mysql-fixtures` | Start MySQL 8.0+ and load `testdata/fixtures/schema.sql` |
+| `make verification-docs` | Rebuild `docs/verification.md` from capability-area Gap list rows and the scenario index |
 
 ## Reading a table
 
@@ -217,6 +219,12 @@ GRANT SELECT ON shop.items TO 'myrest_anon';
 ```
 
 The authenticator must hold every database role myrest activates, because MySQL shows catalog rows only to an account that holds a privilege on them. See [ADR 0010](docs/adr/0010-catalog-read-under-authenticator-roles.md). A role granted to `myrest_anon` widens what an anonymous client reads, because MySQL reads with the privileges of the roles granted to the active role. See [ADR 0011](docs/adr/0011-bare-table-name-reads-the-default-database.md).
+
+## Verification
+
+The scenario index, derived **gap list**, and cross-area smoke set live in
+[Verification](docs/verification.md). `make scenarios` runs the whole
+normative scenario set at the HTTP seam.
 
 ## Fixture DDL
 

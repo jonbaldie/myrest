@@ -134,3 +134,10 @@ the gate stays honest on MySQL.
 
 `PATCH` and `DELETE` use the same filter surface as ordinary read. See
 [Ordinary read](ordinary-read.md).
+
+## Gap list rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| Prefer `return=representation` honesty limit | partial match | write-008, write-009, smoke-003 |
+| Embed after write without a cache relationship | not supported | write-012 |
