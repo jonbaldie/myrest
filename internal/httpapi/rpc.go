@@ -193,7 +193,7 @@ func writeScalarRPC(
 	result any,
 ) {
 	if repr.kind != representationJSONArray {
-		writeUnsupportedMedia(writer, unsupportedMediaError{
+		writeUnsupportedMedia(writer, &unsupportedMediaError{
 			offered: acceptMediaTypes(request.Header.Values("Accept")),
 		})
 		return

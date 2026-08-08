@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -12,7 +13,7 @@ import (
 // Seam under test: the HTTP API boundary for Accept media types (repr media
 // matrix) and Prefer timezone. Proof lives here and in test/acceptance.
 
-// repr-004: application/json and */* stay the claimed JSON array representation.
+// repr-004: application/json, array+json, and */* claim the JSON array representation.
 func TestAcceptJSONAndWildcardKeepJSONArray(t *testing.T) {
 	t.Parallel()
 
@@ -21,20 +22,29 @@ func TestAcceptJSONAndWildcardKeepJSONArray(t *testing.T) {
 	}}
 	service := serve(t, source, settings())
 
-	for _, accept := range []string{"", "application/json", "*/*"} {
+	cases := []struct {
+		accept      string
+		contentType string
+	}{
+		{accept: "", contentType: "application/json"},
+		{accept: "application/json", contentType: "application/json"},
+		{accept: "*/*", contentType: "application/json"},
+		{accept: "application/vnd.pgrst.array+json", contentType: "application/vnd.pgrst.array+json"},
+	}
+	for _, tc := range cases {
 		headers := make(http.Header)
-		if accept != "" {
-			headers.Set("Accept", accept)
+		if tc.accept != "" {
+			headers.Set("Accept", tc.accept)
 		}
 		response, body := apitest.Do(t, http.MethodGet, service.URL()+"/items", headers)
 		if response.StatusCode != http.StatusOK {
-			t.Fatalf("Accept %q: status = %d; body = %s", accept, response.StatusCode, body)
+			t.Fatalf("Accept %q: status = %d; body = %s", tc.accept, response.StatusCode, body)
 		}
-		if got := response.Header.Get("Content-Type"); got != "application/json" {
-			t.Fatalf("Accept %q: Content-Type = %q", accept, got)
+		if got := response.Header.Get("Content-Type"); got != tc.contentType {
+			t.Fatalf("Accept %q: Content-Type = %q, want %q", tc.accept, got, tc.contentType)
 		}
 		if want := `[{"id":1,"name":"alpha"}]`; string(body) != want+"\n" {
-			t.Fatalf("Accept %q: body = %s, want %s", accept, body, want)
+			t.Fatalf("Accept %q: body = %s, want %s", tc.accept, body, want)
 		}
 	}
 }
@@ -104,6 +114,51 @@ func TestAcceptCSVReturnsCSVRows(t *testing.T) {
 	if string(body) != want {
 		t.Fatalf("body = %q, want %q", body, want)
 	}
+}
+
+// repr-006: empty CSV with select still emits the header row.
+func TestAcceptCSVEmptyResultKeepsHeader(t *testing.T) {
+	t.Parallel()
+
+	headers := make(http.Header)
+	headers.Set("Accept", "text/csv")
+	response, body := apitest.Do(
+		t, http.MethodGet,
+		serve(t, &reader{read: []rows.Row{}}, settings()).URL()+"/items?select=id,name",
+		headers,
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d; body = %s", response.StatusCode, body)
+	}
+	if want := "id,name\n"; string(body) != want {
+		t.Fatalf("body = %q, want %q", body, want)
+	}
+}
+
+// A claimed media type on a scalar RPC body refuses with PGRST107.
+func TestCSVAcceptOnScalarRPCRefuses(t *testing.T) {
+	t.Parallel()
+
+	request, err := http.NewRequest(
+		http.MethodPost,
+		serveRPC(t, &caller{body: int64(3)}).URL()+"/rpc/add_them",
+		strings.NewReader(`{"a":1,"b":2}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "text/csv")
+	answer, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = answer.Body.Close() })
+	payload, err := io.ReadAll(answer.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apitest.AssertEnvelope(t, answer, payload, http.StatusUnsupportedMediaType, "PGRST107")
 }
 
 // repr-007: geo+json, plan media, and unknown Accept refuse with PGRST107.

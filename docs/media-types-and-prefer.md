@@ -19,10 +19,10 @@ resolution / all-rows (`write-007`–`write-010`). Prefer `tx=` lives in
 | Media type | Parity label | Contract | Scenario |
 | --- | --- | --- | --- |
 | `application/json` | **full match** | Ordinary table/view and row-set **RPC** bodies are a JSON array. | `repr-001`, `repr-004` |
-| `application/vnd.pgrst.array+json` | **full match** | Same JSON array as `application/json`. | `repr-004` |
+| `application/vnd.pgrst.array+json` (and bare `application/vnd.pgrst.array`) | **full match** | Same JSON array body; `Content-Type` stays the array media type. | `repr-004` |
 | `*/*` or no `Accept` | **full match** | Resolves to `application/json` for resource row data. | `repr-004` |
-| `application/vnd.pgrst.object+json` | **full match** | One JSON object when the result has exactly one row; otherwise `PGRST116` and status 406. | `repr-005` |
-| `text/csv` | **full match** | CSV with a header row and UTF-8 charset for table/view and row-set bodies. | `repr-006` |
+| `application/vnd.pgrst.object+json` (and bare `application/vnd.pgrst.object`) | **full match** | One JSON object when the result has exactly one row; otherwise `PGRST116` and status 406. | `repr-005` |
+| `text/csv` | **full match** | CSV with a header row and UTF-8 charset for table/view and row-set bodies. An empty result still emits the header when `select` names columns. | `repr-006` |
 | `application/openapi+json` | **full match** | `GET /` discovery only; see [Discovery](discovery.md). | discovery scenarios |
 | `application/geo+json` | **not supported** | Refuses with `PGRST107` (no PostGIS / geo handler). | `repr-007` |
 | `application/vnd.pgrst.plan` and `application/vnd.pgrst.plan+json` | **not supported** | Refuses with `PGRST107` (plan-media gate is on the config drop list). | `repr-007` |

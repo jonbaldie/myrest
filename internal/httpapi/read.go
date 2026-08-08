@@ -166,7 +166,7 @@ func writeRead(
 		writer.WriteHeader(status)
 		return
 	}
-	writeRows(writer, status, repr, read.Rows)
+	writeRows(writer, status, repr, read.Rows, csvHeaderNames(query, read.Rows))
 }
 
 func rowRange(query readquery.Query, rowCount int) (start, end uint64) {

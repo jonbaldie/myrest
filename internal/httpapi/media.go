@@ -3,11 +3,11 @@ package httpapi
 import (
 	"encoding/csv"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/rows"
 )
 
@@ -43,12 +43,7 @@ const (
 func requestRepresentation(writer http.ResponseWriter, request *http.Request) (representation, bool) {
 	repr, err := negotiateRepresentation(request.Header.Values("Accept"))
 	if err != nil {
-		var media *unsupportedMediaError
-		if errors.As(err, &media) {
-			writeUnsupportedMedia(writer, *media)
-			return representation{}, false
-		}
-		writeFailure(writer, http.StatusUnsupportedMediaType, codeUnsupportedMedia, err.Error())
+		writeUnsupportedMedia(writer, err.(*unsupportedMediaError))
 		return representation{}, false
 	}
 	return repr, true
@@ -91,8 +86,10 @@ func acceptMediaTypes(headers []string) []string {
 
 func claimRepresentation(mediaType string) (representation, bool) {
 	switch mediaType {
-	case mediaJSON, mediaArrayJSON, "application/vnd.pgrst.array", "*/*":
+	case mediaJSON, "*/*":
 		return representation{kind: representationJSONArray, contentType: mediaJSON}, true
+	case mediaArrayJSON, "application/vnd.pgrst.array":
+		return representation{kind: representationJSONArray, contentType: mediaArrayJSON}, true
 	case mediaObjectJSON, "application/vnd.pgrst.object":
 		return representation{
 			kind:        representationJSONObject,
@@ -113,7 +110,7 @@ func (e *unsupportedMediaError) Error() string {
 	return "None of these media types are available: " + strings.Join(e.offered, ", ")
 }
 
-func writeUnsupportedMedia(writer http.ResponseWriter, err unsupportedMediaError) {
+func writeUnsupportedMedia(writer http.ResponseWriter, err *unsupportedMediaError) {
 	writeFailure(writer, http.StatusUnsupportedMediaType, codeUnsupportedMedia, err.Error())
 }
 
@@ -133,6 +130,7 @@ func writeRows(
 	status int,
 	repr representation,
 	bodyRows []rows.Row,
+	csvHeader []string,
 ) {
 	switch repr.kind {
 	case representationJSONObject:
@@ -142,7 +140,7 @@ func writeRows(
 		}
 		writeJSONWithType(writer, status, repr.contentType, bodyRows[0])
 	case representationCSV:
-		writeCSV(writer, status, bodyRows)
+		writeCSV(writer, status, csvHeader, bodyRows)
 	default:
 		writeJSONWithType(writer, status, repr.contentType, bodyRows)
 	}
@@ -154,22 +152,39 @@ func writeJSONWithType(writer http.ResponseWriter, status int, contentType strin
 	_ = json.NewEncoder(writer).Encode(body)
 }
 
-func writeCSV(writer http.ResponseWriter, status int, bodyRows []rows.Row) {
+func writeCSV(writer http.ResponseWriter, status int, header []string, bodyRows []rows.Row) {
 	writer.Header().Set("Content-Type", mediaCSVCharset)
 	writer.WriteHeader(status)
-	if len(bodyRows) == 0 {
+	if len(header) == 0 && len(bodyRows) > 0 {
+		header = bodyRows[0].Columns
+	}
+	if len(header) == 0 {
 		return
 	}
 	csvWriter := csv.NewWriter(writer)
-	_ = csvWriter.Write(bodyRows[0].Columns)
+	_ = csvWriter.Write(header)
 	for _, row := range bodyRows {
-		record := make([]string, len(row.Columns))
-		for i := range row.Columns {
+		record := make([]string, len(header))
+		for i := range header {
 			record[i] = csvCell(row.Values, i)
 		}
 		_ = csvWriter.Write(record)
 	}
 	csvWriter.Flush()
+}
+
+func csvHeaderNames(query readquery.Query, bodyRows []rows.Row) []string {
+	if len(bodyRows) > 0 {
+		return bodyRows[0].Columns
+	}
+	if query.SelectAll || len(query.Columns) == 0 {
+		return nil
+	}
+	names := make([]string, len(query.Columns))
+	for i, column := range query.Columns {
+		names[i] = column.ResultName()
+	}
+	return names
 }
 
 func csvCell(values []any, index int) string {

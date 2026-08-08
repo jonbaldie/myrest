@@ -747,7 +747,7 @@ func (s *Service) writeRepresentationResponse(
 		s.writeReadFailure(writer, table.ID, role, err)
 		return
 	}
-	writeRows(writer, status, repr, shaped)
+		writeRows(writer, status, repr, shaped, csvHeaderNames(outcome.Query, shaped))
 }
 
 func writeEmptyWriteResponse(writer http.ResponseWriter, outcome writeOutcome, headersOnly bool) {
