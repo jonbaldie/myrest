@@ -63,12 +63,17 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
+	repr, ok := requestRepresentation(writer, request)
+	if !ok {
+		return
+	}
+
 	read, err := s.readWithEmbeds(request.Context(), role, table, query)
 	if err != nil {
 		s.writeReadFailure(writer, asked, role, err)
 		return
 	}
-	writeRead(writer, request.Method == http.MethodHead, query, read)
+	writeRead(writer, request.Method == http.MethodHead, query, read, repr)
 }
 
 func (s *Service) readWithEmbeds(
@@ -142,16 +147,26 @@ func writeQueryFailure(writer http.ResponseWriter, err error) {
 	writeFailure(writer, http.StatusBadRequest, codeParseFailure, err.Error())
 }
 
-func writeRead(writer http.ResponseWriter, head bool, query readquery.Query, read readquery.Result) {
+func writeRead(
+	writer http.ResponseWriter,
+	head bool,
+	query readquery.Query,
+	read readquery.Result,
+	repr representation,
+) {
 	writer.Header().Set("Range-Unit", "items")
 	writer.Header().Set("Content-Range", contentRange(query, read))
 	status := readStatus(query, read)
+	if repr.kind == representationJSONObject && len(read.Rows) != 1 {
+		writeSingularObjectFailure(writer, len(read.Rows))
+		return
+	}
 	if head {
-		writer.Header().Set("Content-Type", "application/json")
+		writer.Header().Set("Content-Type", repr.contentType)
 		writer.WriteHeader(status)
 		return
 	}
-	writeJSON(writer, status, read.Rows)
+	writeRows(writer, status, repr, read.Rows)
 }
 
 func rowRange(query readquery.Query, rowCount int) (start, end uint64) {

@@ -714,37 +714,53 @@ func (s *Service) writeWriteResponse(
 
 	switch outcome.Prefer.Return {
 	case returnRepresentation:
-		status := http.StatusOK
-		if outcome.Method == http.MethodPost {
-			status = http.StatusCreated
-			if location := locationHeader(outcome.TableName, outcome.PrimaryKey, outcome.Result.Keys); location != "" {
-				writer.Header().Set("Location", location)
-			}
-		}
-		shaped, err := s.shapeWriteRepresentation(
-			request.Context(), role, table, outcome.Result.Rows, outcome.Query, outcome.Plan,
-		)
-		if err != nil {
-			s.writeReadFailure(writer, table.ID, role, err)
-			return
-		}
-		writeJSON(writer, status, shaped)
+		s.writeRepresentationResponse(writer, request, role, table, outcome)
 	case returnHeadersOnly:
+		writeEmptyWriteResponse(writer, outcome, true)
+	default:
+		writeEmptyWriteResponse(writer, outcome, false)
+	}
+}
+
+func (s *Service) writeRepresentationResponse(
+	writer http.ResponseWriter,
+	request *http.Request,
+	role schemacache.Role,
+	table schemacache.Table,
+	outcome writeOutcome,
+) {
+	repr, ok := requestRepresentation(writer, request)
+	if !ok {
+		return
+	}
+	status := http.StatusOK
+	if outcome.Method == http.MethodPost {
+		status = http.StatusCreated
 		if location := locationHeader(outcome.TableName, outcome.PrimaryKey, outcome.Result.Keys); location != "" {
 			writer.Header().Set("Location", location)
 		}
-		if outcome.Method == http.MethodPost {
-			writer.WriteHeader(http.StatusCreated)
-			return
-		}
-		writer.WriteHeader(http.StatusNoContent)
-	default:
-		if outcome.Method == http.MethodPost {
-			writer.WriteHeader(http.StatusCreated)
-			return
-		}
-		writer.WriteHeader(http.StatusNoContent)
 	}
+	shaped, err := s.shapeWriteRepresentation(
+		request.Context(), role, table, outcome.Result.Rows, outcome.Query, outcome.Plan,
+	)
+	if err != nil {
+		s.writeReadFailure(writer, table.ID, role, err)
+		return
+	}
+	writeRows(writer, status, repr, shaped)
+}
+
+func writeEmptyWriteResponse(writer http.ResponseWriter, outcome writeOutcome, headersOnly bool) {
+	if headersOnly {
+		if location := locationHeader(outcome.TableName, outcome.PrimaryKey, outcome.Result.Keys); location != "" {
+			writer.Header().Set("Location", location)
+		}
+	}
+	if outcome.Method == http.MethodPost {
+		writer.WriteHeader(http.StatusCreated)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
 }
 
 func locationHeader(tableName string, primaryKey []string, keys []map[string]any) string {

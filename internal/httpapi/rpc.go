@@ -157,17 +157,48 @@ func (s *Service) invokeRoutine(
 		writeUnsupportedFeature(writer, messageRowSetFeaturesRequired)
 		return
 	}
-	if !tabular {
-		writeJSON(writer, http.StatusOK, result)
+	s.writeRPCResult(writer, request, role, asked, query, result, set, tabular)
+}
+
+func (s *Service) writeRPCResult(
+	writer http.ResponseWriter,
+	request *http.Request,
+	role schemacache.Role,
+	asked schemacache.RoutineID,
+	query readquery.Query,
+	result any,
+	set []rows.Row,
+	tabular bool,
+) {
+	repr, ok := requestRepresentation(writer, request)
+	if !ok {
 		return
 	}
-
+	if !tabular {
+		writeScalarRPC(writer, request, repr, result)
+		return
+	}
 	read, err := s.shapeRPCRowSet(request.Context(), role, asked.Database, set, query)
 	if err != nil {
 		s.writeReadFailure(writer, schemacache.TableID{Database: asked.Database, Name: asked.Name}, role, err)
 		return
 	}
-	writeRead(writer, request.Method == http.MethodHead, query, read)
+	writeRead(writer, request.Method == http.MethodHead, query, read, repr)
+}
+
+func writeScalarRPC(
+	writer http.ResponseWriter,
+	request *http.Request,
+	repr representation,
+	result any,
+) {
+	if repr.kind != representationJSONArray {
+		writeUnsupportedMedia(writer, unsupportedMediaError{
+			offered: acceptMediaTypes(request.Header.Values("Accept")),
+		})
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
 }
 
 func (s *Service) shapeRPCRowSet(

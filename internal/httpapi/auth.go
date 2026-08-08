@@ -50,6 +50,13 @@ func refuseUnsupportedAuth(writer http.ResponseWriter, request *http.Request) bo
 		)
 		return true
 	}
+	if preferAsksForTimezone(request) {
+		writeUnsupportedFeature(
+			writer,
+			"Prefer timezone is not available with MySQL",
+		)
+		return true
+	}
 	return false
 }
 
@@ -134,6 +141,12 @@ func preferAsksForRowSecurity(request *http.Request) bool {
 // injection as request GUCs in SQL. myrest refuses it: MySQL has no GUCs.
 func preferAsksForRequestGUCs(request *http.Request) bool {
 	return preferHolds(request, "jwt-claims")
+}
+
+// preferAsksForTimezone finds Prefer timezone. myrest refuses it: session
+// time zone on MySQL is not the Postgres GUC Prefer contract.
+func preferAsksForTimezone(request *http.Request) bool {
+	return preferHolds(request, "timezone")
 }
 
 func preferHolds(request *http.Request, token string) bool {

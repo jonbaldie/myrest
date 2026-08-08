@@ -138,6 +138,17 @@ Functions match the PostgREST scalar body. Procedures use the same path and retu
 
 Unusual whole-body `POST /rpc` argument modes (single unnamed `json`/`jsonb`/`bytea`/`text`/`xml`) are **not supported** and refuse stably. See [RPC whole-body argument modes](docs/rpc-body-modes.md).
 
+## Media types and Prefer timezone
+
+Ordinary row data claims `application/json`, `application/vnd.pgrst.array+json`,
+`application/vnd.pgrst.object+json` (exactly one row), and `text/csv`. An
+unclaimed `Accept` value — including `application/geo+json`, plan media, and
+custom handlers — refuses with `PGRST107`. Prefer `timezone` refuses with
+`MYREST001`. Prefer `tx=` follows `db-tx-end`; see
+[Transaction end and isolation](docs/transactions.md). The full label list is
+in [Media types and the remaining Prefer values](docs/media-types-and-prefer.md)
+and [ADR 0014](docs/adr/0014-media-types-and-remaining-prefer.md).
+
 ## CORS and proxy URLs
 
 `server-cors-allowed-origins` sets the browser origin policy. An empty list accepts every origin. Allowed origins get the PostgREST CORS response and preflight headers; an origin outside the list gets no `Access-Control-Allow-Origin`. myrest never takes host or scheme from `X-Forwarded-*` or `Forwarded`. When it reports an absolute base URL, `openapi-server-proxy-uri` wins when set. See [CORS origins and proxy header behaviour](docs/cors-and-proxy.md) and [ADR 0012](docs/adr/0012-cors-and-proxy-headers.md).

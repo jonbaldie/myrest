@@ -119,8 +119,8 @@ func mysqlStatus(number uint16, state string) int {
 	}
 }
 
-// writeJSON answers with a JSON body. The parity target needs no content
-// negotiation for row data, so JSON is the only representation here.
+// writeJSON answers with an application/json body (errors, scalars, OpenAPI
+// helpers). Row-data Accept negotiation uses writeRows instead.
 func writeJSON(writer http.ResponseWriter, status int, body any) {
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(status)
