@@ -193,6 +193,7 @@ func writeCache() *schemacache.Cache {
 			{Role: "myrest_anon", Table: items, Privilege: "DELETE"},
 			{Role: "myrest_anon", Table: orders, Privilege: "SELECT"},
 			{Role: "myrest_anon", Table: orders, Privilege: "INSERT"},
+			{Role: "myrest_anon", Table: orders, Privilege: "DELETE"},
 			{Role: "myrest_anon", Table: profiles, Privilege: "SELECT"},
 			{Role: "myrest_user", Table: items, Privilege: "SELECT"},
 			{Role: "myrest_user", Table: secrets, Privilege: "SELECT"},
@@ -737,6 +738,47 @@ func TestPreferReturnRepresentationEmbedNestedFilterOrder(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
 	}
 	want := `[{"id":1,"orders":[{"id":2}]}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+// DELETE representation with a narrow select still nests when the writer
+// returns the join columns needed for the cache relationship.
+func TestPreferReturnRepresentationDeleteEmbedKeepsJoinColumns(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{
+		resultRows: []rows.Row{
+			{Columns: []string{"id", "item_id"}, Values: []any{int64(9), int64(1)}},
+		},
+		deleted: 1,
+	}
+	source := &multiReader{answers: []readAnswer{
+		{rows: []rows.Row{{Columns: []string{"id", "name"}, Values: []any{int64(1), "alpha"}}}},
+	}}
+	request, err := http.NewRequest(
+		http.MethodDelete,
+		serveWrite(t, source, sink).URL()+"/orders?id=eq.9&select=id,items(id,name)",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new DELETE: %v", err)
+	}
+	request.Header.Set("Prefer", "return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("DELETE: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want := `[{"id":9,"items":{"id":1,"name":"alpha"}}]`
 	if string(body) != want+"\n" {
 		t.Fatalf("body = %s, want %s", body, want)
 	}

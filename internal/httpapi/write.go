@@ -83,7 +83,7 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 	if !ok {
 		return
 	}
-	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, prefer, false)
+	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, prefer, writeBoundOptional)
 	if !ok {
 		return
 	}
@@ -123,7 +123,7 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 	if !ok {
 		return
 	}
-	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, prefer, true)
+	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, prefer, writeBoundRequired)
 	if !ok {
 		return
 	}
@@ -162,7 +162,7 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 	if !ok {
 		return
 	}
-	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, prefer, true)
+	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, prefer, writeBoundRequired)
 	if !ok {
 		return
 	}
@@ -612,6 +612,14 @@ type writeOutcome struct {
 	Plan       []plannedEmbed
 }
 
+// writeBound says whether PATCH/DELETE must have a filter or Prefer: all-rows.
+type writeBound bool
+
+const (
+	writeBoundOptional writeBound = false
+	writeBoundRequired writeBound = true
+)
+
 // parseWriteQuery reads the mutate query, optional unbounded-write gate, and
 // embed plan for Prefer return=representation.
 func (s *Service) parseWriteQuery(
@@ -620,14 +628,14 @@ func (s *Service) parseWriteQuery(
 	role schemacache.Role,
 	origin schemacache.TableID,
 	prefer writePrefer,
-	boundRequired bool,
+	bound writeBound,
 ) (readquery.Query, []plannedEmbed, bool) {
 	query, err := parseMutateQuery(request)
 	if err != nil {
 		writeQueryFailure(writer, err)
 		return readquery.Query{}, nil, false
 	}
-	if boundRequired && refuseUnbounded(writer, prefer, query) {
+	if bound == writeBoundRequired && refuseUnbounded(writer, prefer, query) {
 		return readquery.Query{}, nil, false
 	}
 	plan, ok := s.planWriteEmbeds(writer, role, origin, prefer, query)
