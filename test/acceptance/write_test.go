@@ -291,3 +291,228 @@ func TestWriteWithoutGrantDeniedOverMySQL(t *testing.T) {
 	}
 	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
 }
+
+// write-007: return=minimal and return=headers-only behave as the parity target.
+func TestPreferReturnMinimalAndHeadersOnlyOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	request, err := http.NewRequest(
+		http.MethodPost,
+		service.URL()+"/items",
+		strings.NewReader(`{"name":"minimal-row"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=minimal")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST minimal: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusCreated || len(body) != 0 {
+		t.Fatalf("minimal status=%d body=%s", response.StatusCode, body)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "return=minimal" {
+		t.Fatalf("Preference-Applied = %q", got)
+	}
+
+	request, err = http.NewRequest(
+		http.MethodPost,
+		service.URL()+"/items",
+		strings.NewReader(`{"name":"headers-row"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST headers: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=headers-only")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST headers-only: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err = io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusCreated || len(body) != 0 {
+		t.Fatalf("headers-only status=%d body=%s", response.StatusCode, body)
+	}
+	location := response.Header.Get("Location")
+	if !strings.HasPrefix(location, "/items?id=eq.") {
+		t.Fatalf("Location = %q", location)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "return=headers-only" {
+		t.Fatalf("Preference-Applied = %q", got)
+	}
+}
+
+// write-008 and smoke-003: return=representation returns an honest body.
+func TestPreferReturnRepresentationOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	request, err := http.NewRequest(
+		http.MethodPost,
+		service.URL()+"/items",
+		strings.NewReader(`{"name":"represented"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d; body = %s", response.StatusCode, body)
+	}
+	if !strings.Contains(string(body), `"name":"represented"`) {
+		t.Fatalf("body = %s", body)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "return=representation" {
+		t.Fatalf("Preference-Applied = %q", got)
+	}
+
+	// PATCH representation re-reads by primary key after the update.
+	request, err = http.NewRequest(
+		http.MethodPatch,
+		service.URL()+"/items?name=eq.represented",
+		strings.NewReader(`{"name":"represented-2"}`),
+	)
+	if err != nil {
+		t.Fatalf("new PATCH: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err = io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("PATCH status = %d; body = %s", response.StatusCode, body)
+	}
+	if !strings.Contains(string(body), `"name":"represented-2"`) {
+		t.Fatalf("PATCH body = %s", body)
+	}
+}
+
+// write-009: return=representation refuses when an honest body is not available.
+func TestPreferReturnRepresentationWithoutPrimaryKeyRefusesOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	request, err := http.NewRequest(
+		http.MethodPost,
+		service.URL()+"/loose_notes",
+		strings.NewReader(`{"body":"note"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+}
+
+// write-010: missing=default, max-affected, and handling preferences.
+func TestPreferMissingMaxAffectedAndHandlingOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	// missing=default: bulk POST where only some rows name tone. Without the
+	// Prefer, the omitted tone becomes NULL and NOT NULL fails; with it, SQL
+	// DEFAULT fills plain.
+	request, err := http.NewRequest(
+		http.MethodPost,
+		service.URL()+"/colors",
+		strings.NewReader(`[{"name":"crimson"},{"name":"azure","tone":"bright"}]`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "missing=default, return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d; body = %s", response.StatusCode, body)
+	}
+	if !strings.Contains(string(body), `"tone":"plain"`) || !strings.Contains(string(body), `"tone":"bright"`) {
+		t.Fatalf("body = %s, want plain default and bright", body)
+	}
+
+	// Seed rows for max-affected.
+	_, _ = apitest.PostJSON(t, service.URL()+"/items", `{"name":"max-a"}`)
+	_, _ = apitest.PostJSON(t, service.URL()+"/items", `{"name":"max-b"}`)
+	_, _ = apitest.PostJSON(t, service.URL()+"/items", `{"name":"max-c"}`)
+
+	headers := http.Header{}
+	headers.Set("Prefer", "handling=strict, max-affected=1")
+	response, body = apitest.Do(
+		t,
+		http.MethodDelete,
+		service.URL()+"/items?name=like.max-*",
+		headers,
+	)
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST124")
+
+	// Rows must still exist after the refused delete.
+	_, body = get(t, service, "/items?select=name&name=like.max-*&order=name.asc")
+	if !strings.Contains(string(body), "max-a") || !strings.Contains(string(body), "max-c") {
+		t.Fatalf("rows changed after max-affected refuse: %s", body)
+	}
+
+	// handling=strict rejects unknown tokens.
+	request, err = http.NewRequest(
+		http.MethodPost,
+		service.URL()+"/items",
+		strings.NewReader(`{"name":"nope"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST strict: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "handling=strict, not-a-real-prefer")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST strict: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err = io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST122")
+}

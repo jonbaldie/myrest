@@ -24,6 +24,8 @@ cache. JWT failures use the PostgREST JWT group:
 | `PGRST105` | 400 | `PUT` is not a single-row primary-key upsert (filters, body key match, or missing primary key). |
 | `PGRST102` | 400 | Write body is not valid JSON for the method. |
 | `PGRST100` | 400 | Query or Prefer value cannot be parsed (including an unknown `resolution` value, and the unbounded write gate). |
+| `PGRST122` | 400 | `Prefer: handling=strict` saw an invalid or unknown preference token. |
+| `PGRST124` | 400 | `Prefer: max-affected` under `handling=strict` and the write would change too many rows. |
 
 The myrest gap codes are:
 
@@ -66,6 +68,9 @@ also uses `MYREST001`. See [GET /rpc read-safe routines](rpc-get.md). Unusual
 [RPC whole-body argument modes](rpc-body-modes.md). Filter, order, pagination,
 or embed on a scalar or non-tabular RPC result uses the same gap code. See
 [RPC row-set results](rpc-row-set.md).
+
+`Prefer: return=representation` on a write shape where myrest cannot return
+affected rows honestly also uses `MYREST001`. See [Ordinary write](write.md).
 
 ## MySQL SQLSTATE to HTTP status
 

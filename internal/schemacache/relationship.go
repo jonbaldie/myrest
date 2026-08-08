@@ -29,9 +29,9 @@ type Relationship struct {
 
 // RelationshipAmbiguous means more than one declared path applies.
 type RelationshipAmbiguous struct {
-	Origin   TableID
-	Target   string
-	Options  []Relationship
+	Origin  TableID
+	Target  string
+	Options []Relationship
 }
 
 func (e RelationshipAmbiguous) Error() string {
@@ -189,6 +189,11 @@ func (c *Cache) pkCoversFKs(join TableID, a, b ForeignKeyFact) bool {
 		return false
 	}
 	return columnsSubset(a.Columns, pk) && columnsSubset(b.Columns, pk)
+}
+
+// PrimaryKeyOf returns the PRIMARY KEY columns in key order.
+func PrimaryKeyOf(keys []KeyFact) []string {
+	return primaryKeyColumns(keys)
 }
 
 func primaryKeyColumns(keys []KeyFact) []string {

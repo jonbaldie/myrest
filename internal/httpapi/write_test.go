@@ -10,13 +10,15 @@ import (
 	"github.com/jonbaldie/myrest/internal/apitest"
 	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/readquery"
+	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
+	"github.com/jonbaldie/myrest/internal/writequery"
 )
 
 // Seam under test: the HTTP API boundary for ordinary writes. The Writer
 // answers in memory. Acceptance tests hold the same contracts over MySQL 8.
 
-// writer records insert, update, delete, and upsert calls.
+// writer records insert, update, and delete calls.
 type writer struct {
 	role       schemacache.Role
 	table      schemacache.Table
@@ -34,6 +36,9 @@ type writer struct {
 	failure    error
 	called     string
 	stoppable  bool
+	options    writequery.Options
+	resultRows []rows.Row
+	resultKeys []map[string]any
 }
 
 func (w *writer) Insert(
@@ -41,17 +46,20 @@ func (w *writer) Insert(
 	role schemacache.Role,
 	table schemacache.Table,
 	rows []map[string]any,
-) (int, error) {
+	options writequery.Options,
+) (writequery.Result, error) {
 	w.stoppable = ctx != nil && ctx.Done() != nil
 	w.called = "insert"
 	w.role, w.table, w.rows = role, table, rows
+	w.options = options
 	if w.failure != nil {
-		return 0, w.failure
+		return writequery.Result{}, w.failure
 	}
+	result := writequery.Result{Affected: int64(len(rows)), Rows: w.resultRows, Keys: w.resultKeys}
 	if w.inserted != 0 {
-		return w.inserted, nil
+		result.Affected = int64(w.inserted)
 	}
-	return len(rows), nil
+	return result, nil
 }
 
 func (w *writer) Update(
@@ -60,15 +68,17 @@ func (w *writer) Update(
 	table schemacache.Table,
 	patch map[string]any,
 	query readquery.Query,
-) (int64, error) {
+	options writequery.Options,
+) (writequery.Result, error) {
 	w.stoppable = ctx != nil && ctx.Done() != nil
 	w.called = "update"
 	w.role, w.table, w.patch = role, table, patch
 	w.filters, w.groups = query.Filters, query.Groups
+	w.options = options
 	if w.failure != nil {
-		return 0, w.failure
+		return writequery.Result{}, w.failure
 	}
-	return w.updated, nil
+	return writequery.Result{Affected: w.updated, Rows: w.resultRows, Keys: w.resultKeys}, nil
 }
 
 func (w *writer) Delete(
@@ -76,15 +86,17 @@ func (w *writer) Delete(
 	role schemacache.Role,
 	table schemacache.Table,
 	query readquery.Query,
-) (int64, error) {
+	options writequery.Options,
+) (writequery.Result, error) {
 	w.stoppable = ctx != nil && ctx.Done() != nil
 	w.called = "delete"
 	w.role, w.table = role, table
 	w.filters, w.groups = query.Filters, query.Groups
+	w.options = options
 	if w.failure != nil {
-		return 0, w.failure
+		return writequery.Result{}, w.failure
 	}
-	return w.deleted, nil
+	return writequery.Result{Affected: w.deleted, Rows: w.resultRows, Keys: w.resultKeys}, nil
 }
 
 func (w *writer) Upsert(
@@ -422,7 +434,305 @@ func TestWriteWithoutGrantIsDenied(t *testing.T) {
 	}
 }
 
-// write-004: a PUT by primary key with resolution=merge-duplicates succeeds.
+func TestPreferReturnMinimalPost(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{}
+	request, err := http.NewRequest(
+		http.MethodPost,
+		serveWrite(t, &reader{}, sink).URL()+"/items",
+		strings.NewReader(`{"name":"gamma"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=minimal")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
+	}
+	if len(body) != 0 {
+		t.Fatalf("body = %s, want empty", body)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "return=minimal" {
+		t.Fatalf("Preference-Applied = %q", got)
+	}
+}
+
+// write-007: Prefer return=headers-only returns Location and no body.
+func TestPreferReturnHeadersOnly(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{
+		resultKeys: []map[string]any{{"id": int64(9)}},
+	}
+	request, err := http.NewRequest(
+		http.MethodPost,
+		serveWrite(t, &reader{}, sink).URL()+"/items",
+		strings.NewReader(`{"name":"gamma"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=headers-only")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
+	}
+	if len(body) != 0 {
+		t.Fatalf("body = %s, want empty", body)
+	}
+	if got := response.Header.Get("Location"); got != "/items?id=eq.9" {
+		t.Fatalf("Location = %q", got)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "return=headers-only" {
+		t.Fatalf("Preference-Applied = %q", got)
+	}
+	if !sink.options.ReturnKeys {
+		t.Fatalf("options = %#v, want ReturnKeys", sink.options)
+	}
+}
+
+// write-008 / smoke-003: Prefer return=representation returns the affected rows.
+func TestPreferReturnRepresentation(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{
+		resultRows: []rows.Row{
+			{Columns: []string{"id", "name"}, Values: []any{int64(9), "gamma"}},
+		},
+		resultKeys: []map[string]any{{"id": int64(9)}},
+	}
+	request, err := http.NewRequest(
+		http.MethodPost,
+		serveWrite(t, &reader{}, sink).URL()+"/items",
+		strings.NewReader(`{"name":"gamma"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
+	}
+	if want := `[{"id":9,"name":"gamma"}]`; string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "return=representation" {
+		t.Fatalf("Preference-Applied = %q", got)
+	}
+	if !sink.options.ReturnRepresentation {
+		t.Fatalf("options = %#v", sink.options)
+	}
+}
+
+// write-009: Prefer return=representation refuses when no primary key can
+// identify inserted rows honestly.
+func TestPreferReturnRepresentationWithoutPrimaryKeyRefuses(t *testing.T) {
+	t.Parallel()
+
+	notes := schemacache.TableID{Database: "shop", Name: "notes"}
+	cache := schemacache.Build(schemacache.Catalog{
+		Tables: []schemacache.TableID{notes},
+		Columns: []schemacache.ColumnFact{
+			{Table: notes, Name: "body"},
+		},
+		Selects: []schemacache.SelectFact{
+			{Role: "myrest_anon", Table: notes},
+		},
+		TablePrivileges: []schemacache.TablePrivilegeFact{
+			{Role: "myrest_anon", Table: notes, Privilege: "SELECT"},
+			{Role: "myrest_anon", Table: notes, Privilege: "INSERT"},
+		},
+	})
+	sink := &writer{}
+	service, err := httpapi.Listen(httpapi.Options{
+		Addr:     "127.0.0.1:0",
+		Settings: settings(),
+		Cache:    cache,
+		Reader:   &reader{},
+		Writer:   sink,
+	})
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go func() { _ = service.Serve() }()
+	t.Cleanup(func() { _ = service.Close() })
+
+	request, err := http.NewRequest(
+		http.MethodPost,
+		service.URL()+"/notes",
+		strings.NewReader(`{"body":"x"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if sink.called != "" {
+		t.Fatalf("writer must not run; called %q", sink.called)
+	}
+}
+
+// write-010: Prefer missing=default reaches the writer.
+func TestPreferMissingDefault(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{}
+	request, err := http.NewRequest(
+		http.MethodPost,
+		serveWrite(t, &reader{}, sink).URL()+"/items",
+		strings.NewReader(`{"name":"gamma"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "missing=default")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d; body = %s", response.StatusCode, body)
+	}
+	if !sink.options.MissingDefault {
+		t.Fatalf("options = %#v", sink.options)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "missing=default" {
+		t.Fatalf("Preference-Applied = %q", got)
+	}
+}
+
+// write-010: Prefer max-affected with handling=strict refuses when too many rows change.
+func TestPreferMaxAffectedStrict(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{failure: writequery.MaxAffectedExceeded{Affected: 5, Max: 2}}
+	headers := http.Header{}
+	headers.Set("Prefer", "handling=strict, max-affected=2")
+	response, body := apitest.Do(
+		t,
+		http.MethodDelete,
+		serveWrite(t, &reader{}, sink).URL()+"/items?name=eq.alpha",
+		headers,
+	)
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST124")
+	if sink.options.MaxAffected == nil || *sink.options.MaxAffected != 2 {
+		t.Fatalf("options = %#v", sink.options)
+	}
+}
+
+// write-010: Prefer handling=strict refuses unknown preference tokens.
+func TestPreferHandlingStrictRejectsUnknown(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{}
+	headers := http.Header{}
+	headers.Set("Prefer", "handling=strict, foo")
+	headers.Set("Content-Type", "application/json")
+	request, err := http.NewRequest(
+		http.MethodPost,
+		serveWrite(t, &reader{}, sink).URL()+"/items",
+		strings.NewReader(`{"name":"x"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header = headers
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	envelope := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST122")
+	if envelope.Details == nil {
+		t.Fatalf("details = %#v", envelope.Details)
+	}
+	if sink.called != "" {
+		t.Fatalf("writer must not run; called %q", sink.called)
+	}
+}
+
+// write-010: Prefer handling=lenient ignores unknown tokens.
+func TestPreferHandlingLenientIgnoresUnknown(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{}
+	request, err := http.NewRequest(
+		http.MethodPost,
+		serveWrite(t, &reader{}, sink).URL()+"/items",
+		strings.NewReader(`{"name":"x"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "handling=lenient, foo")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d; body = %s", response.StatusCode, body)
+	}
+	if sink.called != "insert" {
+		t.Fatalf("writer called %q", sink.called)
+	}
+}
+
 func TestPutUpsertByPrimaryKeyMergeDuplicates(t *testing.T) {
 	t.Parallel()
 

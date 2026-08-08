@@ -102,6 +102,20 @@ When MySQL itself refuses a read — a grant taken away after start-up, for exam
 
 myrest builds the **schema cache** from the MySQL catalog at start-up. Send `SIGUSR1` to reload it after DDL or grant changes; a process restart is not required for that refresh. Config changes still need a restart.
 
+## Writing a table
+
+`POST /{table}` inserts one object or a JSON array. `PATCH` and `DELETE` use
+the ordinary-read filter surface. `PUT /{table}?pk=eq.value` upserts one row
+by primary key. Unbounded `PATCH`/`DELETE` need a filter or `Prefer: all-rows`.
+Write Prefer values:
+
+- `return=minimal` (default) and `return=headers-only` are **full match**
+- `return=representation` is **partial match**: honest body only when myrest
+  can re-read affected rows (primary key + `SELECT` for insert/update)
+- `missing=default`, `max-affected`, and `handling=strict|lenient` are **full match**
+
+See [Ordinary write](docs/write.md).
+
 ## Calling a routine
 
 `POST /rpc/<name>` calls a MySQL function or procedure in the selected database when the active **database role** holds `EXECUTE` on it. With no profile header that database is the **default database**. `Content-Profile` selects the database for `POST /rpc`; `Accept-Profile` selects it for `GET /rpc`. Named JSON object keys are the argument names:

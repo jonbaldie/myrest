@@ -21,13 +21,14 @@ type TableID struct {
 // Column is one column of a table, in catalog order. A generated column is an
 // ordinary column here: select and filter treat it like any other column.
 type Column struct {
-	Name      string
-	DataType  string
-	Collation string
-	Nullable  bool
-	Default   *string
-	Comment   string
-	Generated bool
+	Name          string
+	DataType      string
+	Collation     string
+	Nullable      bool
+	Default       *string
+	Comment       string
+	Generated     bool
+	AutoIncrement bool
 }
 
 // Table is a table of a configured MySQL database.
@@ -39,14 +40,15 @@ type Table struct {
 // ColumnFact says that a table holds a column. The order of the column facts
 // of one table is the order the columns keep in the cache.
 type ColumnFact struct {
-	Table     TableID
-	Name      string
-	DataType  string
-	Collation string
-	Nullable  bool
-	Default   *string
-	Comment   string
-	Generated bool
+	Table         TableID
+	Name          string
+	DataType      string
+	Collation     string
+	Nullable      bool
+	Default       *string
+	Comment       string
+	Generated     bool
+	AutoIncrement bool
 }
 
 // SelectFact says that a database role holds the SELECT privilege on a table.
@@ -131,13 +133,14 @@ func (c *Cache) replaceUnlocked(catalog Catalog) {
 
 	for _, fact := range catalog.Columns {
 		columns[fact.Table] = append(columns[fact.Table], Column{
-			Name:      fact.Name,
-			DataType:  fact.DataType,
-			Collation: fact.Collation,
-			Nullable:  fact.Nullable,
-			Default:   fact.Default,
-			Comment:   fact.Comment,
-			Generated: fact.Generated,
+			Name:          fact.Name,
+			DataType:      fact.DataType,
+			Collation:     fact.Collation,
+			Nullable:      fact.Nullable,
+			Default:       fact.Default,
+			Comment:       fact.Comment,
+			Generated:     fact.Generated,
+			AutoIncrement: fact.AutoIncrement,
 		})
 	}
 	for _, id := range catalog.Tables {

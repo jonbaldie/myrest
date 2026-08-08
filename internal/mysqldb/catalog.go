@@ -515,7 +515,9 @@ func scanColumn(result *sql.Rows) (schemacache.ColumnFact, bool, error) {
 		value := defaultValue.String
 		fact.Default = &value
 	}
-	fact.Generated = strings.Contains(strings.ToLower(extra), "generated")
+	lowerExtra := strings.ToLower(extra)
+	fact.Generated = strings.Contains(lowerExtra, "generated")
+	fact.AutoIncrement = strings.Contains(lowerExtra, "auto_increment")
 	return fact, true, nil
 }
 

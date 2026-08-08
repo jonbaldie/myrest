@@ -21,7 +21,7 @@ func TestBuildInsertSQL(t *testing.T) {
 	parts, err := buildInsert(table, []string{"name"}, []map[string]any{
 		{"name": "gamma"},
 		{"name": "delta"},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("buildInsert: %v", err)
 	}
@@ -59,6 +59,33 @@ func TestBuildUpdateSQLWithFilter(t *testing.T) {
 		t.Fatalf("statement = %q, want %q", parts.statement, want)
 	}
 	if len(parts.args) != 2 || parts.args[0] != "alpha2" || parts.args[1] != "alpha" {
+		t.Fatalf("args = %#v", parts.args)
+	}
+}
+
+func TestBuildInsertSQLMissingDefault(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID: schemacache.TableID{Database: "shop", Name: "colors"},
+		Columns: []schemacache.Column{
+			{Name: "id"},
+			{Name: "name"},
+			{Name: "tone"},
+		},
+	}
+	parts, err := buildInsert(table, []string{"name", "tone"}, []map[string]any{
+		{"name": "red"},
+		{"name": "blue", "tone": "bright"},
+	}, true)
+	if err != nil {
+		t.Fatalf("buildInsert: %v", err)
+	}
+	want := "INSERT INTO `shop`.`colors` (`name`, `tone`) VALUES (?, DEFAULT), (?, ?)"
+	if parts.statement != want {
+		t.Fatalf("statement = %q, want %q", parts.statement, want)
+	}
+	if len(parts.args) != 3 || parts.args[0] != "red" || parts.args[1] != "blue" || parts.args[2] != "bright" {
 		t.Fatalf("args = %#v", parts.args)
 	}
 }
