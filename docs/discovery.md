@@ -13,9 +13,9 @@ boundary.
 
 | Behaviour | Parity label | Contract |
 | --- | --- | --- |
-| Method allow-list from grants | **partial match** | `OPTIONS /{table}` and `OPTIONS /rpc/{name}` answer with status 200, an empty body, and `Allow` listing only methods the active role can use on that **resource**. Table methods need the matching grant (`SELECT` → `GET`/`HEAD`, `INSERT` → `POST`, `UPDATE` → `PATCH`, `DELETE` → `DELETE`). `OPTIONS` is always present when the role can use the resource. Routine `EXECUTE` yields `POST`; read-safe routines also yield `GET`/`HEAD`. The parity target advertises methods from object kind and view triggers, not grants; myrest keeps grant honesty instead. |
+| Method allow-list from grants | **partial match** | `OPTIONS /{table}` and `OPTIONS /rpc/{name}` answer with status 200, an empty body, and `Allow` listing only methods the active role can use on that **resource**. Table methods need the matching grant (`SELECT` → `GET`/`HEAD`, `INSERT` → `POST`/`PUT`, `UPDATE` → `PATCH`, `DELETE` → `DELETE`). `OPTIONS` is always present when the role can use the resource. Routine `EXECUTE` yields `POST`; read-safe routines also yield `GET`/`HEAD`. The parity target advertises methods from object kind and view triggers, not grants; myrest keeps grant honesty instead. |
 | Hidden resource | **full match** | A table or routine the role cannot use is not a resource: status 404 with `PGRST205` (table) or `PGRST202` (routine). |
-| `PUT` on tables | **not supported** | Ordinary `PUT` upsert is not on the served write surface yet, so `OPTIONS` never advertises `PUT`. |
+| `PUT` on tables | **full match** | `OPTIONS` advertises `PUT` when the role holds `INSERT`. Request-time `merge-duplicates` still needs `UPDATE`. |
 
 CORS preflight `OPTIONS` (with `Access-Control-Request-Method`) stays under
 [CORS origins and proxy header behaviour](cors-and-proxy.md). It is not this
@@ -26,7 +26,7 @@ resource allow-list.
 | Knob | Parity label | Contract |
 | --- | --- | --- |
 | `openapi-mode=follow-privileges` (default) | **full match** | `GET /` serves an OpenAPI 2.0 document (`Content-Type: application/openapi+json`) that lists only resources the active role can use. Path methods follow the same grant rules as `OPTIONS`. |
-| `openapi-mode=ignore-privileges` | **full match** | The document lists every table and routine in the schema cache for configured databases, and advertises the served table methods (`get`/`post`/`patch`/`delete`) and routine methods from read-safety. |
+| `openapi-mode=ignore-privileges` | **full match** | The document lists every table and routine in the schema cache for configured databases, and advertises the served table methods (`get`/`post`/`put`/`patch`/`delete`) and routine methods from read-safety. |
 | `openapi-mode=disabled` | **full match** | `GET /` answers 404 with the no-handler envelope (`MYREST003`). |
 | `openapi-security-active` | **full match** | When true, the document holds `securityDefinitions.JWT` (apiKey in `Authorization`) and a matching `security` requirement. When false, those fields are omitted. |
 | `openapi-server-proxy-uri` | **full match** | When set, `host`, `schemes`, and `basePath` come from that URI (trailing `/` removed). Otherwise they come from the listen URL of the process. myrest does not read `X-Forwarded-*` or `Forwarded` for this value. |
@@ -57,7 +57,6 @@ claim.
 | Item | Parity label |
 | --- | --- |
 | OPTIONS method source (grants, not object-kind / view triggers) | partial match |
-| `PUT` advertised on table OPTIONS | not supported |
 | OpenAPI `info` from schema comments | partial match |
 | OpenAPI path verbs from grants vs insertable flags | partial match |
 | OpenAPI parameters, definitions, consumes/produces matrix, examples, externalDocs | not supported |

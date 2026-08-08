@@ -21,6 +21,9 @@ cache. JWT failures use the PostgREST JWT group:
 | `PGRST302` | 401 | The request has no usable JWT and anonymous access is disabled. |
 | `PGRST303` | 401 | JWT claims validation failed (expired, audience, and related checks). |
 | `PGRST106` | 406 | `Accept-Profile` or `Content-Profile` names a database outside `db-schemas`. |
+| `PGRST105` | 400 | `PUT` is not a single-row primary-key upsert (filters, body key match, or missing primary key). |
+| `PGRST102` | 400 | Write body is not valid JSON for the method. |
+| `PGRST100` | 400 | Query or Prefer value cannot be parsed (including an unknown `resolution` value, and the unbounded write gate). |
 
 The myrest gap codes are:
 

@@ -16,20 +16,24 @@ import (
 // Seam under test: the HTTP API boundary for ordinary writes. The Writer
 // answers in memory. Acceptance tests hold the same contracts over MySQL 8.
 
-// writer records insert, update, and delete calls.
+// writer records insert, update, delete, and upsert calls.
 type writer struct {
-	role      schemacache.Role
-	table     schemacache.Table
-	rows      []map[string]any
-	patch     map[string]any
-	filters   []readquery.Filter
-	groups    []readquery.Group
-	inserted  int
-	updated   int64
-	deleted   int64
-	failure   error
-	called    string
-	stoppable bool
+	role       schemacache.Role
+	table      schemacache.Table
+	rows       []map[string]any
+	patch      map[string]any
+	row        map[string]any
+	primaryKey []string
+	resolution httpapi.UpsertResolution
+	filters    []readquery.Filter
+	groups     []readquery.Group
+	inserted   int
+	updated    int64
+	deleted    int64
+	upserted   bool
+	failure    error
+	called     string
+	stoppable  bool
 }
 
 func (w *writer) Insert(
@@ -83,6 +87,24 @@ func (w *writer) Delete(
 	return w.deleted, nil
 }
 
+func (w *writer) Upsert(
+	ctx context.Context,
+	role schemacache.Role,
+	table schemacache.Table,
+	row map[string]any,
+	primaryKey []string,
+	resolution httpapi.UpsertResolution,
+) (bool, error) {
+	w.stoppable = ctx != nil && ctx.Done() != nil
+	w.called = "upsert"
+	w.role, w.table = role, table
+	w.row, w.primaryKey, w.resolution = row, primaryKey, resolution
+	if w.failure != nil {
+		return false, w.failure
+	}
+	return w.upserted, nil
+}
+
 func serveWrite(
 	t *testing.T,
 	source httpapi.Reader,
@@ -131,6 +153,9 @@ func writeCache() *schemacache.Cache {
 			{Table: items, Name: "id"},
 			{Table: items, Name: "name"},
 			{Table: secrets, Name: "payload"},
+		},
+		Keys: []schemacache.KeyFact{
+			{Table: items, Name: "PRIMARY", Kind: "PRIMARY", Columns: []string{"id"}},
 		},
 		Selects: []schemacache.SelectFact{
 			{Role: "myrest_anon", Table: items},
@@ -395,4 +420,162 @@ func TestWriteWithoutGrantIsDenied(t *testing.T) {
 	if sink.called != "" {
 		t.Fatalf("writer must not run without INSERT; called %q", sink.called)
 	}
+}
+
+// write-004: a PUT by primary key with resolution=merge-duplicates succeeds.
+func TestPutUpsertByPrimaryKeyMergeDuplicates(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{upserted: true}
+	response, body := putJSON(
+		t,
+		serveWrite(t, &reader{}, sink).URL()+"/items?id=eq.1",
+		`{"id":1,"name":"alpha2"}`,
+		"resolution=merge-duplicates",
+	)
+
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
+	}
+	if len(body) != 0 {
+		t.Fatalf("body = %s, want empty for Prefer return=minimal default", body)
+	}
+	if sink.called != "upsert" {
+		t.Fatalf("writer called %q, want upsert", sink.called)
+	}
+	if sink.resolution != httpapi.UpsertMergeDuplicates {
+		t.Fatalf("resolution = %v, want merge-duplicates", sink.resolution)
+	}
+	if len(sink.primaryKey) != 1 || sink.primaryKey[0] != "id" {
+		t.Fatalf("primaryKey = %#v", sink.primaryKey)
+	}
+	if sink.row["name"] != "alpha2" {
+		t.Fatalf("row = %#v", sink.row)
+	}
+}
+
+// write-004: a PUT by primary key with resolution=ignore-duplicates succeeds.
+func TestPutUpsertByPrimaryKeyIgnoreDuplicates(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{upserted: true}
+	response, body := putJSON(
+		t,
+		serveWrite(t, &reader{}, sink).URL()+"/items?id=eq.99",
+		`{"id":99,"name":"fresh"}`,
+		"resolution=ignore-duplicates",
+	)
+
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
+	}
+	if sink.called != "upsert" {
+		t.Fatalf("writer called %q, want upsert", sink.called)
+	}
+	if sink.resolution != httpapi.UpsertIgnoreDuplicates {
+		t.Fatalf("resolution = %v, want ignore-duplicates", sink.resolution)
+	}
+}
+
+// A PUT that does not target the primary key refuses stably.
+func TestPutWithoutPrimaryKeyTargetRefuses(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{}
+	response, body := putJSON(
+		t,
+		serveWrite(t, &reader{}, sink).URL()+"/items?name=eq.alpha",
+		`{"id":1,"name":"alpha"}`,
+		"resolution=merge-duplicates",
+	)
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST105")
+	if sink.called != "" {
+		t.Fatalf("writer must not run for a non-PK PUT; called %q", sink.called)
+	}
+}
+
+// A PUT without the matching grant is denied.
+func TestPutWithoutGrantIsDenied(t *testing.T) {
+	t.Parallel()
+
+	items := schemacache.TableID{Database: "shop", Name: "items"}
+	cache := schemacache.Build(schemacache.Catalog{
+		Tables: []schemacache.TableID{items},
+		Columns: []schemacache.ColumnFact{
+			{Table: items, Name: "id"},
+			{Table: items, Name: "name"},
+		},
+		Keys: []schemacache.KeyFact{
+			{Table: items, Name: "PRIMARY", Kind: "PRIMARY", Columns: []string{"id"}},
+		},
+		Selects: []schemacache.SelectFact{
+			{Role: "myrest_anon", Table: items},
+		},
+		TablePrivileges: []schemacache.TablePrivilegeFact{
+			{Role: "myrest_anon", Table: items, Privilege: "SELECT"},
+		},
+	})
+	sink := &writer{}
+	service, err := httpapi.Listen(httpapi.Options{
+		Addr:     "127.0.0.1:0",
+		Settings: settings(),
+		Cache:    cache,
+		Reader:   &reader{},
+		Writer:   sink,
+	})
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go func() { _ = service.Serve() }()
+	t.Cleanup(func() { _ = service.Close() })
+
+	response, body := putJSON(
+		t,
+		service.URL()+"/items?id=eq.1",
+		`{"id":1,"name":"nope"}`,
+		"resolution=merge-duplicates",
+	)
+	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
+	if sink.called != "" {
+		t.Fatalf("writer must not run without INSERT; called %q", sink.called)
+	}
+}
+
+// An updated row under merge-duplicates answers 204 with the minimal default.
+func TestPutMergeUpdateAnswersNoContent(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{upserted: false}
+	response, body := putJSON(
+		t,
+		serveWrite(t, &reader{}, sink).URL()+"/items?id=eq.1",
+		`{"id":1,"name":"alpha2"}`,
+		"resolution=merge-duplicates",
+	)
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusNoContent, body)
+	}
+}
+
+func putJSON(t *testing.T, url, body, prefer string) (*http.Response, []byte) {
+	t.Helper()
+
+	request, err := http.NewRequest(http.MethodPut, url, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("new PUT: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	if prefer != "" {
+		request.Header.Set("Prefer", prefer)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("PUT: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	answer, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	return response, answer
 }

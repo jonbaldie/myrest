@@ -95,8 +95,8 @@ func TestOptionsReportsMethodsFromPrivileges(t *testing.T) {
 	if len(body) != 0 {
 		t.Fatalf("body = %q, want empty", body)
 	}
-	if got := response.Header.Get("Allow"); got != "OPTIONS,GET,HEAD,POST" {
-		t.Fatalf("Allow = %q, want OPTIONS,GET,HEAD,POST", got)
+	if got := response.Header.Get("Allow"); got != "OPTIONS,GET,HEAD,POST,PUT" {
+		t.Fatalf("Allow = %q, want OPTIONS,GET,HEAD,POST,PUT", got)
 	}
 }
 
@@ -224,12 +224,12 @@ func TestOpenAPIListsOnlyPrivilegedResources(t *testing.T) {
 	}
 
 	item, _ := paths["/items"].(map[string]any)
-	for _, method := range []string{"get", "post"} {
+	for _, method := range []string{"get", "post", "put"} {
 		if _, held := item[method]; !held {
 			t.Fatalf("/items missing %s", method)
 		}
 	}
-	for _, method := range []string{"patch", "delete", "put"} {
+	for _, method := range []string{"patch", "delete"} {
 		if _, held := item[method]; held {
 			t.Fatalf("/items must not advertise %s without the grant", method)
 		}
@@ -271,7 +271,7 @@ func TestOpenAPIModeIgnorePrivilegesListsAllResources(t *testing.T) {
 		}
 	}
 	secrets, _ := paths["/secrets"].(map[string]any)
-	for _, method := range []string{"get", "post", "patch", "delete"} {
+	for _, method := range []string{"get", "post", "put", "patch", "delete"} {
 		if _, held := secrets[method]; !held {
 			t.Fatalf("/secrets missing %s under ignore-privileges", method)
 		}
