@@ -147,9 +147,9 @@ func TestCacheHoldsTheCatalogFactsTheSpecNames(t *testing.T) {
 		t.Fatal("cache lost the EXECUTE grant the exposure rule needs")
 	}
 
-	// Views stay in the cache, but this ticket does not expose them as HTTP
-	// resources. The views ticket consumes them.
+	// A view without SELECT is not a resource. Grant SELECT in the fixture of
+	// this test only on tables, so items_view stays hidden here.
 	if _, ok := cache.Resource(anonRole, itemsView); ok {
-		t.Fatal("a view became an HTTP resource before the views ticket")
+		t.Fatal("a view without SELECT became a resource")
 	}
 }

@@ -259,6 +259,27 @@ func TestExplicitReloadShowsNewExposure(t *testing.T) {
 	}
 }
 
+// A read through an exposed view uses the ordinary read surface.
+func TestReadThroughViewOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	response, body := get(t, service, "/items_view?select=id,name&name=eq.alpha&order=id.asc")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if want := `[{"id":1,"name":"alpha"}]`; string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+// A view the active role cannot privilege-use is not a usable resource.
+func TestViewWithoutSelectIsNotAResourceOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	response, body := get(t, service, "/locked_view")
+	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
+}
+
 // MySQL still enforces the grants after the role switch: a grant the schema
 // cache still holds gives a database error, not rows.
 func TestMySQLEnforcesTheGrantsAfterTheRoleSwitch(t *testing.T) {

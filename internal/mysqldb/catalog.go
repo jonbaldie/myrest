@@ -16,10 +16,14 @@ const (
 	WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA IN (%s)
 	ORDER BY TABLE_SCHEMA, TABLE_NAME`
 
-	viewQuery = `SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_COMMENT
-	FROM information_schema.TABLES
-	WHERE TABLE_TYPE = 'VIEW' AND TABLE_SCHEMA IN (%s)
-	ORDER BY TABLE_SCHEMA, TABLE_NAME`
+	// Views come from TABLES joined to VIEWS so the cache can hold IS_UPDATABLE.
+	// TABLE_COMMENT on a view is often the literal "VIEW"; that value is dropped.
+	viewQuery = `SELECT t.TABLE_SCHEMA, t.TABLE_NAME, t.TABLE_COMMENT, v.IS_UPDATABLE
+	FROM information_schema.TABLES t
+	JOIN information_schema.VIEWS v
+		ON t.TABLE_SCHEMA = v.TABLE_SCHEMA AND t.TABLE_NAME = v.TABLE_NAME
+	WHERE t.TABLE_TYPE = 'VIEW' AND t.TABLE_SCHEMA IN (%s)
+	ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME`
 
 	columnQuery = `SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE,
 		COLLATION_NAME, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_COMMENT, EXTRA
@@ -101,6 +105,7 @@ func readCatalog(
 	return schemacache.Catalog{
 		Tables:            objects.tables,
 		Views:             objects.views,
+		UpdatableViews:    objects.updatableViews,
 		RelationComments:  objects.comments,
 		Columns:           objects.columns,
 		Keys:              objects.keys,
@@ -114,13 +119,14 @@ func readCatalog(
 }
 
 type catalogObjects struct {
-	tables      []schemacache.TableID
-	views       []schemacache.TableID
-	comments    []schemacache.CommentFact
-	columns     []schemacache.ColumnFact
-	keys        []schemacache.KeyFact
-	foreignKeys []schemacache.ForeignKeyFact
-	routines    []schemacache.RoutineFact
+	tables          []schemacache.TableID
+	views           []schemacache.TableID
+	updatableViews  []schemacache.TableID
+	comments        []schemacache.CommentFact
+	columns         []schemacache.ColumnFact
+	keys            []schemacache.KeyFact
+	foreignKeys     []schemacache.ForeignKeyFact
+	routines        []schemacache.RoutineFact
 }
 
 func readCatalogObjects(
@@ -132,7 +138,7 @@ func readCatalogObjects(
 	if err != nil {
 		return catalogObjects{}, fmt.Errorf("read the tables: %w", err)
 	}
-	views, viewComments, err := readRelations(ctx, conn, viewQuery, databases)
+	views, updatableViews, viewComments, err := readViews(ctx, conn, databases)
 	if err != nil {
 		return catalogObjects{}, fmt.Errorf("read the views: %w", err)
 	}
@@ -153,13 +159,14 @@ func readCatalogObjects(
 		return catalogObjects{}, err
 	}
 	return catalogObjects{
-		tables:      tables,
-		views:       views,
-		comments:    append(tableComments, viewComments...),
-		columns:     columns,
-		keys:        keys,
-		foreignKeys: foreignKeys,
-		routines:    routines,
+		tables:         tables,
+		views:          views,
+		updatableViews: updatableViews,
+		comments:       append(tableComments, viewComments...),
+		columns:        columns,
+		keys:           keys,
+		foreignKeys:    foreignKeys,
+		routines:       routines,
 	}, nil
 }
 
@@ -221,6 +228,43 @@ func readRelations(
 		}
 	}
 	return relations, comments, result.Err()
+}
+
+// readViews loads every view and the IS_UPDATABLE flag MySQL holds for it.
+func readViews(
+	ctx context.Context,
+	conn *sql.Conn,
+	databases []string,
+) ([]schemacache.TableID, []schemacache.TableID, []schemacache.CommentFact, error) {
+	result, err := conn.QueryContext(
+		ctx,
+		fmt.Sprintf(viewQuery, placeholders(databases)),
+		asArguments(databases)...,
+	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer func() { _ = result.Close() }()
+
+	var views []schemacache.TableID
+	var updatable []schemacache.TableID
+	var comments []schemacache.CommentFact
+	for result.Next() {
+		var id schemacache.TableID
+		var comment string
+		var isUpdatable string
+		if err := result.Scan(&id.Database, &id.Name, &comment, &isUpdatable); err != nil {
+			return nil, nil, nil, err
+		}
+		views = append(views, id)
+		if strings.EqualFold(isUpdatable, "YES") {
+			updatable = append(updatable, id)
+		}
+		if comment != "" && comment != "VIEW" {
+			comments = append(comments, schemacache.CommentFact{Relation: id, Comment: comment})
+		}
+	}
+	return views, updatable, comments, result.Err()
 }
 
 func readKeys(

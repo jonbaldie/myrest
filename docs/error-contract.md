@@ -67,7 +67,9 @@ also uses `MYREST001`. See [GET /rpc read-safe routines](rpc-get.md). Unusual
 `text`/`xml`) use the same gap code. See
 [RPC whole-body argument modes](rpc-body-modes.md). Filter, order, pagination,
 or embed on a scalar or non-tabular RPC result uses the same gap code. See
-[RPC row-set results](rpc-row-set.md).
+[RPC row-set results](rpc-row-set.md). A write through a view that MySQL marks
+as not updatable (`IS_UPDATABLE ≠ YES`) uses the same gap code with message
+`The view is not updatable`. See [Views as resources](views.md).
 
 `Prefer: return=representation` on a write shape where myrest cannot return
 affected rows honestly also uses `MYREST001`. See [Ordinary write](write.md).

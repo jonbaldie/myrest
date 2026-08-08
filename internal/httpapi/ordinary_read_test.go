@@ -6,8 +6,10 @@ import (
 
 	"github.com/jonbaldie/myrest/internal/apitest"
 	"github.com/jonbaldie/myrest/internal/config"
+	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/rows"
+	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
 // read-001: GET with select, a common filter, order, and limit/offset succeeds.
@@ -126,5 +128,75 @@ func TestOrdinaryReadWithoutSelectGrantIsDenied(t *testing.T) {
 
 	response, body := get(t, serve(t, &reader{}, settings()), "/secrets?select=payload")
 
+	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
+}
+
+// A read through an exposed view uses the ordinary read surface.
+func TestOrdinaryReadThroughViewSucceeds(t *testing.T) {
+	t.Parallel()
+
+	itemsView := schemacache.TableID{Database: "shop", Name: "items_view"}
+	cache := schemacache.Build(schemacache.Catalog{
+		Views: []schemacache.TableID{itemsView},
+		Columns: []schemacache.ColumnFact{
+			{Table: itemsView, Name: "id"},
+			{Table: itemsView, Name: "name"},
+		},
+		Selects: []schemacache.SelectFact{
+			{Role: "myrest_anon", Table: itemsView},
+		},
+	})
+	source := &reader{read: []rows.Row{
+		{Columns: []string{"id", "name"}, Values: []any{int64(1), "alpha"}},
+	}}
+	service, err := httpapi.Listen(httpapi.Options{
+		Addr:     "127.0.0.1:0",
+		Settings: settings(),
+		Cache:    cache,
+		Reader:   source,
+	})
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go func() { _ = service.Serve() }()
+	t.Cleanup(func() { _ = service.Close() })
+
+	response, body := get(t, service, "/items_view?select=id,name&name=eq.alpha&order=id.asc")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if want := `[{"id":1,"name":"alpha"}]`; string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+	if source.table.ID.Name != "items_view" {
+		t.Fatalf("reader table = %#v", source.table.ID)
+	}
+	if len(source.query.Filters) != 1 || source.query.Filters[0].Op != readquery.OpEq {
+		t.Fatalf("filters = %#v", source.query.Filters)
+	}
+}
+
+// A view the active role cannot select from is not a usable resource.
+func TestViewWithoutSelectIsNotAUsableResource(t *testing.T) {
+	t.Parallel()
+
+	locked := schemacache.TableID{Database: "shop", Name: "locked_view"}
+	cache := schemacache.Build(schemacache.Catalog{
+		Views:   []schemacache.TableID{locked},
+		Columns: []schemacache.ColumnFact{{Table: locked, Name: "id"}},
+	})
+	service, err := httpapi.Listen(httpapi.Options{
+		Addr:     "127.0.0.1:0",
+		Settings: settings(),
+		Cache:    cache,
+		Reader:   &reader{},
+	})
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go func() { _ = service.Serve() }()
+	t.Cleanup(func() { _ = service.Close() })
+
+	response, body := get(t, service, "/locked_view")
 	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
 }

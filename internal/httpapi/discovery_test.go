@@ -128,32 +128,28 @@ func TestOptionsOnHiddenTableGivesPGRST205(t *testing.T) {
 	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
 }
 
-// OPTIONS on a view name is not a table resource, even when a privilege fact
-// names that view.
-func TestOptionsOnViewIsNotATableResource(t *testing.T) {
+// OPTIONS on a view reports methods from grants and view updatability.
+func TestOptionsOnViewReportsMethods(t *testing.T) {
 	t.Parallel()
 
 	itemsView := schemacache.TableID{Database: "shop", Name: "items_view"}
 	cache := schemacache.Build(schemacache.Catalog{
-		Tables: []schemacache.TableID{{Database: "shop", Name: "items"}},
-		Views:  []schemacache.TableID{itemsView},
+		Views:          []schemacache.TableID{itemsView},
+		UpdatableViews: []schemacache.TableID{itemsView},
 		Columns: []schemacache.ColumnFact{
-			{Table: schemacache.TableID{Database: "shop", Name: "items"}, Name: "id"},
 			{Table: itemsView, Name: "id"},
 		},
 		Selects: []schemacache.SelectFact{
-			{Role: "myrest_anon", Table: schemacache.TableID{Database: "shop", Name: "items"}},
 			{Role: "myrest_anon", Table: itemsView},
 		},
 		TablePrivileges: []schemacache.TablePrivilegeFact{
-			{Role: "myrest_anon", Table: schemacache.TableID{Database: "shop", Name: "items"}, Privilege: "SELECT"},
 			{Role: "myrest_anon", Table: itemsView, Privilege: "SELECT"},
+			{Role: "myrest_anon", Table: itemsView, Privilege: "INSERT"},
 		},
 	})
-	resolved := settings()
 	service, err := httpapi.Listen(httpapi.Options{
 		Addr:     "127.0.0.1:0",
-		Settings: resolved,
+		Settings: settings(),
 		Cache:    cache,
 		Reader:   &reader{},
 	})
@@ -164,7 +160,51 @@ func TestOptionsOnViewIsNotATableResource(t *testing.T) {
 	t.Cleanup(func() { _ = service.Close() })
 
 	response, body := apitest.Do(t, http.MethodOptions, service.URL()+"/items_view", nil)
-	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if got := response.Header.Get("Allow"); got != "OPTIONS,GET,HEAD,POST,PUT" {
+		t.Fatalf("Allow = %q, want OPTIONS,GET,HEAD,POST,PUT", got)
+	}
+}
+
+// OPTIONS on a non-updatable view omits write methods even when grants exist.
+func TestOptionsOnNonWritableViewOmitsWriteMethods(t *testing.T) {
+	t.Parallel()
+
+	stats := schemacache.TableID{Database: "shop", Name: "items_stats"}
+	cache := schemacache.Build(schemacache.Catalog{
+		Views: []schemacache.TableID{stats},
+		Columns: []schemacache.ColumnFact{
+			{Table: stats, Name: "total"},
+		},
+		Selects: []schemacache.SelectFact{
+			{Role: "myrest_anon", Table: stats},
+		},
+		TablePrivileges: []schemacache.TablePrivilegeFact{
+			{Role: "myrest_anon", Table: stats, Privilege: "SELECT"},
+			{Role: "myrest_anon", Table: stats, Privilege: "INSERT"},
+		},
+	})
+	service, err := httpapi.Listen(httpapi.Options{
+		Addr:     "127.0.0.1:0",
+		Settings: settings(),
+		Cache:    cache,
+		Reader:   &reader{},
+	})
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go func() { _ = service.Serve() }()
+	t.Cleanup(func() { _ = service.Close() })
+
+	response, body := apitest.Do(t, http.MethodOptions, service.URL()+"/items_stats", nil)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if got := response.Header.Get("Allow"); got != "OPTIONS,GET,HEAD" {
+		t.Fatalf("Allow = %q, want OPTIONS,GET,HEAD", got)
+	}
 }
 
 // OPTIONS on a routine reports methods from EXECUTE and read-safety.
