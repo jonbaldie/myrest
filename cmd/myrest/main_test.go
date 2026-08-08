@@ -105,7 +105,8 @@ db-anon-role = "myrest_anon"
 	}
 }
 
-// cfg-003: no knob on the drop list is needed to start the process.
+// The process can start from the minimum run set alone; drop-list knobs are
+// not required for serve (their refuse path is cache-004).
 func TestProcessStartsWithTheMinimumRunSetAlone(t *testing.T) {
 	t.Parallel()
 
@@ -119,6 +120,39 @@ jwt-secret = "reallyreallyreallyreallyverysafe"
 	body := getWithBearer(t, base+"/", token)
 	if !strings.Contains(body, `"swagger":"2.0"`) {
 		t.Fatalf("body = %q, want OpenAPI swagger 2.0", body)
+	}
+}
+
+// cfg-003: live config reload is not supported. A config file change while the
+// process runs does not change the served databases; only a restart applies it.
+func TestLiveConfigReloadIsNotSupported(t *testing.T) {
+	t.Parallel()
+
+	path := configFile(t, fmt.Sprintf(`db-uri = %q
+db-schemas = "myrest_fixture"
+db-anon-role = "myrest_anon"
+`, authenticator()))
+
+	process := start(t, nil, path)
+	base, exposed := process.waitForServe(t)
+	if !strings.Contains(exposed, "myrest_fixture") {
+		t.Fatalf("exposed %q does not name database myrest_fixture", exposed)
+	}
+
+	before := getPath(t, base, "/items")
+	if before == "" || strings.Contains(before, "PGRST") {
+		t.Fatalf("before reload body = %q, want fixture items", before)
+	}
+
+	rewrite(t, path, fmt.Sprintf(`db-uri = %q
+db-schemas = "myrest_hidden"
+db-anon-role = "myrest_anon"
+`, authenticator()))
+	time.Sleep(500 * time.Millisecond)
+
+	after := getPath(t, base, "/items")
+	if after != before {
+		t.Fatalf("live config reload changed /items from %q to %q", before, after)
 	}
 }
 

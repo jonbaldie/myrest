@@ -4,7 +4,7 @@
 **Closes:** the Verification roll-up of [Parent spec: myrest PostgREST parity over MySQL 8](https://github.com/jonbaldie/myrest/issues/20)
 **Parity target:** PostgREST v14.16 (see `CONTEXT.md`)
 
-A client author and an operator can read one honest statement of what myrest
+A client author and an operator can read one accurate statement of what myrest
 supports, and one command proves it. This page is the Verification roll-up:
 method, done rules, the scenario index, the derived **gap list**, and the fixed
 cross-area smoke set. Capability-area chapters stay the source of truth for
@@ -14,9 +14,9 @@ cross-area smoke set. Capability-area chapters stay the source of truth for
 
 - Prove parity at the HTTP API boundary with rewritten **normative scenarios**.
 - Coverage follows the **parity label**:
-  - **full match** — success path, or claimed-error refuse when the labelled item itself is the client-visible error
+  - **full match** — one success path. When the labelled item is itself a client-visible error, one refuse path instead.
   - **partial match** — one in-subset success and one outside-subset refuse
-  - **not supported** — one stable refuse and no success path
+  - **not supported** — one stable refuse and no success claim for that behaviour. Refuse is an error envelope, or a stable non-offer when the chapter names no client input path.
 - Scenario bodies live in capability-area chapters and in the HTTP acceptance
   tests under `test/acceptance`. This page indexes them by stable `area-nnn` id.
 
@@ -34,15 +34,16 @@ cross-area smoke set. Capability-area chapters stay the source of truth for
 | --- | --- |
 | `smoke-001` | Anonymous database role ordinary read succeeds |
 | `smoke-002` | JWT → database role ordinary read succeeds |
-| `smoke-003` | Write with Prefer return=representation succeeds with an honest body |
+| `smoke-003` | Write with Prefer return=representation succeeds with a representation body |
 | `smoke-004` | POST /rpc/... succeeds |
 | `smoke-005` | Embed read on a cache relationship succeeds |
 | `smoke-006` | Deliberate not-supported path (FTS) stable refuse |
 
 ## Run the whole scenario set
 
-`make scenarios` runs every normative scenario at the HTTP seam (the MySQL 8
-acceptance package). `make test` runs that package and the rest of the suite.
+`make scenarios` runs the normative scenario packages: `./cmd/myrest`,
+`./internal/httpapi`, `./test/acceptance`, and `./internal/verification`.
+`make test` runs the full suite.
 
 ## Scenario index
 
@@ -170,7 +171,7 @@ re-derive; `go test ./internal/verification` fails when this table drifts.
 | auth.md | Postgres row-level security | not supported | auth-005 |
 | auth.md | Request GUCs / `request.jwt.claims` in SQL | not supported | auth-006 |
 | auth.md | Non-Bearer credential schemes | not supported | auth-007 |
-| config.md | Config drop-list knobs (in-database config, NOTIFY channel, search_path extras, GUC hoist, plan-media gate, admin listen) | not supported | cfg-003 |
+| config.md | Config drop-list knobs (in-database config, NOTIFY channel, search_path extras, GUC hoist, plan-media gate, admin listen) | not supported | cache-004 |
 | config.md | Live config reload | not supported | cfg-003 |
 | discovery.md | OPTIONS method source (grants, not object-kind / view triggers) | partial match | discovery-001, discovery-005 |
 | discovery.md | OpenAPI `info` from schema comments | partial match | discovery-002, discovery-006 |

@@ -223,8 +223,9 @@ The authenticator must hold every database role myrest activates, because MySQL 
 ## Verification
 
 The scenario index, derived **gap list**, and cross-area smoke set live in
-[Verification](docs/verification.md). `make scenarios` runs the whole
-normative scenario set at the HTTP seam.
+[Verification](docs/verification.md). `make scenarios` runs the normative
+scenario packages (`./cmd/myrest`, `./internal/httpapi`, `./test/acceptance`,
+and `./internal/verification`).
 
 ## Fixture DDL
 

@@ -20,5 +20,5 @@ See [ADR 0007](adr/0007-config-surface-mapping.md) and
 
 | Item | Parity label | Scenarios |
 | --- | --- | --- |
-| Config drop-list knobs (in-database config, NOTIFY channel, search_path extras, GUC hoist, plan-media gate, admin listen) | not supported | cfg-003 |
+| Config drop-list knobs (in-database config, NOTIFY channel, search_path extras, GUC hoist, plan-media gate, admin listen) | not supported | cache-004 |
 | Live config reload | not supported | cfg-003 |
