@@ -1,9 +1,10 @@
 # Ordinary write
 
-Ordinary writes create, change, and remove rows on a table **resource**. The
-HTTP shapes follow **PostgREST** v14.16. This page covers `POST` insert, `PATCH` by filter, `DELETE` by filter,
-`PUT` upsert by primary key, the unbounded-write gate, and the write Prefer
-values claimed for this area. View writes stay in a later ticket.
+Ordinary writes create, change, and remove rows on a table or view **resource**.
+The HTTP shapes follow **PostgREST** v14.16. This page covers `POST` insert,
+`PATCH` by filter, `DELETE` by filter, `PUT` upsert by primary key, the
+unbounded-write gate, writes through views, and the write Prefer values claimed
+for this area.
 
 ## Methods
 
@@ -17,6 +18,23 @@ values claimed for this area. View writes stay in a later ticket.
 Exposure of a **resource** does not imply every method. A write without the
 matching grant is denied with `PGRST205`, the same privilege-filtering rule as
 a missing table.
+
+## Views
+
+A view in a configured database is a **resource** under the same exposure rule
+as a table: the active **database role** must hold the matching privilege. A
+read through a view uses the ordinary read surface. See
+[Views as resources](views.md).
+
+A write through a view needs both:
+
+1. the matching write grant on the view, and
+2. MySQL `information_schema.VIEWS.IS_UPDATABLE = YES` in the **schema cache**.
+
+When the grant is present but the view is not updatable, myrest refuses the
+write with status 400 and `MYREST001` (`The view is not updatable`). It does
+not send the write to MySQL. `OPTIONS` and OpenAPI omit write methods on a
+non-updatable view even when write grants exist.
 
 ## PUT upsert by primary key
 

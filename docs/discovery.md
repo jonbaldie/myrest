@@ -13,9 +13,9 @@ boundary.
 
 | Behaviour | Parity label | Contract |
 | --- | --- | --- |
-| Method allow-list from grants | **partial match** | `OPTIONS /{table}` and `OPTIONS /rpc/{name}` answer with status 200, an empty body, and `Allow` listing only methods the active role can use on that **resource**. Table methods need the matching grant (`SELECT` → `GET`/`HEAD`, `INSERT` → `POST`/`PUT`, `UPDATE` → `PATCH`, `DELETE` → `DELETE`). `OPTIONS` is always present when the role can use the resource. Routine `EXECUTE` yields `POST`; read-safe routines also yield `GET`/`HEAD`. The parity target advertises methods from object kind and view triggers, not grants; myrest keeps grant honesty instead. |
-| Hidden resource | **full match** | A table or routine the role cannot use is not a resource: status 404 with `PGRST205` (table) or `PGRST202` (routine). |
-| `PUT` on tables | **full match** | `OPTIONS` advertises `PUT` when the role holds `INSERT`. Request-time `merge-duplicates` still needs `UPDATE`. |
+| Method allow-list from grants | **partial match** | `OPTIONS /{table}` and `OPTIONS /rpc/{name}` answer with status 200, an empty body, and `Allow` listing only methods the active role can use on that **resource**. Table and view methods need the matching grant (`SELECT` → `GET`/`HEAD`, `INSERT` → `POST`/`PUT`, `UPDATE` → `PATCH`, `DELETE` → `DELETE`). Write methods on a view also need MySQL `IS_UPDATABLE = YES`. `OPTIONS` is always present when the role can use the resource. Routine `EXECUTE` yields `POST`; read-safe routines also yield `GET`/`HEAD`. The parity target advertises methods from object kind and view triggers, not grants; myrest keeps grant honesty plus the MySQL updatability flag. |
+| Hidden resource | **full match** | A table, view, or routine the role cannot use is not a resource: status 404 with `PGRST205` (table/view) or `PGRST202` (routine). |
+| `PUT` on tables | **full match** | `OPTIONS` advertises `PUT` when the role holds `INSERT` on a writable relation. Request-time `merge-duplicates` still needs `UPDATE`. |
 
 CORS preflight `OPTIONS` (with `Access-Control-Request-Method`) stays under
 [CORS origins and proxy header behaviour](cors-and-proxy.md). It is not this
@@ -42,7 +42,7 @@ claim.
 | `swagger: "2.0"` | **full match** | Same OpenAPI 2.0 root marker as the parity target. |
 | `info` title / description / version | **partial match** | Fixed myrest title and description. Schema comments as `info.description` / title override are not claimed. |
 | `host` / `schemes` / `basePath` | **full match** | From `openapi-server-proxy-uri` or the listen URL. |
-| `paths` resource list | **full match** to the privilege / ignore-privileges modes above | Tables as `/{name}`, routines as `/rpc/{name}`, plus `/` introspection. |
+| `paths` resource list | **full match** to the privilege / ignore-privileges modes above | Tables and views as `/{name}`, routines as `/rpc/{name}`, plus `/` introspection. |
 | Path HTTP verbs from grants | **partial match** | Verbs follow grants (or ignore-privileges served methods). The parity target uses insertable/updatable/deletable flags and view triggers. |
 | Path operation parameters, Prefer enums, row filters | **not supported** | Omitted. |
 | `definitions` / column schemas / PK / FK notes | **not supported** | Omitted. |

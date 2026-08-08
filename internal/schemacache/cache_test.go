@@ -268,6 +268,77 @@ func TestRoutineWithoutExecuteIsNotAResource(t *testing.T) {
 	}
 }
 
+// A view with SELECT is a resource under the same exposure rule as a table.
+func TestViewWithSelectIsAResource(t *testing.T) {
+	t.Parallel()
+
+	itemsView := table("shop", "items_view")
+	cache := schemacache.Build(schemacache.Catalog{
+		Views: []schemacache.TableID{itemsView},
+		Columns: []schemacache.ColumnFact{
+			{Table: itemsView, Name: "id"},
+			{Table: itemsView, Name: "name"},
+		},
+		Selects: []schemacache.SelectFact{{Role: anonRole, Table: itemsView}},
+	})
+
+	found, ok := cache.Resource(anonRole, itemsView)
+	if !ok {
+		t.Fatal("a view with SELECT was not a resource")
+	}
+	if want := []schemacache.Column{{Name: "id"}, {Name: "name"}}; !reflect.DeepEqual(found.Columns, want) {
+		t.Fatalf("columns = %#v, want %#v", found.Columns, want)
+	}
+}
+
+// A view without SELECT is not a resource.
+func TestViewWithoutSelectIsNotAResource(t *testing.T) {
+	t.Parallel()
+
+	locked := table("shop", "locked_view")
+	cache := schemacache.Build(schemacache.Catalog{
+		Views:   []schemacache.TableID{locked},
+		Columns: []schemacache.ColumnFact{{Table: locked, Name: "id"}},
+	})
+
+	if _, ok := cache.Resource(anonRole, locked); ok {
+		t.Fatal("a view without SELECT became a resource")
+	}
+}
+
+// A base table is writable. An updatable view is writable. A view MySQL marks
+// as not updatable is not writable.
+func TestViewWritabilityFollowsTheCatalogFlag(t *testing.T) {
+	t.Parallel()
+
+	items := table("shop", "items")
+	writable := table("shop", "items_view")
+	readonly := table("shop", "items_stats")
+	cache := schemacache.Build(schemacache.Catalog{
+		Tables:          []schemacache.TableID{items},
+		Views:           []schemacache.TableID{writable, readonly},
+		UpdatableViews:  []schemacache.TableID{writable},
+		Columns: []schemacache.ColumnFact{
+			{Table: items, Name: "id"},
+			{Table: writable, Name: "id"},
+			{Table: readonly, Name: "total"},
+		},
+	})
+
+	if !cache.IsWritable(items) {
+		t.Fatal("a base table must be writable")
+	}
+	if !cache.IsWritable(writable) {
+		t.Fatal("an updatable view must be writable")
+	}
+	if cache.IsWritable(readonly) {
+		t.Fatal("a non-updatable view must not be writable")
+	}
+	if cache.IsWritable(table("shop", "ghost")) {
+		t.Fatal("an unknown name must not be writable")
+	}
+}
+
 // Replace puts the new catalog into the cache, so a table that arrives after
 // the first build becomes a resource without a new Cache value.
 func TestReplaceShowsANewSelectGrant(t *testing.T) {

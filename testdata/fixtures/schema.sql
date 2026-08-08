@@ -28,7 +28,14 @@ INSERT INTO profiles (meta) VALUES
   (CAST('{"blood_type":"A-","tag":"Alpha","phones":[{"number":"917-929-5745"}]}' AS JSON)),
   (CAST('{"blood_type":"O+","tag":"Beta","phones":[{"number":"512-446-4988"}]}' AS JSON));
 
+-- Simple projection: MySQL marks this view IS_UPDATABLE = YES.
 CREATE VIEW items_view AS SELECT id, name FROM items;
+
+-- Aggregate view: MySQL marks this view IS_UPDATABLE = NO.
+CREATE VIEW items_stats AS SELECT COUNT(*) AS total FROM items;
+
+-- In the configured database, but the anonymous role gets no SELECT on it.
+CREATE VIEW locked_view AS SELECT id, name FROM items;
 
 CREATE TABLE orders (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -209,6 +216,10 @@ GRANT INSERT ON myrest_fixture.orders TO 'myrest_anon';
 GRANT UPDATE ON myrest_fixture.items TO 'myrest_anon';
 GRANT DELETE ON myrest_fixture.items TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.items_view TO 'myrest_anon';
+GRANT INSERT, UPDATE, DELETE ON myrest_fixture.items_view TO 'myrest_anon';
+GRANT SELECT ON myrest_fixture.items_stats TO 'myrest_anon';
+-- INSERT is granted so write-006 can prove IS_UPDATABLE refuses the write.
+GRANT INSERT ON myrest_fixture.items_stats TO 'myrest_anon';
 GRANT EXECUTE ON FUNCTION myrest_fixture.item_count TO 'myrest_anon';
 GRANT EXECUTE ON FUNCTION myrest_fixture.add_them TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.write_marker TO 'myrest_anon';
@@ -232,3 +243,5 @@ GRANT SELECT ON myrest_fixture.items TO 'myrest_user';
 GRANT SELECT ON myrest_fixture.profiles TO 'myrest_user';
 GRANT SELECT ON myrest_fixture.orders TO 'myrest_user';
 GRANT SELECT ON myrest_fixture.secrets TO 'myrest_user';
+-- locked_view: no grant for myrest_anon; myrest_user can read it.
+GRANT SELECT ON myrest_fixture.locked_view TO 'myrest_user';

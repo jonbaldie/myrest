@@ -240,6 +240,30 @@ func TestPutWithoutPrimaryKeyTargetRefusesOverMySQL(t *testing.T) {
 	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST105")
 }
 
+// write-006: a write through a writable view succeeds; a write through a
+// non-updatable view refuses stably.
+func TestWriteThroughViewOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	response, body := apitest.PostJSON(
+		t, service.URL()+"/items_view", `{"name":"via-view"}`,
+	)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("writable view POST status = %d, want %d; body = %s",
+			response.StatusCode, http.StatusCreated, body)
+	}
+
+	_, body = get(t, service, "/items_view?select=name&name=eq.via-view")
+	if string(body) != `[{"name":"via-view"}]`+"\n" {
+		t.Fatalf("read-back through view = %s", body)
+	}
+
+	response, body = apitest.PostJSON(
+		t, service.URL()+"/items_stats", `{"total":1}`,
+	)
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+}
+
 // A write without the matching grant is denied.
 func TestWriteWithoutGrantDeniedOverMySQL(t *testing.T) {
 	service := serve(t, "myrest_fixture")

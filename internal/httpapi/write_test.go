@@ -395,6 +395,88 @@ func TestWriteWithoutGrantBeatsUnboundedGate(t *testing.T) {
 	}
 }
 
+// write-006: a write through a writable view succeeds under the view grants.
+func TestWriteThroughWritableViewSucceeds(t *testing.T) {
+	t.Parallel()
+
+	itemsView := schemacache.TableID{Database: "shop", Name: "items_view"}
+	cache := schemacache.Build(schemacache.Catalog{
+		Views:          []schemacache.TableID{itemsView},
+		UpdatableViews: []schemacache.TableID{itemsView},
+		Columns: []schemacache.ColumnFact{
+			{Table: itemsView, Name: "id"},
+			{Table: itemsView, Name: "name"},
+		},
+		Selects: []schemacache.SelectFact{
+			{Role: "myrest_anon", Table: itemsView},
+		},
+		TablePrivileges: []schemacache.TablePrivilegeFact{
+			{Role: "myrest_anon", Table: itemsView, Privilege: "SELECT"},
+			{Role: "myrest_anon", Table: itemsView, Privilege: "INSERT"},
+		},
+	})
+	sink := &writer{}
+	service, err := httpapi.Listen(httpapi.Options{
+		Addr:     "127.0.0.1:0",
+		Settings: settings(),
+		Cache:    cache,
+		Reader:   &reader{},
+		Writer:   sink,
+	})
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go func() { _ = service.Serve() }()
+	t.Cleanup(func() { _ = service.Close() })
+
+	response, body := apitest.PostJSON(t, service.URL()+"/items_view", `{"name":"via-view"}`)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
+	}
+	if sink.called != "insert" || sink.table.ID.Name != "items_view" {
+		t.Fatalf("writer called %q on %#v", sink.called, sink.table.ID)
+	}
+}
+
+// write-006: a write through a non-updatable view refuses stably.
+func TestWriteThroughNonWritableViewRefuses(t *testing.T) {
+	t.Parallel()
+
+	stats := schemacache.TableID{Database: "shop", Name: "items_stats"}
+	cache := schemacache.Build(schemacache.Catalog{
+		Views: []schemacache.TableID{stats},
+		Columns: []schemacache.ColumnFact{
+			{Table: stats, Name: "total"},
+		},
+		Selects: []schemacache.SelectFact{
+			{Role: "myrest_anon", Table: stats},
+		},
+		TablePrivileges: []schemacache.TablePrivilegeFact{
+			{Role: "myrest_anon", Table: stats, Privilege: "SELECT"},
+			{Role: "myrest_anon", Table: stats, Privilege: "INSERT"},
+		},
+	})
+	sink := &writer{}
+	service, err := httpapi.Listen(httpapi.Options{
+		Addr:     "127.0.0.1:0",
+		Settings: settings(),
+		Cache:    cache,
+		Reader:   &reader{},
+		Writer:   sink,
+	})
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go func() { _ = service.Serve() }()
+	t.Cleanup(func() { _ = service.Close() })
+
+	response, body := apitest.PostJSON(t, service.URL()+"/items_stats", `{"total":1}`)
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if sink.called != "" {
+		t.Fatalf("writer must not run on a non-updatable view; called %q", sink.called)
+	}
+}
+
 // A write without the matching grant is denied.
 func TestWriteWithoutGrantIsDenied(t *testing.T) {
 	t.Parallel()

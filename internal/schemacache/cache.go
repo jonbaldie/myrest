@@ -68,6 +68,9 @@ type RoleFact struct {
 type Catalog struct {
 	Tables            []TableID
 	Views             []TableID
+	// UpdatableViews are the views MySQL marks IS_UPDATABLE = YES. A write
+	// through any other view is refused.
+	UpdatableViews    []TableID
 	RelationComments  []CommentFact
 	Columns           []ColumnFact
 	Keys              []KeyFact
@@ -86,6 +89,8 @@ type Cache struct {
 	mu                sync.RWMutex
 	tables            map[TableID]Table
 	views             []TableID
+	viewSet           map[TableID]bool
+	updatableViews    map[TableID]bool
 	comments          map[TableID]string
 	columns           map[TableID][]Column
 	keys              map[TableID][]KeyFact
@@ -146,6 +151,11 @@ func (c *Cache) replaceUnlocked(catalog Catalog) {
 	for _, id := range catalog.Tables {
 		tables[id] = Table{ID: id, Columns: columns[id]}
 	}
+	// A view is a resource under the same exposure rule as a table: it holds
+	// columns and answers Resource when the role has the matching grant.
+	for _, id := range catalog.Views {
+		tables[id] = Table{ID: id, Columns: columns[id]}
+	}
 	for _, fact := range catalog.RelationComments {
 		comments[fact.Relation] = fact.Comment
 	}
@@ -161,19 +171,14 @@ func (c *Cache) replaceUnlocked(catalog Catalog) {
 	tablePrivileges := privilegeGraph(catalog)
 	routinePrivileges := routinePrivilegeGraph(catalog)
 
-	views := append([]TableID(nil), catalog.Views...)
+	views, viewSet, updatableViews := indexViews(catalog)
 	foreignKeys := append([]ForeignKeyFact(nil), catalog.ForeignKeys...)
-	routines := make([]RoutineFact, len(catalog.Routines))
-	routinesByID := make(map[RoutineID]RoutineFact, len(catalog.Routines))
-	for i, fact := range catalog.Routines {
-		copyFact := fact
-		copyFact.Parameters = append([]ParameterFact(nil), fact.Parameters...)
-		routines[i] = copyFact
-		routinesByID[fact.ID] = copyFact
-	}
+	routines, routinesByID := indexRoutines(catalog.Routines)
 
 	c.tables = tables
 	c.views = views
+	c.viewSet = viewSet
+	c.updatableViews = updatableViews
 	c.comments = comments
 	c.columns = columns
 	c.keys = keys
@@ -183,6 +188,33 @@ func (c *Cache) replaceUnlocked(catalog Catalog) {
 	c.selects = selects
 	c.tablePrivileges = tablePrivileges
 	c.routinePrivileges = routinePrivileges
+}
+
+// indexViews copies view ids and builds the view and updatable-view sets.
+func indexViews(catalog Catalog) ([]TableID, map[TableID]bool, map[TableID]bool) {
+	views := append([]TableID(nil), catalog.Views...)
+	viewSet := make(map[TableID]bool, len(catalog.Views))
+	for _, id := range catalog.Views {
+		viewSet[id] = true
+	}
+	updatableViews := make(map[TableID]bool, len(catalog.UpdatableViews))
+	for _, id := range catalog.UpdatableViews {
+		updatableViews[id] = true
+	}
+	return views, viewSet, updatableViews
+}
+
+// indexRoutines copies routine facts and indexes them by id.
+func indexRoutines(facts []RoutineFact) ([]RoutineFact, map[RoutineID]RoutineFact) {
+	routines := make([]RoutineFact, len(facts))
+	routinesByID := make(map[RoutineID]RoutineFact, len(facts))
+	for i, fact := range facts {
+		copyFact := fact
+		copyFact.Parameters = append([]ParameterFact(nil), fact.Parameters...)
+		routines[i] = copyFact
+		routinesByID[fact.ID] = copyFact
+	}
+	return routines, routinesByID
 }
 
 // privilegeGraph expands table privileges through the role-grant graph.
@@ -353,10 +385,10 @@ func bareName(role Role) Role {
 	return role
 }
 
-// Resource gives the table the request asks for when the database role holds
-// the SELECT privilege on it. A table the role cannot select from is not a
-// resource, and neither is a table the cache does not hold. The caller names
-// the database, so that one table name can never answer from another one.
+// Resource gives the table or view the request asks for when the database role
+// holds the SELECT privilege on it. A relation the role cannot select from is
+// not a resource, and neither is a name the cache does not hold. The caller
+// names the database, so that one name can never answer from another one.
 func (c *Cache) Resource(role Role, id TableID) (Table, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -368,9 +400,9 @@ func (c *Cache) Resource(role Role, id TableID) (Table, bool) {
 	return table, true
 }
 
-// TableWithPrivilege gives the table when the database role holds the named
-// privilege on it. Exposure of a resource does not imply every HTTP method:
-// INSERT, UPDATE, and DELETE each need their own grant.
+// TableWithPrivilege gives the table or view when the database role holds the
+// named privilege on it. Exposure of a resource does not imply every HTTP
+// method: INSERT, UPDATE, and DELETE each need their own grant.
 func (c *Cache) TableWithPrivilege(role Role, id TableID, privilege string) (Table, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -382,7 +414,7 @@ func (c *Cache) TableWithPrivilege(role Role, id TableID, privilege string) (Tab
 	return table, true
 }
 
-// TableIDs lists every table the cache holds, in no special order.
+// TableIDs lists every table and view the cache holds, in no special order.
 func TableIDs(c *Cache) []TableID {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -393,7 +425,7 @@ func TableIDs(c *Cache) []TableID {
 	return ids
 }
 
-// HasTable says whether the cache holds this table id (not a view).
+// HasTable says whether the cache holds this table or view id as a relation.
 func (c *Cache) HasTable(id TableID) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -401,12 +433,27 @@ func (c *Cache) HasTable(id TableID) bool {
 	return held
 }
 
-// Views are the views the catalog holds for later tickets. This ticket does
-// not expose them as HTTP resources.
+// Views are the views the catalog holds. A view with the matching grant is a
+// resource under the same exposure rule as a table.
 func (c *Cache) Views() []TableID {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return append([]TableID(nil), c.views...)
+}
+
+// IsWritable says whether a write may target this relation. A base table is
+// writable. A view is writable only when MySQL marks it IS_UPDATABLE = YES.
+// Grants still decide which write method is allowed.
+func (c *Cache) IsWritable(id TableID) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if _, held := c.tables[id]; !held {
+		return false
+	}
+	if c.viewSet[id] {
+		return c.updatableViews[id]
+	}
+	return true
 }
 
 // Comment is the comment MySQL holds on a table or a view.

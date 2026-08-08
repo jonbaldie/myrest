@@ -53,11 +53,11 @@ func (s *Service) optionsRoutine(writer http.ResponseWriter, request *http.Reque
 	writeAllow(writer, routineAllowMethods(routine))
 }
 
-// tableAllowMethods builds the Allow list for a table from grants. OPTIONS is
-// always present when the role holds any usable privilege. PUT upsert needs
-// INSERT; merge-duplicates also needs UPDATE at request time. A name that is
-// not a table in the schema cache is not a resource, even when a privilege
-// fact names it (for example a view).
+// tableAllowMethods builds the Allow list for a table or view from grants.
+// OPTIONS is always present when the role holds any usable privilege. PUT
+// upsert needs INSERT; merge-duplicates also needs UPDATE at request time.
+// Write methods on a view need the grant and an updatable view. A name that
+// is not a relation in the schema cache is not a resource.
 func tableAllowMethods(cache *schemacache.Cache, role schemacache.Role, id schemacache.TableID) []string {
 	if !cache.HasTable(id) {
 		return nil
@@ -68,6 +68,25 @@ func tableAllowMethods(cache *schemacache.Cache, role schemacache.Role, id schem
 		methods = append(methods, http.MethodGet, http.MethodHead)
 		usable = true
 	}
+	if cache.IsWritable(id) {
+		methods, usable = appendWriteAllowMethods(methods, usable, cache, role, id)
+	}
+	if !usable {
+		return nil
+	}
+	return methods
+}
+
+// appendWriteAllowMethods adds POST/PUT/PATCH/DELETE when the role holds the
+// matching write grant. The caller already checked that the relation is writable.
+// INSERT yields both POST and PUT.
+func appendWriteAllowMethods(
+	methods []string,
+	usable bool,
+	cache *schemacache.Cache,
+	role schemacache.Role,
+	id schemacache.TableID,
+) ([]string, bool) {
 	if cache.HasTablePrivilege(role, id, "INSERT") {
 		methods = append(methods, http.MethodPost, http.MethodPut)
 		usable = true
@@ -80,10 +99,7 @@ func tableAllowMethods(cache *schemacache.Cache, role schemacache.Role, id schem
 		methods = append(methods, http.MethodDelete)
 		usable = true
 	}
-	if !usable {
-		return nil
-	}
-	return methods
+	return methods, usable
 }
 
 // routineAllowMethods builds the Allow list for a routine. EXECUTE is already

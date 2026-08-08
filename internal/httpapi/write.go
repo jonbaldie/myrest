@@ -498,6 +498,10 @@ func (s *Service) lookupWriteTable(
 		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(asked))
 		return "", schemacache.TableID{}, schemacache.Table{}, false
 	}
+	if !s.cache.IsWritable(asked) {
+		writeFailure(writer, http.StatusBadRequest, codePostgresOnlyFeature, "The view is not updatable")
+		return "", schemacache.TableID{}, schemacache.Table{}, false
+	}
 	return role, asked, table, true
 }
 

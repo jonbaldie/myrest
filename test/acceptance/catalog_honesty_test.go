@@ -24,8 +24,24 @@ func TestSchemaCacheHoldsTheLiveCatalog(t *testing.T) {
 	itemsView := schemacache.TableID{Database: "myrest_fixture", Name: "items_view"}
 	countRoutine := schemacache.RoutineID{Database: "myrest_fixture", Name: "item_count"}
 
-	if got := cache.Views(); len(got) != 1 || got[0] != itemsView {
-		t.Fatalf("views = %#v, want items_view", got)
+	if got := cache.Views(); len(got) < 1 {
+		t.Fatalf("views = %#v, want at least items_view", got)
+	}
+	foundView := false
+	for _, view := range cache.Views() {
+		if view == itemsView {
+			foundView = true
+		}
+	}
+	if !foundView {
+		t.Fatalf("views = %#v, want items_view among them", cache.Views())
+	}
+	if !cache.IsWritable(itemsView) {
+		t.Fatal("items_view must be updatable")
+	}
+	stats := schemacache.TableID{Database: "myrest_fixture", Name: "items_stats"}
+	if cache.IsWritable(stats) {
+		t.Fatal("items_stats must not be updatable")
 	}
 	if got := cache.Comment(items); got != "stock rows" {
 		t.Fatalf("comment of items = %q, want stock rows", got)
@@ -71,8 +87,12 @@ func TestSchemaCacheHoldsTheLiveCatalog(t *testing.T) {
 	if !cache.HasRoutinePrivilege(anonRole, countRoutine, "EXECUTE") {
 		t.Fatal("cache lost the EXECUTE grant")
 	}
-	if _, ok := cache.Resource(anonRole, itemsView); ok {
-		t.Fatal("a view became an HTTP resource before the views ticket")
+	if _, ok := cache.Resource(anonRole, itemsView); !ok {
+		t.Fatal("items_view with SELECT must be a resource")
+	}
+	locked := schemacache.TableID{Database: "myrest_fixture", Name: "locked_view"}
+	if _, ok := cache.Resource(anonRole, locked); ok {
+		t.Fatal("locked_view without SELECT must not be a resource")
 	}
 
 	columns := cache.ColumnsOf(items)

@@ -3,10 +3,11 @@
 myrest will be an HTTP API service that exposes MySQL 8.0+ with PostgREST-compatible client contracts.
 
 The service serves Bearer JWT authentication, ordinary reads of one exposed
-table (column select, full-match filters, order, page, HEAD, exact count, and
-aggregates when enabled), **embed** of related resources over declared foreign
-keys, and `POST /rpc` for functions and procedures. Every other part of the
-PostgREST surface is still to come.
+table or view (column select, full-match filters, order, page, HEAD, exact
+count, and aggregates when enabled), ordinary writes (`POST` / `PATCH` /
+`DELETE` / `PUT`) including writes through updatable views, **embed** of
+related resources over declared foreign keys, and `POST /rpc` for functions and
+procedures. Every other part of the PostgREST surface is still to come.
 
 ## Requirements
 
@@ -86,7 +87,7 @@ is in the **schema cache**. Aggregates inside a to-many spread refuse with
 
 myrest opens pooled MySQL connections as the **authenticator** of `db-uri` and activates the database role for each request, so MySQL grants — not a second access list — say what a client may read. After the **role switch**, grants follow the active role, but SQL `CURRENT_USER()` stays the authenticator (a documented **partial match**). See [Authentication](docs/auth.md).
 
-A table is a **resource** of the request only when it is in the selected MySQL database and the active role holds `SELECT` on it, of itself or through a role granted to it. With no profile header the selected database is the **default database** (the first of `db-schemas`). `Accept-Profile` selects the database for a read; `Content-Profile` selects it for a write. A profile outside `db-schemas` refuses with `PGRST106`. Any other table name gets the PostgREST error envelope:
+A table or view is a **resource** of the request only when it is in the selected MySQL database and the active role holds the relevant privilege on it, of itself or through a role granted to it. With no profile header the selected database is the **default database** (the first of `db-schemas`). `Accept-Profile` selects the database for a read; `Content-Profile` selects it for a write. A profile outside `db-schemas` refuses with `PGRST106`. Any other table or view name gets the PostgREST error envelope:
 
 ```bash
 curl http://127.0.0.1:3000/secrets
@@ -99,6 +100,8 @@ curl http://127.0.0.1:3000/items -H 'Accept-Profile: warehouse'
 ```
 
 When MySQL itself refuses a read — a grant taken away after start-up, for example — the client gets the same envelope with a message of myrest. What MySQL said names the accounts of the deployment, so it goes to the log of the operator and not to the client.
+
+A view with `SELECT` is readable through the ordinary read surface. A write through a view needs the matching write grant and MySQL `IS_UPDATABLE = YES` in the **schema cache**. A non-updatable view refuses writes with `MYREST001`. See [Views as resources](docs/views.md) and [Ordinary write](docs/write.md).
 
 myrest builds the **schema cache** from the MySQL catalog at start-up. Send `SIGUSR1` to reload it after DDL or grant changes; a process restart is not required for that refresh. Config changes still need a restart.
 

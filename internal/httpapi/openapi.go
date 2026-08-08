@@ -124,7 +124,7 @@ func addOpenAPITables(
 		if !settings.HasDatabase(id.Database) {
 			continue
 		}
-		methods := ignorePrivilegeTableMethods()
+		methods := ignorePrivilegeTableMethods(cache, id)
 		if followPrivileges {
 			methods = tableAllowMethods(cache, role, id)
 		}
@@ -168,16 +168,16 @@ func applyOpenAPISecurity(doc map[string]any, active bool) {
 	doc["security"] = []map[string]any{{"JWT": []any{}}}
 }
 
-func ignorePrivilegeTableMethods() []string {
-	return []string{
+func ignorePrivilegeTableMethods(cache *schemacache.Cache, id schemacache.TableID) []string {
+	methods := []string{
 		http.MethodOptions,
 		http.MethodGet,
 		http.MethodHead,
-		http.MethodPost,
-		http.MethodPut,
-		http.MethodPatch,
-		http.MethodDelete,
 	}
+	if cache.IsWritable(id) {
+		methods = append(methods, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete)
+	}
+	return methods
 }
 
 func pathItemFromMethods(methods []string) map[string]any {
