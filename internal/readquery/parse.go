@@ -276,11 +276,11 @@ func parseEmbedPart(part string) (Embed, error) {
 	}
 	head := part[:open]
 	inner := part[open+1 : len(part)-1]
-	alias, resource, hint := splitEmbedHead(head)
+	alias, resource, hint, spread := splitEmbedHead(head)
 	if resource == "" {
 		return Embed{}, ParseFailure{Message: "embed select '" + part + "' needs a resource name"}
 	}
-	embed := Embed{Resource: resource, Alias: alias, Hint: hint}
+	embed := Embed{Resource: resource, Alias: alias, Hint: hint, Spread: spread}
 	nested := Query{}
 	if err := parseSelect(inner, &nested); err != nil {
 		return Embed{}, err
@@ -290,18 +290,28 @@ func parseEmbedPart(part string) (Embed, error) {
 	return embed, nil
 }
 
-// splitEmbedHead reads alias:resource!hint from the text before '('.
-func splitEmbedHead(head string) (alias, resource, hint string) {
+// splitEmbedHead reads alias:resource!hint and an optional ... spread mark
+// from the text before '('.
+func splitEmbedHead(head string) (alias, resource, hint string, spread bool) {
 	resource = head
-	if name, rest, found := strings.Cut(head, ":"); found {
+	if strings.HasPrefix(resource, "...") {
+		spread = true
+		resource = strings.TrimPrefix(resource, "...")
+	}
+	if name, rest, found := strings.Cut(resource, ":"); found {
+		// Spread form is ...resource(...); alias:resource stays non-spread.
 		alias = name
 		resource = rest
+		if strings.HasPrefix(resource, "...") {
+			spread = true
+			resource = strings.TrimPrefix(resource, "...")
+		}
 	}
 	if name, mark, found := strings.Cut(resource, "!"); found {
 		resource = name
 		hint = mark
 	}
-	return alias, resource, hint
+	return alias, resource, hint, spread
 }
 
 func parseSelectPart(part string) (Column, error) {
@@ -311,23 +321,44 @@ func parseSelectPart(part string) (Column, error) {
 			Gap:     true,
 		}
 	}
-	if strings.HasSuffix(part, "()") {
-		return Column{}, ParseFailure{
-			Message: "PostgREST row computed-field features are not available with MySQL",
-			Gap:     true,
-		}
-	}
 	alias := ""
 	field := part
 	if name, rest, found := strings.Cut(part, ":"); found {
 		alias = name
 		field = rest
 	}
+	if field == "count()" {
+		return Column{Alias: alias, Agg: AggCount}, nil
+	}
+	if source, agg, ok := splitAggregate(field); ok {
+		columnName, path, err := parseField(source)
+		if err != nil {
+			return Column{}, err
+		}
+		return Column{Name: columnName, Alias: alias, Path: path, Agg: agg}, nil
+	}
+	if strings.HasSuffix(field, "()") {
+		return Column{}, ParseFailure{
+			Message: "PostgREST row computed-field features are not available with MySQL",
+			Gap:     true,
+		}
+	}
 	columnName, path, err := parseField(field)
 	if err != nil {
 		return Column{}, err
 	}
 	return Column{Name: columnName, Alias: alias, Path: path}, nil
+}
+
+// splitAggregate reads column.avg|count|max|min|sum() from a select field.
+func splitAggregate(field string) (source string, agg Aggregate, ok bool) {
+	for _, name := range FullMatchAggregates {
+		suffix := "." + string(name) + "()"
+		if strings.HasSuffix(field, suffix) {
+			return field[:len(field)-len(suffix)], name, true
+		}
+	}
+	return "", "", false
 }
 
 func parseOrder(raw string, query *Query) error {

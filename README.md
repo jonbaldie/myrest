@@ -3,10 +3,10 @@
 myrest will be an HTTP API service that exposes MySQL 8.0+ with PostgREST-compatible client contracts.
 
 The service serves Bearer JWT authentication, ordinary reads of one exposed
-table (column select, full-match filters, order, page, HEAD, and exact count),
-**embed** of related resources over declared foreign keys, and `POST /rpc` for
-functions and procedures. Every other part of the PostgREST surface is still
-to come.
+table (column select, full-match filters, order, page, HEAD, exact count, and
+aggregates when enabled), **embed** of related resources over declared foreign
+keys, and `POST /rpc` for functions and procedures. Every other part of the
+PostgREST surface is still to come.
 
 ## Requirements
 
@@ -67,6 +67,22 @@ Nested filter, order, and limit use the embed name as a prefix
 (`orders.order=id.desc&orders.limit=1`). Many-to-many uses a declared join
 table. When more than one foreign key applies, disambiguate with `!fk_name`.
 See [Embed](docs/embed.md).
+
+## Aggregates
+
+Aggregates are off by default (`db-aggregates-enabled = false`). When the
+operator turns them on, `sum` / `count` / `avg` / `min` / `max` select forms
+and automatic group behaviour match the parity target:
+
+```bash
+curl "http://127.0.0.1:3000/orders?select=count(),item_id"
+[{"count":2,"item_id":1},{"count":1,"item_id":2}]
+```
+
+While the gate is off, an aggregate select refuses with `PGRST123`. Aggregate
+plus **embed** works when the parity target allows it and the **relationship**
+is in the **schema cache**. Aggregates inside a to-many spread refuse with
+`PGRST127`. See [Aggregates](docs/aggregates.md).
 
 myrest opens pooled MySQL connections as the **authenticator** of `db-uri` and activates the database role for each request, so MySQL grants — not a second access list — say what a client may read. After the **role switch**, grants follow the active role, but SQL `CURRENT_USER()` stays the authenticator (a documented **partial match**). See [Authentication](docs/auth.md).
 

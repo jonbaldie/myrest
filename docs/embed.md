@@ -27,6 +27,9 @@ Nested filter, order, and page use the embed key as a prefix:
 | No declared foreign-key path | `PGRST200` | 400 |
 | More than one relationship, no `!hint` | `PGRST201` | 300 |
 | Computed relationship (routine name as embed) | `MYREST001` | 400 |
+| Aggregate inside a to-many or many-to-many spread | `PGRST127` | 400 |
 
 myrest never invents a relationship. A view chain with no declared foreign key
 is not supported. A computed relationship is not supported.
+
+Aggregate plus embed is owned by the Read area. See [Aggregates](aggregates.md).

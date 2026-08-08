@@ -32,7 +32,7 @@ func TestQuoteIdentifierKeepsABackQuoteInsideTheName(t *testing.T) {
 func TestJSONValueReadsTextAsAString(t *testing.T) {
 	t.Parallel()
 
-	if value := jsonValue([]byte("alpha")); value != "alpha" {
+	if value := jsonValue([]byte("alpha"), nil); value != "alpha" {
 		t.Fatalf("value = %#v, want the string alpha", value)
 	}
 }
@@ -40,10 +40,10 @@ func TestJSONValueReadsTextAsAString(t *testing.T) {
 func TestJSONValueKeepsOtherValuesAsTheyAre(t *testing.T) {
 	t.Parallel()
 
-	if value := jsonValue(int64(7)); value != int64(7) {
+	if value := jsonValue(int64(7), nil); value != int64(7) {
 		t.Fatalf("value = %#v, want 7", value)
 	}
-	if value := jsonValue(nil); value != nil {
+	if value := jsonValue(nil, nil); value != nil {
 		t.Fatalf("value = %#v, want nil", value)
 	}
 }

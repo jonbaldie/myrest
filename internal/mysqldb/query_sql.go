@@ -51,10 +51,35 @@ func selectSQL(
 	if where != "" {
 		statement += " WHERE " + where
 	}
+	if group := groupBySQL(columns); group != "" {
+		statement += " GROUP BY " + group
+	}
 	if order != "" {
 		statement += " ORDER BY " + order
 	}
 	return statement + pageSQL(query)
+}
+
+// groupBySQL lists non-aggregate select expressions when any aggregate is present.
+func groupBySQL(columns []resolvedColumn) string {
+	hasAggregate := false
+	for _, column := range columns {
+		if column.Aggregate {
+			hasAggregate = true
+			break
+		}
+	}
+	if !hasAggregate {
+		return ""
+	}
+	var groups []string
+	for _, column := range columns {
+		if column.Aggregate {
+			continue
+		}
+		groups = append(groups, column.Expr)
+	}
+	return strings.Join(groups, ", ")
 }
 
 func selectList(columns []resolvedColumn) string {
@@ -114,9 +139,10 @@ func buildCount(table schemacache.Table, query readquery.Query) (sqlParts, error
 }
 
 type resolvedColumn struct {
-	Expr   string
-	Output string
-	Alias  string
+	Expr      string
+	Output    string
+	Alias     string
+	Aggregate bool
 }
 
 func resolveColumns(table schemacache.Table, query readquery.Query) ([]resolvedColumn, error) {
@@ -137,17 +163,54 @@ func resolveColumns(table schemacache.Table, query readquery.Query) ([]resolvedC
 	}
 	out := make([]resolvedColumn, 0, len(asked))
 	for _, column := range asked {
-		expr, err := columnExpr(table, column.Name, column.Path)
+		resolved, err := resolveColumn(table, column)
 		if err != nil {
 			return nil, err
 		}
-		output := column.Name
-		if column.Path != nil {
-			output = defaultJSONOutputName(column.Path)
-		}
-		out = append(out, resolvedColumn{Expr: expr, Output: output, Alias: column.Alias})
+		out = append(out, resolved)
 	}
 	return out, nil
+}
+
+func resolveColumn(table schemacache.Table, column readquery.Column) (resolvedColumn, error) {
+	if column.Agg == readquery.AggCount && column.Name == "" && column.Path == nil {
+		return resolvedColumn{
+			Expr:      "COUNT(*)",
+			Output:    column.ResultName(),
+			Alias:     aggregateAlias(column),
+			Aggregate: true,
+		}, nil
+	}
+	expr, err := columnExpr(table, column.Name, column.Path)
+	if err != nil {
+		return resolvedColumn{}, err
+	}
+	if column.Agg != "" {
+		return resolvedColumn{
+			Expr:      aggregateExpr(column.Agg, expr),
+			Output:    column.ResultName(),
+			Alias:     aggregateAlias(column),
+			Aggregate: true,
+		}, nil
+	}
+	output := column.Name
+	if column.Path != nil {
+		output = defaultJSONOutputName(column.Path)
+	}
+	return resolvedColumn{Expr: expr, Output: output, Alias: column.Alias}, nil
+}
+
+func aggregateExpr(agg readquery.Aggregate, expr string) string {
+	return strings.ToUpper(string(agg)) + "(" + expr + ")"
+}
+
+// aggregateAlias forces a result name for aggregates. Without AS, MySQL labels
+// COUNT(*) as COUNT(*) and SUM(`id`) as SUM(`id`).
+func aggregateAlias(column readquery.Column) string {
+	if column.Alias != "" {
+		return column.Alias
+	}
+	return string(column.Agg)
 }
 
 func defaultJSONOutputName(path *readquery.JSONPath) string {

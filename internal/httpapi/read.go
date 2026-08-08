@@ -48,6 +48,10 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 		writeQueryFailure(writer, err)
 		return
 	}
+	if readquery.HasAggregates(query) && !s.settings.DB.AggregatesEnabled {
+		writeFailure(writer, http.StatusBadRequest, codeAggregatesDisabled, msgAggregatesDisabled)
+		return
+	}
 
 	asked := schemacache.TableID{
 		Database: database,
