@@ -52,11 +52,28 @@ claim.
 | `security` / `securityDefinitions` | **full match** | Controlled by `openapi-security-active` as above. |
 | `externalDocs` | **not supported** | Omitted. |
 
+## Full match rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| Hidden resource refusal | full match | discovery-008 |
+| OPTIONS advertises PUT for writable tables | full match | discovery-009 |
+| OpenAPI follow-privileges mode | full match | discovery-010 |
+| OpenAPI ignore-privileges mode | full match | discovery-011 |
+| OpenAPI disabled mode | full match | discovery-012 |
+| OpenAPI security switch | full match | discovery-013 |
+| OpenAPI proxy URI | full match | discovery-014 |
+| Root specification routine | full match | discovery-015 |
+| OpenAPI 2.0 marker | full match | discovery-016 |
+| OpenAPI host, schemes, and base path | full match | discovery-017 |
+| OpenAPI resource paths | full match | discovery-018 |
+| OpenAPI security definitions | full match | discovery-019 |
+
 ## Gap list rows
 
 | Item | Parity label | Scenarios |
 | --- | --- | --- |
-| OPTIONS method source (grants, not object-kind / view triggers) | partial match | discovery-001 |
-| OpenAPI `info` from schema comments | partial match | discovery-002 |
-| OpenAPI path verbs from grants vs insertable flags | partial match | discovery-003 |
+| OPTIONS method source (grants, not object-kind / view triggers) | partial match | discovery-001, discovery-005 |
+| OpenAPI `info` from schema comments | partial match | discovery-002, discovery-006 |
+| OpenAPI path verbs from grants vs insertable flags | partial match | discovery-003, discovery-007 |
 | OpenAPI parameters, definitions, consumes/produces matrix, examples, externalDocs | not supported | discovery-004 |

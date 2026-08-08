@@ -35,6 +35,21 @@ func TestCoverageDutyRejectsPartialMatchWithoutRefuse(t *testing.T) {
 	}
 }
 
+func TestCoverageDutyRejectsScenarioWithDifferentParityLabel(t *testing.T) {
+	index := verification.ScenarioIndex{
+		{ID: "read-003", Area: "read", Label: verification.FullMatch, Outcome: verification.Success},
+		{ID: "read-004", Area: "read", Label: verification.PartialMatch, Outcome: verification.Refuse},
+	}
+	gaps := []verification.GapRow{{
+		Item:      "Text-case subset",
+		Label:     verification.PartialMatch,
+		Scenarios: []string{"read-003", "read-004"},
+	}}
+	if err := verification.CheckCoverage(gaps, index); err == nil {
+		t.Fatal("CheckCoverage() = nil, want a parity-label mismatch error")
+	}
+}
+
 func TestCoverageDutyForNotSupportedNeedsRefuseOnly(t *testing.T) {
 	index := verification.ScenarioIndex{
 		{ID: "read-007", Area: "read", Label: verification.NotSupported, Outcome: verification.Refuse},
@@ -68,7 +83,6 @@ func TestFullMatchCoverageNeedsSuccess(t *testing.T) {
 	behaviours := []verification.Behaviour{
 		{
 			Item:      "Bearer JWT ordinary read",
-			Area:      "auth",
 			Label:     verification.FullMatch,
 			Scenarios: []string{"auth-001"},
 		},

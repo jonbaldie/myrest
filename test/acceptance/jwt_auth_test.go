@@ -162,7 +162,7 @@ func TestNoJWTAndNoAnonymousRoleIsRefusedWithPGRST302(t *testing.T) {
 	apitest.AssertEnvelope(t, response, body, http.StatusUnauthorized, "PGRST302")
 }
 
-// auth-004: after role switch, grants follow the role while CURRENT_USER stays
+// auth-004 and auth-008: after role switch, grants follow the role while CURRENT_USER stays
 // the authenticator.
 func TestRoleSwitchKeepsAuthenticatorAsCurrentUser(t *testing.T) {
 	pool, err := mysqldb.Open(harness.URI("authenticator", "secret"))

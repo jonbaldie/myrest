@@ -27,3 +27,14 @@ Knob: `server-cors-allowed-origins` (list). An empty list, or a knob nobody set,
 ## Gap list rows
 
 Every behaviour in this area is **full match**. This area adds no row to the **gap list**.
+
+## Full match rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| Origin policy | full match | cors-001 |
+| Actual request CORS headers | full match | cors-002 |
+| Preflight OPTIONS | full match | cors-003 |
+| Request with no Origin | full match | cors-004 |
+| Forwarded headers do not select reported URLs | full match | cors-005 |
+| Absolute base URL selection | full match | cors-006 |

@@ -28,6 +28,9 @@ func CheckBehaviourCoverage(behaviours []Behaviour, index ScenarioIndex) error {
 }
 
 func checkOne(behaviour Behaviour, index ScenarioIndex) error {
+	if behaviour.Item == "" {
+		return fmt.Errorf("no behaviour item")
+	}
 	if len(behaviour.Scenarios) == 0 {
 		return fmt.Errorf("%s (%s): no scenarios", behaviour.Item, behaviour.Label)
 	}
@@ -39,10 +42,8 @@ func checkOne(behaviour Behaviour, index ScenarioIndex) error {
 }
 
 type outcomeSet struct {
-	success     bool
-	refuse      bool
-	observation bool
-	fallback    bool
+	success bool
+	refuse  bool
 }
 
 func outcomeFlags(behaviour Behaviour, index ScenarioIndex) (outcomeSet, error) {
@@ -52,15 +53,17 @@ func outcomeFlags(behaviour Behaviour, index ScenarioIndex) (outcomeSet, error) 
 		if !ok {
 			return outcomeSet{}, fmt.Errorf("%s: unknown scenario %s", behaviour.Item, id)
 		}
+		if scenario.Label != behaviour.Label {
+			return outcomeSet{}, fmt.Errorf(
+				"%s: scenario %s has parity label %q, want %q",
+				behaviour.Item, id, scenario.Label, behaviour.Label,
+			)
+		}
 		switch scenario.Outcome {
 		case Success:
 			flags.success = true
 		case Refuse:
 			flags.refuse = true
-		case Observation:
-			flags.observation = true
-		case Fallback:
-			flags.fallback = true
 		default:
 			return outcomeSet{}, fmt.Errorf(
 				"%s: scenario %s has unknown outcome %q",
@@ -94,26 +97,20 @@ func fullMatchDuty(item string, flags outcomeSet) error {
 }
 
 func partialMatchDuty(item string, flags outcomeSet) error {
-	if !flags.success && !flags.observation {
+	if !flags.success {
 		return fmt.Errorf("%s: partial match needs an in-subset success scenario", item)
 	}
-	haveOutside := flags.refuse || flags.fallback
-	// Observational partial matches (for example CURRENT_USER after role
-	// switch) have no outside-subset path of their own.
-	observationOnly := flags.observation && !flags.success && !haveOutside
-	if !haveOutside && !observationOnly {
+	if !flags.refuse {
 		return fmt.Errorf("%s: partial match needs an outside-subset refuse scenario", item)
 	}
 	return nil
 }
 
 func notSupportedDuty(item string, flags outcomeSet) error {
-	// A stable refuse or a documented non-offer observation both satisfy
-	// the parent "refuse / non-offer" duty.
-	if !flags.refuse && !flags.observation {
+	if !flags.refuse {
 		return fmt.Errorf("%s: not supported needs a refuse scenario", item)
 	}
-	if flags.success || flags.fallback {
+	if flags.success {
 		return fmt.Errorf("%s: not supported must not claim a success scenario", item)
 	}
 	return nil

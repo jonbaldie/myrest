@@ -35,3 +35,10 @@ do not need a second URL family.
 Each `/rpc` call runs as one request transaction ended by `db-tx-end` (and
 `Prefer: tx=` when that mode allows override). See
 [Transaction end and isolation](transactions.md).
+
+## Full match rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| POST function with named JSON arguments | full match | rpc-001 |
+| POST procedure stable response | full match | rpc-002 |

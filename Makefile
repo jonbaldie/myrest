@@ -9,7 +9,7 @@ test:
 # Run every normative scenario at the HTTP seam (MySQL 8 acceptance package).
 # See docs/verification.md for the scenario index, gap list, and smoke set.
 scenarios:
-	go test -p 1 ./test/acceptance ./internal/verification
+	go test -p 1 ./cmd/myrest ./internal/httpapi ./test/acceptance ./internal/verification
 
 # Rebuild docs/verification.md from capability-area Gap list rows and the
 # scenario index. go test ./internal/verification fails when the doc drifts.

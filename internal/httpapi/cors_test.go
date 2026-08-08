@@ -18,7 +18,7 @@ func withCORSOrigins(origins ...string) config.Settings {
 	return resolved
 }
 
-// An allowed origin on a GET receives the documented CORS response headers.
+// cors-001 and cors-002: an allowed origin gets the documented CORS headers.
 func TestAllowedOriginGetsCORSResponseHeaders(t *testing.T) {
 	t.Parallel()
 
@@ -62,7 +62,7 @@ func TestDisallowedOriginOmitsCORSAllowOrigin(t *testing.T) {
 	}
 }
 
-// A preflight OPTIONS request from an allowed origin gets the documented
+// cors-003: a preflight OPTIONS request from an allowed origin gets the documented
 // CORS preflight headers and an empty body.
 func TestAllowedOriginPreflightGetsCORSHeaders(t *testing.T) {
 	t.Parallel()
@@ -148,7 +148,7 @@ func TestDisallowedOriginPreflightOmitsCORSAllowOrigin(t *testing.T) {
 	}
 }
 
-// A request with no Origin header gets no CORS headers.
+// cors-004: a request with no Origin header gets no CORS headers.
 func TestRequestWithoutOriginGetsNoCORSHeaders(t *testing.T) {
 	t.Parallel()
 

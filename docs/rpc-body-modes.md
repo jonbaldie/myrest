@@ -5,6 +5,12 @@ as one unnamed argument. myrest does not. Every mode below has exactly one
 **parity label**. Named JSON object arguments stay the only accepted `POST`
 body shape (**full match**; see `rpc-001`).
 
+## Full match rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| Named JSON object RPC arguments | full match | rpc-001 |
+
 MySQL has no unnamed routine parameters, so myrest cannot match these modes
 without a silent semantic stretch. Each mode is **not supported** and refuses
 with HTTP 400, the error envelope, and code `MYREST001`.

@@ -90,6 +90,35 @@ func TestParseGapRowsIgnoresFullMatchAndEmptySections(t *testing.T) {
 	}
 }
 
+func TestDeriveFullMatchBehavioursReadsChapterRows(t *testing.T) {
+	chapters := map[string]string{
+		"auth.md": trimLines(`
+			## Full match rows
+
+			| Item | Parity label | Scenarios |
+			| --- | --- | --- |
+			| Bearer JWT ordinary read | full match | auth-001, auth-003 |
+		`),
+	}
+
+	behaviours, err := verification.DeriveFullMatchBehaviours(chapters)
+	if err != nil {
+		t.Fatalf("DeriveFullMatchBehaviours: %v", err)
+	}
+	if len(behaviours) != 1 {
+		t.Fatalf("len(behaviours) = %d, want 1", len(behaviours))
+	}
+	if behaviours[0].Item != "Bearer JWT ordinary read" {
+		t.Fatalf("behaviour item = %q", behaviours[0].Item)
+	}
+	if behaviours[0].Label != verification.FullMatch {
+		t.Fatalf("behaviour label = %q", behaviours[0].Label)
+	}
+	if got := strings.Join(behaviours[0].Scenarios, ","); got != "auth-001,auth-003" {
+		t.Fatalf("behaviour scenarios = %q", got)
+	}
+}
+
 func trimLines(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	for i, line := range lines {
