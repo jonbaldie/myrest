@@ -28,7 +28,7 @@ func main() {
 	doc := `# Verification: scenario index, gap list, and smoke set
 
 **Ticket:** [Verification roll-up: scenario index, gap list, and smoke set](https://github.com/jonbaldie/myrest/issues/48)
-**Closes:** the Verification roll-up of [Parent spec: myrest PostgREST parity over MySQL 8](https://github.com/jonbaldie/myrest/issues/20)
+**Closes:** [Parent spec: myrest PostgREST parity over MySQL 8](https://github.com/jonbaldie/myrest/issues/20) once Implementation done holds on the HTTP seam
 **Parity target:** PostgREST v14.16 (see ` + "`CONTEXT.md`" + `)
 
 A client author and an operator can read one accurate statement of what myrest
@@ -54,6 +54,10 @@ cross-area smoke set. Capability-area chapters stay the source of truth for
 - **Verification done:** the smoke set passes at the HTTP seam; the gap list
   matches a fresh derivation from chapter Gap list rows; every labelled
   behaviour meets its coverage duty.
+- **Implementation done (parent #20):** normative scenarios pass at the HTTP
+  seam (` + "`make scenarios`" + `); deferred Representation, OpenAPI, CORS,
+  transaction, gap-code, and related edges are labelled under the parity
+  decision rule or refused in the derived gap list.
 
 ## Cross-area smoke set
 

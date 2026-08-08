@@ -1,13 +1,16 @@
 # myrest
 
-myrest will be an HTTP API service that exposes MySQL 8.0+ with PostgREST-compatible client contracts.
+myrest is an HTTP API service that exposes MySQL 8.0+ with PostgREST-compatible
+client contracts. The **parity target** is PostgREST v14.16.
 
-The service serves Bearer JWT authentication, ordinary reads of one exposed
-table or view (column select, full-match filters, order, page, HEAD, exact
-count, and aggregates when enabled), ordinary writes (`POST` / `PATCH` /
-`DELETE` / `PUT`) including writes through updatable views, **embed** of
-related resources over declared foreign keys, and `POST /rpc` for functions and
-procedures. Every other part of the PostgREST surface is still to come.
+The service covers the locked parent **capability areas**: Bearer JWT auth with
+**database role** selection, **schema cache** **resources**, ordinary reads
+(including aggregates when enabled), **embed** over declared foreign keys,
+ordinary writes (including updatable views), `/rpc` for functions and
+procedures, the named representation and Prefer values, the error envelope, and
+the config surface. Every labelled behaviour has one **parity label**. Partial
+match and not-supported edges stay in the derived **gap list**; see
+[Verification](docs/verification.md) for that list and the scenario index.
 
 ## Requirements
 
@@ -186,7 +189,7 @@ myrest serves the API only when it has all of these. If one is missing, the proc
 
 ### Other kept knobs
 
-`server-cors-allowed-origins` and `openapi-server-proxy-uri` already have the CORS and reported-base-URL behaviour above. The JWT knobs (`jwt-secret-is-base64`, `jwt-aud`, `jwt-role-claim-key`, `jwt-cache-max-entries`) already drive Bearer JWT verification; see [Authentication](docs/auth.md). The OpenAPI knobs (`openapi-mode`, `openapi-security-active`, `openapi-server-proxy-uri`, `db-root-spec`) drive discovery; see [Discovery: OPTIONS and OpenAPI](docs/discovery.md). `db-tx-end` ends write and **RPC** request transactions; see [Transaction end and isolation](docs/transactions.md). The other knobs are configurable and readable now; later parity slices give them their remaining behaviour.
+`server-cors-allowed-origins` and `openapi-server-proxy-uri` drive the CORS and reported-base-URL behaviour above. The JWT knobs (`jwt-secret-is-base64`, `jwt-aud`, `jwt-role-claim-key`, `jwt-cache-max-entries`) drive Bearer JWT verification; see [Authentication](docs/auth.md). The OpenAPI knobs (`openapi-mode`, `openapi-security-active`, `openapi-server-proxy-uri`, `db-root-spec`) drive discovery; see [Discovery: OPTIONS and OpenAPI](docs/discovery.md). `db-tx-end` ends write and **RPC** request transactions; see [Transaction end and isolation](docs/transactions.md).
 
 | Knob | Type | Default |
 | --- | --- | --- |
@@ -223,9 +226,10 @@ The authenticator must hold every database role myrest activates, because MySQL 
 ## Verification
 
 The scenario index, derived **gap list**, and cross-area smoke set live in
-[Verification](docs/verification.md). `make scenarios` runs the normative
-scenario packages (`./cmd/myrest`, `./internal/httpapi`, `./test/acceptance`,
-and `./internal/verification`).
+[Verification](docs/verification.md). That roll-up is the proof surface for
+[parent spec #20](https://github.com/jonbaldie/myrest/issues/20).
+`make scenarios` runs the normative scenario packages (`./cmd/myrest`,
+`./internal/httpapi`, `./test/acceptance`, and `./internal/verification`).
 
 ## Fixture DDL
 
