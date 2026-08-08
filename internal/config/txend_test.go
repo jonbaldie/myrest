@@ -64,16 +64,3 @@ func TestDecideTxEnd(t *testing.T) {
 	}
 }
 
-func TestAllowsTxPrefer(t *testing.T) {
-	t.Parallel()
-
-	if config.AllowsTxPrefer(config.TxEndCommit) {
-		t.Fatal("commit must not allow Prefer: tx=")
-	}
-	if !config.AllowsTxPrefer(config.TxEndCommitAllowOverride) {
-		t.Fatal("commit-allow-override must allow Prefer: tx=")
-	}
-	if !config.AllowsTxPrefer(config.TxEndRollbackAllowOverride) {
-		t.Fatal("rollback-allow-override must allow Prefer: tx=")
-	}
-}

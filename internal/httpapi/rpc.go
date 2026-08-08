@@ -131,16 +131,19 @@ func (s *Service) invokeRoutine(
 		return
 	}
 
+	// RPC only honours Prefer: tx= from the write Prefer parser; other write
+	// Prefer tokens are accepted for strict handling but not applied on /rpc.
 	prefer, ok := s.readWritePrefer(writer, request)
 	if !ok {
 		return
 	}
+	preferTx := prefer.Tx
 	result, err := s.caller.Call(
 		request.Context(),
 		role,
 		routine,
 		args,
-		CallOptions{PreferTx: prefer.Tx},
+		CallOptions{PreferTx: preferTx},
 	)
 	if err != nil {
 		s.log.Printf("myrest: rpc %s.%s as %s: %v", asked.Database, asked.Name, role, err)
@@ -148,7 +151,7 @@ func (s *Service) invokeRoutine(
 		return
 	}
 
-	setPreferenceApplied(writer, prefer)
+	setTxPreferenceApplied(writer, preferTx, s.settings.DB.TxEnd)
 	set, tabular := rowSetResult(result)
 	if readquery.HasRowSetFeatures(query) && !tabular {
 		writeUnsupportedFeature(writer, messageRowSetFeaturesRequired)

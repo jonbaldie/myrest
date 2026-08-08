@@ -6,11 +6,6 @@ const (
 	PreferTxRollback = "rollback"
 )
 
-// AllowsTxPrefer is true when db-tx-end lets Prefer: tx= override the end.
-func AllowsTxPrefer(txEnd TxEnd) bool {
-	return txEnd == TxEndCommitAllowOverride || txEnd == TxEndRollbackAllowOverride
-}
-
 // DecideTxEnd chooses commit or rollback for one request transaction.
 // applied is true only when a Prefer: tx= value changed the default end.
 func DecideTxEnd(txEnd TxEnd, preferTx string) (commit bool, applied bool) {

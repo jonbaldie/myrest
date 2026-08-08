@@ -10,7 +10,13 @@ item 4 of the parent spec for `db-tx-end` and isolation on MySQL 8.
 | --- | --- | --- |
 | `POST` / `PATCH` / `PUT` / `DELETE` on a table or view | One `READ COMMITTED` transaction: optional `db-pre-request`, then the write work (including representation re-reads) | **full match** |
 | `POST` / `GET` `/rpc/<name>` | One `READ COMMITTED` transaction: optional `db-pre-request`, then the routine call | **full match** |
-| Ordinary `GET` / `HEAD` table reads | No request transaction; `db-tx-end` and `Prefer: tx=` do not apply | **not supported** (reads stay outside this claim) |
+| Ordinary `GET` / `HEAD` table reads | No request transaction | **not supported** |
+
+`Prefer: tx=` is a write and **RPC** preference (as the **parity target**). Ordinary
+reads do not honour it and do not advertise it. The **not supported** label on
+ordinary-read request transactions means myrest does not wrap those reads the
+way PostgREST wraps every resource request: operators must not rely on
+`db-tx-end=rollback` to undo a mutating `db-pre-request` on an ordinary read.
 
 A failing write or **RPC** rolls back that unit. A successful unit ends by
 `db-tx-end` and, when enabled, `Prefer: tx=`.
@@ -45,8 +51,10 @@ error) and is not applied, as the **parity target** does.
 
 ## Gap list (this area)
 
-**Not supported:** ordinary read request transactions; role-level isolation
-override; routine-level isolation override; transaction-scoped request GUCs.
+**Not supported:** ordinary read request transactions (including no rollback of
+a mutating `db-pre-request` on `GET`/`HEAD` under `db-tx-end=rollback`);
+role-level isolation override; routine-level isolation override;
+transaction-scoped request GUCs.
 
 **Partial match:** none for this area. Write and **RPC** transaction end and
 default isolation are **full match** under the labels above.

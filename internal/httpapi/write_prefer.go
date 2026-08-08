@@ -275,3 +275,11 @@ func setPreferenceApplied(writer http.ResponseWriter, prefer writePrefer) {
 	}
 	writer.Header().Set("Preference-Applied", strings.Join(prefer.applied, ", "))
 }
+
+// setTxPreferenceApplied sets Preference-Applied only for an applied Prefer: tx=.
+func setTxPreferenceApplied(writer http.ResponseWriter, preferTx string, txEnd config.TxEnd) {
+	if _, applied := config.DecideTxEnd(txEnd, preferTx); !applied {
+		return
+	}
+	writer.Header().Set("Preference-Applied", "tx="+preferTx)
+}

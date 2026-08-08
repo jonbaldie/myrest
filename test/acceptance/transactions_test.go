@@ -151,10 +151,7 @@ func TestPreferTxCommitUnderRollbackAllowOverride(t *testing.T) {
 // side effects.
 func TestRPCRollsBackAsOneUnitWhenTxEndIsRollback(t *testing.T) {
 	service := serveWithTxEnd(t, config.TxEndRollback)
-
-	headers := http.Header{}
-	headers.Set("Prefer", "all-rows")
-	_, _ = apitest.Do(t, http.MethodDelete, service.URL()+"/addresses?label=eq.rpc-write", headers)
+	clearRPCWriteMarker(t, service)
 
 	response, body := apitest.PostJSON(t, service.URL()+"/rpc/write_marker", `{}`)
 	if response.StatusCode != http.StatusOK {
@@ -165,6 +162,38 @@ func TestRPCRollsBackAsOneUnitWhenTxEndIsRollback(t *testing.T) {
 	if string(body) != "[]\n" {
 		t.Fatalf("rolled-back RPC write still visible: %s", body)
 	}
+}
+
+// Prefer: tx=rollback under commit-allow-override rolls an RPC side effect back.
+func TestRPCPreferTxRollbackUnderCommitAllowOverride(t *testing.T) {
+	service := serveWithTxEnd(t, config.TxEndCommitAllowOverride)
+	clearRPCWriteMarker(t, service)
+
+	response, body := postJSONWithPrefer(
+		t,
+		service.URL()+"/rpc/write_marker",
+		`{}`,
+		"tx=rollback",
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("rpc status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "tx=rollback" {
+		t.Fatalf("Preference-Applied = %q, want tx=rollback", got)
+	}
+
+	_, body = get(t, service, "/addresses?select=label&label=eq.rpc-write")
+	if string(body) != "[]\n" {
+		t.Fatalf("prefer-rollback RPC write still visible: %s", body)
+	}
+}
+
+func clearRPCWriteMarker(t *testing.T, service *httpapi.Service) {
+	t.Helper()
+
+	headers := http.Header{}
+	headers.Set("Prefer", "all-rows")
+	_, _ = apitest.Do(t, http.MethodDelete, service.URL()+"/addresses?label=eq.rpc-write", headers)
 }
 
 // Default db-tx-end=commit keeps a write (control case for the tx-end gate).
