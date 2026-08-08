@@ -82,7 +82,6 @@ func selectRows(
 	return read, result.Err()
 }
 
-
 // selectStatement builds the unbounded read of one table. Kept for unit tests
 // of identifier quoting.
 func selectStatement(table schemacache.Table, names []string) string {
