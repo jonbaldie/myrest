@@ -10,7 +10,7 @@ import (
 
 // Seam under test: the HTTP API boundary. Proxy request headers must not
 // change ordinary responses. Absolute URL selection is covered next to
-// reportedBaseURL; OpenAPI emission of that URL is ticket #44.
+// reportedBaseURL; OpenAPI emission of that URL is in discovery tests.
 
 func TestForwardedHeadersDoNotChangeOrdinaryResponses(t *testing.T) {
 	t.Parallel()

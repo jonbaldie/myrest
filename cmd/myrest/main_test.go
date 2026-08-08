@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	gojwt "github.com/golang-jwt/jwt/v5"
+
 	"github.com/jonbaldie/myrest/internal/mysqltest"
 )
 
@@ -96,7 +98,9 @@ db-anon-role = "myrest_anon"
 	if environmentExposed != fileExposed {
 		t.Errorf("environment exposes %q, the file exposes %q", environmentExposed, fileExposed)
 	}
-	if environmentBody, fileBody := get(t, environmentURL), get(t, fileURL); environmentBody != fileBody {
+	// Compare a table read, not GET /: OpenAPI embeds the listen host, which
+	// differs per process.
+	if environmentBody, fileBody := getPath(t, environmentURL, "/items"), getPath(t, fileURL, "/items"); environmentBody != fileBody {
 		t.Errorf("environment body %q differs from file body %q", environmentBody, fileBody)
 	}
 }
@@ -111,8 +115,10 @@ jwt-secret = "reallyreallyreallyreallyverysafe"
 `, authenticator())))
 
 	base, _ := process.waitForServe(t)
-	if body := get(t, base); !strings.Contains(body, `"service":"myrest"`) {
-		t.Fatalf("body = %q, does not come from myrest", body)
+	token := signedRoleJWT(t, "myrest_anon")
+	body := getWithBearer(t, base+"/", token)
+	if !strings.Contains(body, `"swagger":"2.0"`) {
+		t.Fatalf("body = %q, want OpenAPI swagger 2.0", body)
 	}
 }
 
@@ -357,9 +363,21 @@ func rewrite(t *testing.T, path string, text string) {
 func get(t *testing.T, base string) string {
 	t.Helper()
 
-	response, err := http.Get(base + "/")
+	return getPath(t, base, "/")
+}
+
+// getWithBearer reads a URL with a Bearer JWT and gives back the body.
+func getWithBearer(t *testing.T, url, token string) string {
+	t.Helper()
+
+	request, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		t.Fatalf("GET %s/: %v", base, err)
+		t.Fatalf("new GET %s: %v", url, err)
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
 	}
 	defer response.Body.Close()
 
@@ -371,6 +389,17 @@ func get(t *testing.T, base string) string {
 		t.Fatalf("read body: %v", err)
 	}
 	return string(body)
+}
+
+func signedRoleJWT(t *testing.T, role string) string {
+	t.Helper()
+
+	token := gojwt.NewWithClaims(gojwt.SigningMethodHS256, gojwt.MapClaims{"role": role})
+	signed, err := token.SignedString([]byte("reallyreallyreallyreallyverysafe"))
+	if err != nil {
+		t.Fatalf("sign JWT: %v", err)
+	}
+	return signed
 }
 
 // getPath reads the body of GET path from a running myrest process.

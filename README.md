@@ -107,6 +107,10 @@ Unusual whole-body `POST /rpc` argument modes (single unnamed `json`/`jsonb`/`by
 
 `server-cors-allowed-origins` sets the browser origin policy. An empty list accepts every origin. Allowed origins get the PostgREST CORS response and preflight headers; an origin outside the list gets no `Access-Control-Allow-Origin`. myrest never takes host or scheme from `X-Forwarded-*` or `Forwarded`. When it reports an absolute base URL, `openapi-server-proxy-uri` wins when set. See [CORS origins and proxy header behaviour](docs/cors-and-proxy.md) and [ADR 0012](docs/adr/0012-cors-and-proxy-headers.md).
 
+## Discovery
+
+`OPTIONS` on a table or `/rpc` path reports `Allow` from the grants of the active **database role** in the **schema cache**. `GET /` serves an OpenAPI 2.0 document from the same cache and privileges. `openapi-mode`, `openapi-security-active`, `openapi-server-proxy-uri`, and `db-root-spec` change that output as documented. See [Discovery: OPTIONS and OpenAPI](docs/discovery.md).
+
 ## Configuration
 
 Give myrest its settings in a config file, in `MYREST_*` environment variables, or in both. The one optional argument of the process is the path of the config file. An environment variable with a value wins over the same knob in the file; an empty variable counts as a variable nobody set. A restart applies a changed value; there is no live configuration reload.
@@ -134,7 +138,7 @@ myrest serves the API only when it has all of these. If one is missing, the proc
 
 ### Other kept knobs
 
-`server-cors-allowed-origins` and `openapi-server-proxy-uri` already have the CORS and reported-base-URL behaviour above. The JWT knobs (`jwt-secret-is-base64`, `jwt-aud`, `jwt-role-claim-key`, `jwt-cache-max-entries`) already drive Bearer JWT verification; see [Authentication](docs/auth.md). The other knobs are configurable and readable now; later parity slices give them their remaining behaviour.
+`server-cors-allowed-origins` and `openapi-server-proxy-uri` already have the CORS and reported-base-URL behaviour above. The JWT knobs (`jwt-secret-is-base64`, `jwt-aud`, `jwt-role-claim-key`, `jwt-cache-max-entries`) already drive Bearer JWT verification; see [Authentication](docs/auth.md). The OpenAPI knobs (`openapi-mode`, `openapi-security-active`, `openapi-server-proxy-uri`, `db-root-spec`) drive discovery; see [Discovery: OPTIONS and OpenAPI](docs/discovery.md). The other knobs are configurable and readable now; later parity slices give them their remaining behaviour.
 
 | Knob | Type | Default |
 | --- | --- | --- |

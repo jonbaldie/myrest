@@ -357,7 +357,7 @@ func TestFailingReadTellsTheOperatorAndNotTheClient(t *testing.T) {
 	}
 }
 
-func TestRootPathNamesTheService(t *testing.T) {
+func TestRootPathServesOpenAPI(t *testing.T) {
 	t.Parallel()
 
 	response, body := get(t, serve(t, &reader{}, settings()), "/")
@@ -365,14 +365,15 @@ func TestRootPathNamesTheService(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
-	var named struct {
-		Service string `json:"service"`
+	if contentType := response.Header.Get("Content-Type"); contentType != "application/openapi+json" {
+		t.Fatalf("Content-Type = %q, want application/openapi+json", contentType)
 	}
-	if err := json.Unmarshal(body, &named); err != nil {
+	var doc map[string]any
+	if err := json.Unmarshal(body, &doc); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
-	if named.Service != "myrest" {
-		t.Fatalf("service = %q, want myrest", named.Service)
+	if doc["swagger"] != "2.0" {
+		t.Fatalf("swagger = %v, want 2.0", doc["swagger"])
 	}
 }
 

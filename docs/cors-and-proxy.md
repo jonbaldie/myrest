@@ -22,7 +22,7 @@ Knob: `server-cors-allowed-origins` (list). An empty list, or a knob nobody set,
 | Behaviour | Parity label | Contract |
 | --- | --- | --- |
 | `X-Forwarded-Host`, `X-Forwarded-Proto`, and `Forwarded` | **full match** | myrest does not read these headers when it chooses a URL to report. The parity target does the same. Ordinary responses do not take host or scheme from them. |
-| Absolute base URL selection | **full match** | When myrest reports an absolute base URL, `openapi-server-proxy-uri` wins when set (trailing `/` removed); otherwise the listen URL of the process wins. The OpenAPI document that emits that base URL is [#44](https://github.com/jonbaldie/myrest/issues/44). |
+| Absolute base URL selection | **full match** | When myrest reports an absolute base URL, `openapi-server-proxy-uri` wins when set (trailing `/` removed); otherwise the listen URL of the process wins. The OpenAPI document emits that base URL; see [Discovery: OPTIONS and OpenAPI](discovery.md). |
 
 ## Gap list rows
 
