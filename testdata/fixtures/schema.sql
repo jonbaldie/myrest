@@ -161,6 +161,19 @@ CREATE TABLE secrets (
 
 INSERT INTO secrets (payload) VALUES ('top-secret');
 
+-- Write preference fixtures: DEFAULT column and a table with no primary key.
+CREATE TABLE colors (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL,
+  tone VARCHAR(255) NOT NULL DEFAULT 'plain',
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE loose_notes (
+  body VARCHAR(255) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+
 USE myrest_hidden;
 
 -- Outside the db-schemas list of the anonymous read tests.
@@ -190,6 +203,8 @@ GRANT SELECT ON myrest_fixture.item_tags TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.addresses TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.deliveries TO 'myrest_anon';
 GRANT INSERT ON myrest_fixture.items TO 'myrest_anon';
+GRANT SELECT, INSERT, UPDATE, DELETE ON myrest_fixture.colors TO 'myrest_anon';
+GRANT SELECT, INSERT, UPDATE, DELETE ON myrest_fixture.loose_notes TO 'myrest_anon';
 GRANT INSERT ON myrest_fixture.orders TO 'myrest_anon';
 GRANT UPDATE ON myrest_fixture.items TO 'myrest_anon';
 GRANT DELETE ON myrest_fixture.items TO 'myrest_anon';

@@ -1,10 +1,9 @@
 # Ordinary write
 
 Ordinary writes create, change, and remove rows on a table **resource**. The
-HTTP shapes follow **PostgREST** v14.16. This ticket covers `POST` insert,
-`PATCH` by filter, `DELETE` by filter, `PUT` upsert by primary key, and the
-unbounded-write gate. Prefer return values beyond the default, and view
-writes, stay in later tickets.
+HTTP shapes follow **PostgREST** v14.16. This page covers `POST` insert, `PATCH` by filter, `DELETE` by filter,
+`PUT` upsert by primary key, the unbounded-write gate, and the write Prefer
+values claimed for this area. View writes stay in a later ticket.
 
 ## Methods
 
@@ -18,14 +17,6 @@ writes, stay in later tickets.
 Exposure of a **resource** does not imply every method. A write without the
 matching grant is denied with `PGRST205`, the same privilege-filtering rule as
 a missing table.
-
-## Default response
-
-A successful write uses the default Prefer of the parity target:
-`return=minimal`. `POST` answers with status 201 and an empty body. `PATCH`
-and `DELETE` answer with status 204 and an empty body. `PUT` answers with
-status 201 when MySQL inserts the row, and status 204 when MySQL updates or
-ignores an existing row.
 
 ## PUT upsert by primary key
 
@@ -47,6 +38,46 @@ MySQL fires `ON DUPLICATE KEY` / `INSERT IGNORE` on any unique key conflict,
 not only the primary key. The client contract still requires primary-key
 filters, as the parity target does. Operators should treat secondary unique
 keys as part of that MySQL conflict surface.
+
+## Prefer: return
+
+| Value | Label | Behaviour |
+| --- | --- | --- |
+| `return=minimal` (default) | **full match** | Empty body. `POST` → 201. `PATCH` / `DELETE` → 204. `PUT` → 201 on insert, 204 on update/ignore. |
+| `return=headers-only` | **full match** | Empty body. `POST` may set `Location` when a single inserted primary key is known. |
+| `return=representation` | **partial match** | JSON array of affected rows when myrest can return them honestly. |
+
+Successful responses that honour an explicit write Prefer set
+`Preference-Applied` with the applied tokens.
+
+### Representation honesty limit (partial match)
+
+MySQL has no `RETURNING` clause for ordinary DML. myrest re-reads affected
+rows inside the write transaction. That is honest only for these shapes:
+
+| Write shape | Honest when | How |
+| --- | --- | --- |
+| `POST` + `return=representation` | Table has a `PRIMARY KEY` and the role holds `SELECT` | Insert, resolve primary-key values (payload or auto-increment `LastInsertId`), `SELECT` by those keys |
+| `PATCH` + `return=representation` | Table has a `PRIMARY KEY` and the role holds `SELECT` | `SELECT` primary keys that match the filter, update, `SELECT` by those keys |
+| `DELETE` + `return=representation` | Role holds `SELECT` | `SELECT` matching rows, then delete; primary key not required |
+
+Outside that subset myrest refuses with `MYREST001` and does not write. Typical
+refuses:
+
+- `POST` or `PATCH` with `return=representation` on a table with no primary key
+- `return=representation` when the active role has no `SELECT` on the table
+
+The body never invents column values. If myrest cannot re-read the affected
+rows from MySQL, it refuses instead of guessing.
+
+## Prefer: missing, max-affected, handling
+
+| Prefer | Label | Behaviour |
+| --- | --- | --- |
+| `missing=default` | **full match** | On `POST`, columns omitted from a row use the SQL `DEFAULT` instead of `NULL`. |
+| `max-affected=<n>` | **full match** | With `handling=strict`, a `PATCH` or `DELETE` that would change more than `n` rows refuses with `PGRST124` and rolls back. Ignored under lenient handling. |
+| `handling=strict` | **full match** | Unknown or invalid Prefer tokens refuse with `PGRST122`. |
+| `handling=lenient` (default) | **full match** | Unknown Prefer tokens are ignored. |
 
 ## Unbounded-write gate
 

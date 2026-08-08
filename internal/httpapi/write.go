@@ -8,10 +8,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/jonbaldie/myrest/internal/readquery"
+	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
+	"github.com/jonbaldie/myrest/internal/writequery"
 )
 
 // UpsertResolution is one Prefer resolution value of the parity target.
@@ -31,20 +34,23 @@ type Writer interface {
 		role schemacache.Role,
 		table schemacache.Table,
 		rows []map[string]any,
-	) (int, error)
+		options writequery.Options,
+	) (writequery.Result, error)
 	Update(
 		ctx context.Context,
 		role schemacache.Role,
 		table schemacache.Table,
 		patch map[string]any,
 		query readquery.Query,
-	) (int64, error)
+		options writequery.Options,
+	) (writequery.Result, error)
 	Delete(
 		ctx context.Context,
 		role schemacache.Role,
 		table schemacache.Table,
 		query readquery.Query,
-	) (int64, error)
+		options writequery.Options,
+	) (writequery.Result, error)
 	// Upsert writes one row by primary key. inserted is true when MySQL created
 	// the row and false when it updated or ignored an existing row.
 	Upsert(
@@ -73,19 +79,29 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 	if !ok {
 		return
 	}
-
-	rows, ok := readInsertRows(writer, request)
+	prefer, ok := s.readWritePrefer(writer, request)
 	if !ok {
 		return
 	}
 
-	_, err := s.writer.Insert(request.Context(), role, table, rows)
+	primaryKey := schemacache.PrimaryKeyOf(s.cache.KeysOf(asked))
+	options, ok := s.buildWriteOptions(writer, role, asked, prefer, primaryKey, writeKindInsert)
+	if !ok {
+		return
+	}
+
+	bodyRows, ok := readInsertRows(writer, request)
+	if !ok {
+		return
+	}
+
+	result, err := s.writer.Insert(request.Context(), role, table, bodyRows, options)
 	if err != nil {
 		s.log.Printf("myrest: insert %s.%s as %s: %v", asked.Database, asked.Name, role, err)
 		s.writeWriteFailure(writer, err)
 		return
 	}
-	writeMinimal(writer, http.StatusCreated)
+	s.writeWriteResponse(writer, prefer, http.MethodPost, asked.Name, primaryKey, result)
 }
 
 // patchTable answers PATCH /<table> with the ordinary-read filter surface.
@@ -96,13 +112,23 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 	if !ok {
 		return
 	}
+	prefer, ok := s.readWritePrefer(writer, request)
+	if !ok {
+		return
+	}
 
 	query, err := parseMutateQuery(request)
 	if err != nil {
 		writeQueryFailure(writer, err)
 		return
 	}
-	if refuseUnbounded(writer, request, query) {
+	if refuseUnbounded(writer, prefer, query) {
+		return
+	}
+
+	primaryKey := schemacache.PrimaryKeyOf(s.cache.KeysOf(asked))
+	options, ok := s.buildWriteOptions(writer, role, asked, prefer, primaryKey, writeKindPatch)
+	if !ok {
 		return
 	}
 
@@ -110,13 +136,13 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 	if !ok {
 		return
 	}
-	_, err = s.writer.Update(request.Context(), role, table, patch, query)
+	result, err := s.writer.Update(request.Context(), role, table, patch, query, options)
 	if err != nil {
 		s.log.Printf("myrest: update %s.%s as %s: %v", asked.Database, asked.Name, role, err)
 		s.writeWriteFailure(writer, err)
 		return
 	}
-	writeMinimal(writer, http.StatusNoContent)
+	s.writeWriteResponse(writer, prefer, http.MethodPatch, asked.Name, primaryKey, result)
 }
 
 // deleteTable answers DELETE /<table> with the ordinary-read filter surface.
@@ -127,23 +153,33 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 	if !ok {
 		return
 	}
+	prefer, ok := s.readWritePrefer(writer, request)
+	if !ok {
+		return
+	}
 
 	query, err := parseMutateQuery(request)
 	if err != nil {
 		writeQueryFailure(writer, err)
 		return
 	}
-	if refuseUnbounded(writer, request, query) {
+	if refuseUnbounded(writer, prefer, query) {
 		return
 	}
 
-	_, err = s.writer.Delete(request.Context(), role, table, query)
+	primaryKey := schemacache.PrimaryKeyOf(s.cache.KeysOf(asked))
+	options, ok := s.buildWriteOptions(writer, role, asked, prefer, primaryKey, writeKindDelete)
+	if !ok {
+		return
+	}
+
+	result, err := s.writer.Delete(request.Context(), role, table, query, options)
 	if err != nil {
 		s.log.Printf("myrest: delete %s.%s as %s: %v", asked.Database, asked.Name, role, err)
 		s.writeWriteFailure(writer, err)
 		return
 	}
-	writeMinimal(writer, http.StatusNoContent)
+	s.writeWriteResponse(writer, prefer, http.MethodDelete, asked.Name, primaryKey, result)
 }
 
 // putTable answers PUT /<table>?pk=eq.value: one-row upsert by primary key.
@@ -179,6 +215,89 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request) {
 	writeMinimal(writer, http.StatusNoContent)
 }
 
+func (s *Service) readWritePrefer(writer http.ResponseWriter, request *http.Request) (writePrefer, bool) {
+	prefer, err := parseWritePrefer(request.Header.Values("Prefer"))
+	if err != nil {
+		var invalid invalidPreferError
+		if errors.As(err, &invalid) {
+			writeInvalidPrefer(writer, invalid)
+			return writePrefer{}, false
+		}
+		writeFailure(writer, http.StatusBadRequest, codeParseFailure, err.Error())
+		return writePrefer{}, false
+	}
+	return prefer, true
+}
+
+// writeKind selects which honesty rules apply for return=representation.
+type writeKind int
+
+const (
+	writeKindInsert writeKind = iota
+	writeKindPatch
+	writeKindDelete
+)
+
+// buildWriteOptions checks representation honesty and builds database options.
+func (s *Service) buildWriteOptions(
+	writer http.ResponseWriter,
+	role schemacache.Role,
+	asked schemacache.TableID,
+	prefer writePrefer,
+	primaryKey []string,
+	kind writeKind,
+) (writequery.Options, bool) {
+	options := writequery.Options{
+		PrimaryKey:     primaryKey,
+		MissingDefault: prefer.MissingDefault,
+	}
+	if prefer.Strict && prefer.MaxAffected != nil {
+		options.MaxAffected = prefer.MaxAffected
+	}
+
+	switch prefer.Return {
+	case returnHeadersOnly:
+		options.ReturnKeys = true
+	case returnRepresentation:
+		if !s.canReturnRepresentation(kind, primaryKey) {
+			writeUnsupportedFeature(writer, representationLimitMessage(kind))
+			return writequery.Options{}, false
+		}
+		if !s.cache.HasTablePrivilege(role, asked, "SELECT") {
+			writeUnsupportedFeature(
+				writer,
+				"Prefer return=representation needs SELECT to return affected rows honestly",
+			)
+			return writequery.Options{}, false
+		}
+		options.ReturnRepresentation = true
+		options.ReturnKeys = true
+	}
+	return options, true
+}
+
+func (s *Service) canReturnRepresentation(kind writeKind, primaryKey []string) bool {
+	switch kind {
+	case writeKindInsert, writeKindPatch:
+		return len(primaryKey) > 0
+	case writeKindDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+func representationLimitMessage(kind writeKind) string {
+	switch kind {
+	case writeKindInsert:
+		return "Prefer return=representation needs a primary key to return inserted rows honestly"
+	case writeKindPatch:
+		return "Prefer return=representation needs a primary key to return updated rows honestly"
+	default:
+		return "Prefer return=representation cannot return affected rows honestly"
+	}
+}
+
 // lookupPutTable finds the table for PUT. INSERT is always required.
 // merge-duplicates also needs UPDATE so a missing grant stays a privilege
 // filter, not a silent write.
@@ -206,8 +325,8 @@ func readPutRow(
 	cache *schemacache.Cache,
 	asked schemacache.TableID,
 ) (map[string]any, []string, bool) {
-	primaryKey, ok := primaryKeyColumns(cache, asked)
-	if !ok {
+	primaryKey := schemacache.PrimaryKeyOf(cache.KeysOf(asked))
+	if len(primaryKey) == 0 {
 		writeFailure(
 			writer,
 			http.StatusBadRequest,
@@ -269,15 +388,6 @@ func preferValue(request *http.Request, name string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-func primaryKeyColumns(cache *schemacache.Cache, id schemacache.TableID) ([]string, bool) {
-	for _, key := range cache.KeysOf(id) {
-		if strings.EqualFold(key.Kind, "PRIMARY") && len(key.Columns) > 0 {
-			return append([]string(nil), key.Columns...), true
-		}
-	}
-	return nil, false
 }
 
 func putPrimaryKeyValues(
@@ -391,8 +501,8 @@ func (s *Service) lookupWriteTable(
 	return role, asked, table, true
 }
 
-func refuseUnbounded(writer http.ResponseWriter, request *http.Request, query readquery.Query) bool {
-	if !unboundedWrite(query) || preferHolds(request, "all-rows") {
+func refuseUnbounded(writer http.ResponseWriter, prefer writePrefer, query readquery.Query) bool {
+	if !unboundedWrite(query) || prefer.AllRows {
 		return false
 	}
 	writeFailure(
@@ -483,7 +593,80 @@ func writeMinimal(writer http.ResponseWriter, status int) {
 	writer.WriteHeader(status)
 }
 
+func (s *Service) writeWriteResponse(
+	writer http.ResponseWriter,
+	prefer writePrefer,
+	method string,
+	tableName string,
+	primaryKey []string,
+	result writequery.Result,
+) {
+	setPreferenceApplied(writer, prefer)
+
+	switch prefer.Return {
+	case returnRepresentation:
+		status := http.StatusOK
+		if method == http.MethodPost {
+			status = http.StatusCreated
+			if location := locationHeader(tableName, primaryKey, result.Keys); location != "" {
+				writer.Header().Set("Location", location)
+			}
+		}
+		if result.Rows == nil {
+			result.Rows = []rows.Row{}
+		}
+		writeJSON(writer, status, result.Rows)
+	case returnHeadersOnly:
+		if location := locationHeader(tableName, primaryKey, result.Keys); location != "" {
+			writer.Header().Set("Location", location)
+		}
+		if method == http.MethodPost {
+			writer.WriteHeader(http.StatusCreated)
+			return
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	default:
+		if method == http.MethodPost {
+			writer.WriteHeader(http.StatusCreated)
+			return
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func locationHeader(tableName string, primaryKey []string, keys []map[string]any) string {
+	if len(primaryKey) == 0 || len(keys) != 1 {
+		return ""
+	}
+	key := keys[0]
+	parts := make([]string, 0, len(primaryKey))
+	for _, column := range primaryKey {
+		value, held := key[column]
+		if !held || value == nil {
+			return ""
+		}
+		parts = append(parts, column+"=eq."+locationValue(value))
+	}
+	return "/" + tableName + "?" + strings.Join(parts, "&")
+}
+
+func locationValue(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return url.QueryEscape(typed)
+	case []byte:
+		return url.QueryEscape(string(typed))
+	default:
+		return url.QueryEscape(fmt.Sprint(typed))
+	}
+}
+
 func (s *Service) writeWriteFailure(writer http.ResponseWriter, err error) {
+	var maxErr writequery.MaxAffectedExceeded
+	if errors.As(err, &maxErr) {
+		writeMaxAffected(writer, maxAffectedError{Affected: maxErr.Affected, Max: maxErr.Max})
+		return
+	}
 	var missing readquery.ColumnNotFound
 	if errors.As(err, &missing) {
 		writeFailure(writer, http.StatusBadRequest, codeNoColumn, missing.Error())
