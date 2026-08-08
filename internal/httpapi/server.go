@@ -85,6 +85,7 @@ func Listen(options Options) (*Service, error) {
 	mux.HandleFunc("HEAD /{table}", service.readTable)
 	mux.HandleFunc("POST /{table}", service.insertTable)
 	mux.HandleFunc("PATCH /{table}", service.patchTable)
+	mux.HandleFunc("PUT /{table}", service.putTable)
 	mux.HandleFunc("DELETE /{table}", service.deleteTable)
 	mux.HandleFunc("OPTIONS /{table}", service.optionsTable)
 	mux.HandleFunc("POST /rpc/{name}", service.callRoutine)

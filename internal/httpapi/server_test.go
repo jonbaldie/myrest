@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -318,20 +317,7 @@ func TestPostgRESTComputedFieldSyntaxIsRefused(t *testing.T) {
 func TestUnhandledRequestGivesTheErrorEnvelope(t *testing.T) {
 	t.Parallel()
 
-	request, err := http.NewRequest(http.MethodPut, serve(t, &reader{}, settings()).URL()+"/items", nil)
-	if err != nil {
-		t.Fatalf("new PUT request: %v", err)
-	}
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatalf("PUT /items: %v", err)
-	}
-	t.Cleanup(func() { _ = response.Body.Close() })
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read PUT /items body: %v", err)
-	}
-
+	response, body := get(t, serve(t, &reader{}, settings()), "/not/a/resource")
 	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "MYREST003")
 }
 

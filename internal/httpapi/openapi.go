@@ -174,6 +174,7 @@ func ignorePrivilegeTableMethods() []string {
 		http.MethodGet,
 		http.MethodHead,
 		http.MethodPost,
+		http.MethodPut,
 		http.MethodPatch,
 		http.MethodDelete,
 	}
@@ -185,8 +186,8 @@ func pathItemFromMethods(methods []string) map[string]any {
 		switch method {
 		case http.MethodGet:
 			item["get"] = openAPIOperation("OK")
-		case http.MethodPost:
-			item["post"] = openAPIOperation("Created")
+		case http.MethodPost, http.MethodPut:
+			item[strings.ToLower(method)] = openAPIOperation("Created")
 		case http.MethodPatch, http.MethodDelete:
 			item[strings.ToLower(method)] = openAPIOperation("No Content")
 		}

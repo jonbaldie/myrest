@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
@@ -74,6 +75,32 @@ func (p *Pool) Delete(
 		return deleteErr
 	})
 	return deleted, err
+}
+
+// Upsert writes one row by primary key as the database role.
+// merge-duplicates uses INSERT ... AS new ON DUPLICATE KEY UPDATE.
+// ignore-duplicates uses INSERT IGNORE.
+// inserted is true when MySQL created the row.
+func (p *Pool) Upsert(
+	ctx context.Context,
+	role schemacache.Role,
+	table schemacache.Table,
+	row map[string]any,
+	primaryKey []string,
+	resolution httpapi.UpsertResolution,
+) (bool, error) {
+	statement, err := roleSwitchStatement(role)
+	if err != nil {
+		return false, err
+	}
+
+	var inserted bool
+	err = p.onRequest(ctx, statement, func(ctx context.Context, conn *sql.Conn) error {
+		var upsertErr error
+		inserted, upsertErr = upsertRow(ctx, conn, table, row, primaryKey, resolution)
+		return upsertErr
+	})
+	return inserted, err
 }
 
 func insertRows(
@@ -249,4 +276,119 @@ func buildDelete(table schemacache.Table, query readquery.Query) (sqlParts, erro
 		statement += " WHERE " + where
 	}
 	return sqlParts{statement: statement, args: args}, nil
+}
+
+func upsertRow(
+	ctx context.Context,
+	conn *sql.Conn,
+	table schemacache.Table,
+	row map[string]any,
+	primaryKey []string,
+	resolution httpapi.UpsertResolution,
+) (bool, error) {
+	parts, err := buildUpsert(table, row, primaryKey, resolution)
+	if err != nil {
+		return false, err
+	}
+	result, err := conn.ExecContext(ctx, parts.statement, parts.args...)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	// INSERT and INSERT IGNORE report 1 for a new row. ON DUPLICATE KEY UPDATE
+	// reports 1 for insert, 2 for update, and 0 when values did not change.
+	return affected == 1, nil
+}
+
+func buildUpsert(
+	table schemacache.Table,
+	row map[string]any,
+	primaryKey []string,
+	resolution httpapi.UpsertResolution,
+) (sqlParts, error) {
+	if len(row) == 0 {
+		return sqlParts{}, fmt.Errorf("upsert needs at least one column")
+	}
+	columns, err := insertColumns(table, []map[string]any{row})
+	if err != nil {
+		return sqlParts{}, err
+	}
+	quoted := make([]string, len(columns))
+	args := make([]any, 0, len(columns))
+	for i, name := range columns {
+		quoted[i] = quoteIdentifier(name)
+		args = append(args, row[name])
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(columns)), ",")
+	target := fmt.Sprintf(
+		"%s.%s (%s)",
+		quoteIdentifier(table.ID.Database),
+		quoteIdentifier(table.ID.Name),
+		strings.Join(quoted, ", "),
+	)
+
+	switch resolution {
+	case httpapi.UpsertIgnoreDuplicates:
+		return sqlParts{
+			statement: fmt.Sprintf(
+				"INSERT IGNORE INTO %s VALUES (%s)",
+				target,
+				placeholders,
+			),
+			args: args,
+		}, nil
+	case httpapi.UpsertMergeDuplicates:
+		updates := upsertUpdateSets(columns, primaryKey)
+		return sqlParts{
+			statement: fmt.Sprintf(
+				"INSERT INTO %s VALUES (%s) AS %s ON DUPLICATE KEY UPDATE %s",
+				target,
+				placeholders,
+				quoteIdentifier("new"),
+				updates,
+			),
+			args: args,
+		}, nil
+	default:
+		return sqlParts{}, fmt.Errorf("unknown upsert resolution %v", resolution)
+	}
+}
+
+// upsertUpdateSets builds the ON DUPLICATE KEY UPDATE assignments. Non-primary
+// key columns take the inserted values. When the body holds only primary key
+// columns, the first primary key column is assigned to itself so MySQL accepts
+// the statement.
+func upsertUpdateSets(columns, primaryKey []string) string {
+	pk := make(map[string]bool, len(primaryKey))
+	for _, name := range primaryKey {
+		pk[name] = true
+	}
+	var sets []string
+	for _, name := range columns {
+		if pk[name] {
+			continue
+		}
+		sets = append(sets, fmt.Sprintf(
+			"%s = %s.%s",
+			quoteIdentifier(name),
+			quoteIdentifier("new"),
+			quoteIdentifier(name),
+		))
+	}
+	if len(sets) == 0 {
+		name := primaryKey[0]
+		if len(columns) > 0 {
+			name = columns[0]
+		}
+		sets = append(sets, fmt.Sprintf(
+			"%s = %s.%s",
+			quoteIdentifier(name),
+			quoteIdentifier("new"),
+			quoteIdentifier(name),
+		))
+	}
+	return strings.Join(sets, ", ")
 }
