@@ -51,10 +51,27 @@ Prefer values already locked elsewhere (`return`, `count`, `resolution`,
 `missing`, `max-affected`, `handling`, `all-rows`, and the auth refusals
 `row-security` / `jwt-claims`) are not re-labelled here.
 
+## Full match rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| JSON primary representation and array aliases | full match | repr-001, repr-004 |
+| Accept-Profile and Content-Profile | full match | repr-002 |
+| Singular object media type and cardinality error | full match | repr-005, repr-008 |
+| CSV response media type | full match | repr-006 |
+| OpenAPI response media type | full match | discovery-010 |
+
 ## Gap list rows
 
-**Not supported:** `application/geo+json`; plan media types; custom media type
-handlers; unclaimed `Accept` values; Prefer `timezone`.
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| `application/geo+json` | not supported | repr-007 |
+| Plan media types | not supported | repr-007 |
+| Custom media type handlers | not supported | repr-007 |
+| Unclaimed `Accept` values | not supported | repr-007 |
+| `text/csv` request body | not supported | repr-009 |
+| `application/x-www-form-urlencoded` request body | not supported | repr-010 |
+| Prefer `timezone` | not supported | prefer-001 |
 
-**Partial match:** none added by this page. Write Prefer `return=representation`
-honesty limits stay in [Ordinary write](write.md).
+Write Prefer `return=representation` honesty limits stay in
+[Ordinary write](write.md).

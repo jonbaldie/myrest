@@ -12,6 +12,7 @@ import (
 // change ordinary responses. Absolute URL selection is covered next to
 // reportedBaseURL; OpenAPI emission of that URL is in discovery tests.
 
+// cors-005: forwarded headers do not change ordinary responses.
 func TestForwardedHeadersDoNotChangeOrdinaryResponses(t *testing.T) {
 	t.Parallel()
 

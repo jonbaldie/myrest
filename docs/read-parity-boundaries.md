@@ -84,3 +84,13 @@ Each refusal uses the stable error envelope and the myrest gap code
 MySQL full-text search and approximate table stats exist, but they do not
 match the PostgREST operators or Prefer modes above, so myrest refuses them
 instead of renaming them.
+
+## Gap list rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| Text-case subset | partial match | read-003, read-004 |
+| JSON path subset | partial match | read-005, read-006 |
+| FTS operators | not supported | read-007, smoke-006 |
+| Postgres array/range operators | not supported | read-008 |
+| Prefer count=planned or estimated | not supported | read-009, repr-003 |

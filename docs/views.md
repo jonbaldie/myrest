@@ -44,3 +44,9 @@ privilege on a base table; that failure uses `MYREST002`.
 
 Relationships still come only from declared foreign keys. A view chain with no
 declared foreign key is not supported. See [Embed](embed.md).
+
+## Full match rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| View reads and writes under grants and MySQL updatability | full match | write-006 |

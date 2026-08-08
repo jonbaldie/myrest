@@ -97,3 +97,17 @@ this table. It then matches the SQLSTATE class. The number rule has priority.
 The client always gets `MYREST002` and the error envelope for this table and
 for the fallback. myrest writes the MySQL error text to the operator log. It
 does not send that text to the client.
+
+## Full match rows
+
+| Item | Parity label | Scenarios | Client-visible error |
+| --- | --- | --- | --- |
+| Error envelope shape | full match | err-001 | yes |
+| PGRST codes for direct counterparts | full match | err-002 | yes |
+| Stable myrest codes for MySQL gaps | full match | err-003 | yes |
+
+## Gap list rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| MySQL SQLSTATE to HTTP published subset and fallback | partial match | err-004, err-005 |

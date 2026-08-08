@@ -32,3 +32,9 @@ error envelope, and code `MYREST001`.
 
 See [ADR 0006](adr/0006-write-and-rpc-parity-boundaries.md) and the parent
 scenarios `rpc-003` and `rpc-004`.
+
+## Gap list rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| GET /rpc read-safe routines only | partial match | rpc-003, rpc-004 |

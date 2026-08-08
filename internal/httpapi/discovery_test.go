@@ -81,7 +81,8 @@ func serveDiscovery(t *testing.T, resolved config.Settings, caller ...httpapi.Ca
 	return service
 }
 
-// OPTIONS on a table reports only methods the active role can use.
+// discovery-001, discovery-005, and discovery-009: OPTIONS reports only methods
+// the active role can use, omits the object-kind-only surface, and includes PUT.
 func TestOptionsReportsMethodsFromPrivileges(t *testing.T) {
 	t.Parallel()
 
@@ -117,7 +118,7 @@ func TestOptionsOmitsMethodsWithoutPrivilege(t *testing.T) {
 	}
 }
 
-// OPTIONS on a table the role cannot use is not a resource.
+// discovery-008: OPTIONS on a table the role cannot use is not a resource.
 func TestOptionsOnHiddenTableGivesPGRST205(t *testing.T) {
 	t.Parallel()
 
@@ -233,7 +234,10 @@ func TestOptionsOnRoutineReportsMethods(t *testing.T) {
 	}
 }
 
-// The OpenAPI document lists only resources the active role can use.
+// discovery-002, discovery-003, discovery-004, discovery-006, discovery-007,
+// discovery-010, discovery-016, discovery-017, and discovery-018: OpenAPI lists
+// only resources the active role can use, keeps a fixed info block (not schema
+// comments), takes path verbs from grants, and omits parameters/definitions.
 func TestOpenAPIListsOnlyPrivilegedResources(t *testing.T) {
 	t.Parallel()
 
@@ -248,6 +252,10 @@ func TestOpenAPIListsOnlyPrivilegedResources(t *testing.T) {
 	doc := decodeOpenAPI(t, body)
 	if doc["swagger"] != "2.0" {
 		t.Fatalf("swagger = %v, want 2.0", doc["swagger"])
+	}
+	info, _ := doc["info"].(map[string]any)
+	if info["title"] != "myrest API" {
+		t.Fatalf("info.title = %v, want myrest API (schema comments are not claimed)", info["title"])
 	}
 	paths, _ := doc["paths"].(map[string]any)
 	if _, held := paths["/items"]; !held {
@@ -274,6 +282,11 @@ func TestOpenAPIListsOnlyPrivilegedResources(t *testing.T) {
 			t.Fatalf("/items must not advertise %s without the grant", method)
 		}
 	}
+	for _, key := range []string{"definitions", "parameters", "consumes", "produces", "externalDocs"} {
+		if _, held := doc[key]; held {
+			t.Fatalf("OpenAPI held %s; that document depth is not supported", key)
+		}
+	}
 }
 
 func decodeOpenAPI(t *testing.T, body []byte) map[string]any {
@@ -286,7 +299,7 @@ func decodeOpenAPI(t *testing.T, body []byte) map[string]any {
 	return doc
 }
 
-// openapi-mode=disabled refuses the root OpenAPI document.
+// discovery-012: openapi-mode=disabled refuses the root OpenAPI document.
 func TestOpenAPIModeDisabledRefusesRoot(t *testing.T) {
 	t.Parallel()
 
@@ -296,7 +309,7 @@ func TestOpenAPIModeDisabledRefusesRoot(t *testing.T) {
 	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "MYREST003")
 }
 
-// openapi-mode=ignore-privileges lists resources outside the active role.
+// discovery-011: openapi-mode=ignore-privileges lists resources outside the active role.
 func TestOpenAPIModeIgnorePrivilegesListsAllResources(t *testing.T) {
 	t.Parallel()
 
@@ -318,7 +331,7 @@ func TestOpenAPIModeIgnorePrivilegesListsAllResources(t *testing.T) {
 	}
 }
 
-// openapi-security-active adds JWT security to the document.
+// discovery-013 and discovery-019: openapi-security-active adds JWT security.
 func TestOpenAPISecurityActiveAddsDefinitions(t *testing.T) {
 	t.Parallel()
 
@@ -341,7 +354,7 @@ func TestOpenAPISecurityActiveAddsDefinitions(t *testing.T) {
 	}
 }
 
-// openapi-server-proxy-uri sets host, schemes, and basePath on the document.
+// discovery-014, discovery-017, and cors-006: openapi-server-proxy-uri sets the document base.
 func TestOpenAPIServerProxyURISetsBase(t *testing.T) {
 	t.Parallel()
 
@@ -382,7 +395,7 @@ func (c *rootSpecCaller) Call(
 	return c.result, c.err
 }
 
-// db-root-spec replaces the OpenAPI body with the routine result.
+// discovery-015: db-root-spec replaces the OpenAPI body with the routine result.
 func TestRootSpecReplacesOpenAPIBody(t *testing.T) {
 	t.Parallel()
 
