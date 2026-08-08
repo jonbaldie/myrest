@@ -83,13 +83,7 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 	if !ok {
 		return
 	}
-
-	query, err := parseMutateQuery(request)
-	if err != nil {
-		writeQueryFailure(writer, err)
-		return
-	}
-	plan, ok := s.planWriteEmbeds(writer, role, asked, prefer, query)
+	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, prefer, false)
 	if !ok {
 		return
 	}
@@ -111,7 +105,10 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 		s.writeWriteFailure(writer, err)
 		return
 	}
-	s.writeWriteResponse(writer, request, role, table, prefer, http.MethodPost, asked.Name, primaryKey, result, query, plan)
+	s.writeWriteResponse(writer, request, role, table, writeOutcome{
+		Prefer: prefer, Method: http.MethodPost, TableName: asked.Name,
+		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan,
+	})
 }
 
 // patchTable answers PATCH /<table> with the ordinary-read filter surface.
@@ -126,16 +123,7 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 	if !ok {
 		return
 	}
-
-	query, err := parseMutateQuery(request)
-	if err != nil {
-		writeQueryFailure(writer, err)
-		return
-	}
-	if refuseUnbounded(writer, prefer, query) {
-		return
-	}
-	plan, ok := s.planWriteEmbeds(writer, role, asked, prefer, query)
+	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, prefer, true)
 	if !ok {
 		return
 	}
@@ -156,7 +144,10 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 		s.writeWriteFailure(writer, err)
 		return
 	}
-	s.writeWriteResponse(writer, request, role, table, prefer, http.MethodPatch, asked.Name, primaryKey, result, query, plan)
+	s.writeWriteResponse(writer, request, role, table, writeOutcome{
+		Prefer: prefer, Method: http.MethodPatch, TableName: asked.Name,
+		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan,
+	})
 }
 
 // deleteTable answers DELETE /<table> with the ordinary-read filter surface.
@@ -171,16 +162,7 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 	if !ok {
 		return
 	}
-
-	query, err := parseMutateQuery(request)
-	if err != nil {
-		writeQueryFailure(writer, err)
-		return
-	}
-	if refuseUnbounded(writer, prefer, query) {
-		return
-	}
-	plan, ok := s.planWriteEmbeds(writer, role, asked, prefer, query)
+	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, prefer, true)
 	if !ok {
 		return
 	}
@@ -197,7 +179,10 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 		s.writeWriteFailure(writer, err)
 		return
 	}
-	s.writeWriteResponse(writer, request, role, table, prefer, http.MethodDelete, asked.Name, primaryKey, result, query, plan)
+	s.writeWriteResponse(writer, request, role, table, writeOutcome{
+		Prefer: prefer, Method: http.MethodDelete, TableName: asked.Name,
+		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan,
+	})
 }
 
 // putTable answers PUT /<table>?pk=eq.value: one-row upsert by primary key.
@@ -615,6 +600,43 @@ func writeMinimal(writer http.ResponseWriter, status int) {
 	writer.WriteHeader(status)
 }
 
+// writeOutcome holds the Prefer, method, and representation pieces of one
+// ordinary write response.
+type writeOutcome struct {
+	Prefer     writePrefer
+	Method     string
+	TableName  string
+	PrimaryKey []string
+	Result     writequery.Result
+	Query      readquery.Query
+	Plan       []plannedEmbed
+}
+
+// parseWriteQuery reads the mutate query, optional unbounded-write gate, and
+// embed plan for Prefer return=representation.
+func (s *Service) parseWriteQuery(
+	writer http.ResponseWriter,
+	request *http.Request,
+	role schemacache.Role,
+	origin schemacache.TableID,
+	prefer writePrefer,
+	boundRequired bool,
+) (readquery.Query, []plannedEmbed, bool) {
+	query, err := parseMutateQuery(request)
+	if err != nil {
+		writeQueryFailure(writer, err)
+		return readquery.Query{}, nil, false
+	}
+	if boundRequired && refuseUnbounded(writer, prefer, query) {
+		return readquery.Query{}, nil, false
+	}
+	plan, ok := s.planWriteEmbeds(writer, role, origin, prefer, query)
+	if !ok {
+		return readquery.Query{}, nil, false
+	}
+	return query, plan, true
+}
+
 // planWriteEmbeds resolves nested select relationships before a write when
 // Prefer return=representation asks for an embed. A missing relationship
 // refuses here so myrest never invents one and never writes on a bad select.
@@ -665,27 +687,21 @@ func (s *Service) writeWriteResponse(
 	request *http.Request,
 	role schemacache.Role,
 	table schemacache.Table,
-	prefer writePrefer,
-	method string,
-	tableName string,
-	primaryKey []string,
-	result writequery.Result,
-	query readquery.Query,
-	plan []plannedEmbed,
+	outcome writeOutcome,
 ) {
-	setPreferenceApplied(writer, prefer)
+	setPreferenceApplied(writer, outcome.Prefer)
 
-	switch prefer.Return {
+	switch outcome.Prefer.Return {
 	case returnRepresentation:
 		status := http.StatusOK
-		if method == http.MethodPost {
+		if outcome.Method == http.MethodPost {
 			status = http.StatusCreated
-			if location := locationHeader(tableName, primaryKey, result.Keys); location != "" {
+			if location := locationHeader(outcome.TableName, outcome.PrimaryKey, outcome.Result.Keys); location != "" {
 				writer.Header().Set("Location", location)
 			}
 		}
 		shaped, err := s.shapeWriteRepresentation(
-			request.Context(), role, table, result.Rows, query, plan,
+			request.Context(), role, table, outcome.Result.Rows, outcome.Query, outcome.Plan,
 		)
 		if err != nil {
 			s.writeReadFailure(writer, table.ID, role, err)
@@ -693,16 +709,16 @@ func (s *Service) writeWriteResponse(
 		}
 		writeJSON(writer, status, shaped)
 	case returnHeadersOnly:
-		if location := locationHeader(tableName, primaryKey, result.Keys); location != "" {
+		if location := locationHeader(outcome.TableName, outcome.PrimaryKey, outcome.Result.Keys); location != "" {
 			writer.Header().Set("Location", location)
 		}
-		if method == http.MethodPost {
+		if outcome.Method == http.MethodPost {
 			writer.WriteHeader(http.StatusCreated)
 			return
 		}
 		writer.WriteHeader(http.StatusNoContent)
 	default:
-		if method == http.MethodPost {
+		if outcome.Method == http.MethodPost {
 			writer.WriteHeader(http.StatusCreated)
 			return
 		}
