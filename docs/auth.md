@@ -40,9 +40,11 @@ When `db-pre-request` names a zero-argument procedure as `database.routine`,
 myrest calls it after the **role switch** and before the main statement of the
 request. The hook runs as the active **database role** and needs that role's
 EXECUTE grant. A failing hook returns the error envelope with `MYREST002`, and
-the main statement does not run. myrest injects no JWT claims and no headers as
-session variables for the hook. When `db-pre-request` is unset, myrest calls
-nothing.
+the main statement does not run. On a write or **RPC** request the hook runs
+inside the same request transaction as the main work, so `db-tx-end` ends both;
+see [Transaction end and isolation](transactions.md). myrest injects no JWT
+claims and no headers as session variables for the hook. When `db-pre-request`
+is unset, myrest calls nothing.
 
 ## Not supported
 

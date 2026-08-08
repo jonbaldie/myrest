@@ -31,3 +31,7 @@ When a procedure returns a SELECT result set, that row set is the HTTP body
 instead of the OUT/INOUT object. See [RPC row-set results](rpc-row-set.md).
 This ticket keeps one stable procedure body for the non-tabular case so clients
 do not need a second URL family.
+
+Each `/rpc` call runs as one request transaction ended by `db-tx-end` (and
+`Prefer: tx=` when that mode allows override). See
+[Transaction end and isolation](transactions.md).
