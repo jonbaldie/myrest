@@ -8,9 +8,9 @@ The service covers the locked parent **capability areas**: Bearer JWT auth with
 (including aggregates when enabled), **embed** over declared foreign keys,
 ordinary writes (including updatable views), `/rpc` for functions and
 procedures, the named representation and Prefer values, the error envelope, and
-the config surface. Every labelled behaviour has one **parity label**. The
-scenario index and derived **gap list** live in
-[Verification](docs/verification.md).
+the config surface. Every labelled behaviour has one **parity label**. Partial
+match and not-supported edges stay in the derived **gap list**; see
+[Verification](docs/verification.md) for that list and the scenario index.
 
 ## Requirements
 
