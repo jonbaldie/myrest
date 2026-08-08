@@ -12,13 +12,6 @@ func (p *Pool) SetTxEnd(txEnd config.TxEnd) {
 	p.txEnd = txEnd
 }
 
-func (p *Pool) resolvedTxEnd() config.TxEnd {
-	if p.txEnd == "" {
-		return config.TxEndCommit
-	}
-	return p.txEnd
-}
-
 // withRequestTx runs pre-request and work inside one READ COMMITTED
 // transaction, then commits or rolls back per db-tx-end and Prefer: tx=.
 func (p *Pool) withRequestTx(
@@ -40,7 +33,7 @@ func (p *Pool) withRequestTx(
 		if err := work(ctx, tx); err != nil {
 			return err
 		}
-		commit, _ := config.DecideTxEnd(p.resolvedTxEnd(), preferTx)
+		commit, _ := config.DecideTxEnd(p.txEnd, preferTx)
 		if !commit {
 			return nil
 		}

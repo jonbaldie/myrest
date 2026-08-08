@@ -9,9 +9,6 @@ const (
 // DecideTxEnd chooses commit or rollback for one request transaction.
 // applied is true only when a Prefer: tx= value changed the default end.
 func DecideTxEnd(txEnd TxEnd, preferTx string) (commit bool, applied bool) {
-	if txEnd == "" {
-		txEnd = TxEndCommit
-	}
 	switch txEnd {
 	case TxEndRollback:
 		return false, false
@@ -20,7 +17,7 @@ func DecideTxEnd(txEnd TxEnd, preferTx string) (commit bool, applied bool) {
 	case TxEndRollbackAllowOverride:
 		return decideAllowOverride(false, preferTx)
 	default:
-		// TxEndCommit and any unknown value: always commit; Prefer: tx= is off.
+		// TxEndCommit, empty, and any unknown value: always commit; Prefer: tx= is off.
 		return true, false
 	}
 }

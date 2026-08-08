@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/jonbaldie/myrest/internal/apitest"
+	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/rows"
@@ -565,6 +566,39 @@ func TestPreferReturnMinimalPost(t *testing.T) {
 	}
 	if got := response.Header.Get("Preference-Applied"); got != "return=minimal" {
 		t.Fatalf("Preference-Applied = %q", got)
+	}
+}
+
+func TestPreferTxIsPassedToWriter(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{}
+	resolved := settings()
+	resolved.DB.URI = "mysql://authenticator:secret@127.0.0.1:3306/"
+	resolved.DB.TxEnd = config.TxEndCommitAllowOverride
+	request, err := http.NewRequest(
+		http.MethodPost,
+		serveWrite(t, &reader{}, sink, httpapi.Options{Settings: resolved}).URL()+"/items",
+		strings.NewReader(`{"name":"gamma"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "tx=rollback, return=minimal")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusCreated)
+	}
+	if sink.options.PreferTx != "rollback" {
+		t.Fatalf("writer PreferTx = %q, want rollback", sink.options.PreferTx)
+	}
+	if got := response.Header.Get("Preference-Applied"); !strings.Contains(got, "tx=rollback") {
+		t.Fatalf("Preference-Applied = %q, want tx=rollback", got)
 	}
 }
 
