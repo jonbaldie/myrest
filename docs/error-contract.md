@@ -52,6 +52,10 @@ declared foreign-key path exists, and `PGRST201` when more than one
 relationship applies and the request does not disambiguate. A computed
 relationship embed is a MySQL gap and uses `MYREST001`. See [Embed](embed.md).
 
+Aggregate gate and spread refusals also use `PGRST*` codes: `PGRST123` when
+`db-aggregates-enabled` is off, and `PGRST127` when an aggregate sits inside a
+one-to-many or many-to-many spread embed. See [Aggregates](aggregates.md).
+
 `GET /rpc` on a routine that is not read-safe under MySQL `SQL_DATA_ACCESS`
 also uses `MYREST001`. See [GET /rpc read-safe routines](rpc-get.md). Unusual
 `POST /rpc` whole-body argument modes (single unnamed `json`/`jsonb`/`bytea`/

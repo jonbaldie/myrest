@@ -192,14 +192,16 @@ type readAnswer struct {
 type multiReader struct {
 	answers []readAnswer
 	calls   int
+	seen    []readquery.Query
 }
 
 func (r *multiReader) Read(
 	_ context.Context,
 	_ schemacache.Role,
 	_ schemacache.Table,
-	_ readquery.Query,
+	query readquery.Query,
 ) (readquery.Result, error) {
+	r.seen = append(r.seen, query)
 	if r.calls >= len(r.answers) {
 		return readquery.Result{Rows: []rows.Row{}}, nil
 	}

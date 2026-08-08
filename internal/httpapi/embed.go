@@ -39,6 +39,9 @@ func (s *Service) planEmbeds(
 		if err != nil {
 			return nil, err
 		}
+		if err := checkSpreadAggregate(ask, rel); err != nil {
+			return nil, err
+		}
 		target, ok := s.cache.Resource(role, rel.Target)
 		if !ok {
 			return nil, schemacache.RelationshipMissing{Origin: origin, Target: ask.Resource}
@@ -52,6 +55,28 @@ func (s *Service) planEmbeds(
 		})
 	}
 	return planned, nil
+}
+
+// spreadAggregateRefused is the parity-target refuse for aggregates inside a
+// to-many or many-to-many spread embed.
+type spreadAggregateRefused struct{}
+
+func (spreadAggregateRefused) Error() string { return msgSpreadAggregate }
+
+// spreadNotSupported is a spread embed shape this ticket does not implement.
+type spreadNotSupported struct{}
+
+func (spreadNotSupported) Error() string { return msgSpreadNotSupported }
+
+func checkSpreadAggregate(ask readquery.Embed, rel schemacache.Relationship) error {
+	if !ask.Spread {
+		return nil
+	}
+	if readquery.EmbedHasAggregates(ask) &&
+		(rel.Cardinality == schemacache.OneToMany || rel.Cardinality == schemacache.ManyToMany) {
+		return spreadAggregateRefused{}
+	}
+	return spreadNotSupported{}
 }
 
 func writeEmbedPlanFailure(writer http.ResponseWriter, err error) bool {
@@ -75,6 +100,23 @@ func writeEmbedPlanFailure(writer http.ResponseWriter, err error) bool {
 			ambiguousDetails(ambiguous),
 			ambiguousHint(ambiguous),
 		)
+		return true
+	}
+	var spreadAgg spreadAggregateRefused
+	if errors.As(err, &spreadAgg) {
+		writeFailureExtra(
+			writer,
+			http.StatusBadRequest,
+			codeSpreadAggregate,
+			msgSpreadAggregate,
+			detailsSpreadAggregate,
+			nil,
+		)
+		return true
+	}
+	var spread spreadNotSupported
+	if errors.As(err, &spread) {
+		writeUnsupportedFeature(writer, spread.Error())
 		return true
 	}
 	return false
@@ -147,6 +189,9 @@ func originColumnsNeeded(plan []plannedEmbed) map[string]bool {
 func selectedNames(columns []readquery.Column) map[string]bool {
 	have := map[string]bool{}
 	for _, column := range columns {
+		if column.Agg != "" || column.Name == "" {
+			continue
+		}
 		have[column.Name] = true
 	}
 	return have
@@ -414,10 +459,7 @@ func ensureColumns(table schemacache.Table, query readquery.Query, names []strin
 	if len(query.Columns) == 0 && query.SelectAll {
 		return query, nil
 	}
-	have := map[string]bool{}
-	for _, column := range query.Columns {
-		have[column.Name] = true
-	}
+	have := selectedNames(query.Columns)
 	var injected []string
 	for _, name := range names {
 		if have[name] {
@@ -449,11 +491,7 @@ func projectEmbedRow(row rows.Row, ask readquery.Embed) rows.Row {
 	}
 	keep := map[string]bool{}
 	for _, column := range ask.Columns {
-		name := column.Name
-		if column.Alias != "" {
-			name = column.Alias
-		}
-		keep[name] = true
+		keep[column.ResultName()] = true
 	}
 	for _, nested := range ask.Embeds {
 		keep[nested.Key()] = true

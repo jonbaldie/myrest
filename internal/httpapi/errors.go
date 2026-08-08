@@ -14,6 +14,11 @@ const (
 	// codeNoTable is the code of the parity target for a table the schema
 	// cache does not hold.
 	codeNoTable = "PGRST205"
+	// codeAggregatesDisabled is the parity-target code when aggregates are off.
+	codeAggregatesDisabled = "PGRST123"
+	// codeSpreadAggregate is the parity-target code for aggregates inside a
+	// to-many or many-to-many spread embed.
+	codeSpreadAggregate = "PGRST127"
 	// codeMySQLDatabaseFailure says that MySQL returned an error for which
 	// myrest cannot claim PostgreSQL semantics.
 	codeMySQLDatabaseFailure = "MYREST002"
@@ -23,6 +28,13 @@ const (
 	// codePostgresOnlyFeature says that the request needs PostgREST behavior
 	// that myrest cannot provide over MySQL.
 	codePostgresOnlyFeature = "MYREST001"
+)
+
+const (
+	msgAggregatesDisabled = "Use of aggregate functions is not allowed"
+	msgSpreadAggregate    = "Feature not implemented"
+	detailsSpreadAggregate = "Aggregates are not implemented for one-to-many or many-to-many spreads."
+	msgSpreadNotSupported = "PostgREST spread embeds are not available in this aggregate ticket"
 )
 
 // failure is the error envelope of the parity target. Every field is written,

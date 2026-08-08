@@ -66,7 +66,7 @@ func callFunction(
 	if err := row.Scan(&value); err != nil {
 		return nil, err
 	}
-	return jsonValue(value), nil
+	return jsonValue(value, nil), nil
 }
 
 type procedureCall struct {
@@ -159,7 +159,7 @@ func readProcedureOutputs(
 		if err := conn.QueryRowContext(ctx, "SELECT "+outVars[i]).Scan(&value); err != nil {
 			return rows.Row{}, err
 		}
-		values[i] = jsonValue(value)
+		values[i] = jsonValue(value, nil)
 	}
 	return rows.Row{Columns: append([]string(nil), outNames...), Values: values}, nil
 }

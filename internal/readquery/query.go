@@ -3,7 +3,11 @@
 // page, and exact count. HTTP and SQL stay outside this package.
 package readquery
 
-import "github.com/jonbaldie/myrest/internal/rows"
+import (
+	"strconv"
+
+	"github.com/jonbaldie/myrest/internal/rows"
+)
 
 // Query is one ordinary read of a resource.
 type Query struct {
@@ -45,11 +49,51 @@ func (e ColumnNotFound) Error() string {
 	return "column not found: " + e.Name
 }
 
-// Column is one selected column, optionally renamed, optionally a JSON path.
+// Aggregate is one PostgREST aggregate function on a select column.
+type Aggregate string
+
+// Aggregate functions claimed as full match when db-aggregates-enabled is on.
+const (
+	AggAvg   Aggregate = "avg"
+	AggCount Aggregate = "count"
+	AggMax   Aggregate = "max"
+	AggMin   Aggregate = "min"
+	AggSum   Aggregate = "sum"
+)
+
+// FullMatchAggregates lists every aggregate form this ticket claims as a full
+// match when the operator turns aggregates on.
+var FullMatchAggregates = []Aggregate{
+	AggAvg, AggCount, AggMax, AggMin, AggSum,
+}
+
+// Column is one selected column, optionally renamed, optionally a JSON path,
+// optionally reduced by an aggregate function.
 type Column struct {
 	Name  string
 	Alias string
 	Path  *JSONPath
+	// Agg is the aggregate applied to the column. Empty means no aggregate.
+	// Bare count() keeps Name empty.
+	Agg Aggregate
+}
+
+// ResultName is the JSON key of the column in the response.
+func (c Column) ResultName() string {
+	if c.Alias != "" {
+		return c.Alias
+	}
+	if c.Agg != "" {
+		return string(c.Agg)
+	}
+	if c.Path != nil && len(c.Path.Steps) > 0 {
+		last := c.Path.Steps[len(c.Path.Steps)-1]
+		if last.IsIndex {
+			return strconv.Itoa(last.Index)
+		}
+		return last.Key
+	}
+	return c.Name
 }
 
 // Embed is one nested resource asked for in select.
@@ -62,6 +106,8 @@ type Embed struct {
 	// Hint picks one relationship when more than one applies (!fk_name or
 	// !column).
 	Hint string
+	// Spread is true when the client used the ...resource embed form.
+	Spread bool
 	// Columns of the nested resource. Empty means every column.
 	Columns []Column
 	// Embeds are nested embeds inside this one.

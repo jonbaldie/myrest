@@ -41,3 +41,7 @@ Ticket [#28](https://github.com/jonbaldie/myrest/issues/28) owns text-case and
 JSON path subsets, and the refusals for FTS, array/range operators, and
 `count=planned` / `count=estimated`. See
 [Read parity boundaries](read-parity-boundaries.md).
+
+Ticket [#31](https://github.com/jonbaldie/myrest/issues/31) owns aggregates
+(`sum` / `count` / `avg` / `min` / `max`) behind `db-aggregates-enabled`. See
+[Aggregates](aggregates.md).

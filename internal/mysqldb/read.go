@@ -3,7 +3,9 @@ package mysqldb
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/jonbaldie/myrest/internal/readquery"
@@ -80,6 +82,7 @@ func selectRows(
 	return read, result.Err()
 }
 
+
 // selectStatement builds the unbounded read of one table. Kept for unit tests
 // of identifier quoting.
 func selectStatement(table schemacache.Table, names []string) string {
@@ -113,19 +116,60 @@ func scanValues(result *sql.Rows, count int) ([]any, error) {
 	if err := result.Scan(targets...); err != nil {
 		return nil, err
 	}
+	types, err := result.ColumnTypes()
+	if err != nil {
+		return nil, err
+	}
 	for i, value := range scanned {
-		scanned[i] = jsonValue(value)
+		var columnType *sql.ColumnType
+		if i < len(types) {
+			columnType = types[i]
+		}
+		scanned[i] = jsonValue(value, columnType)
 	}
 	return scanned, nil
 }
 
-// jsonValue turns a MySQL text value into a JSON string. The driver gives text
-// and blob columns as bytes, which JSON would otherwise write as base64.
-func jsonValue(value any) any {
-	if text, isBytes := value.([]byte); isBytes {
-		return string(text)
+// jsonValue turns a MySQL driver value into a JSON-ready value. Text and blob
+// columns arrive as bytes (JSON would otherwise write base64). Decimal and
+// floating types from aggregates also arrive as bytes and become JSON numbers.
+func jsonValue(value any, columnType *sql.ColumnType) any {
+	text, isBytes := value.([]byte)
+	if !isBytes {
+		return value
 	}
-	return value
+	if columnType != nil && isNumericDBType(columnType.DatabaseTypeName()) {
+		return numericJSON(text)
+	}
+	return string(text)
+}
+
+func isNumericDBType(name string) bool {
+	switch {
+	case strings.EqualFold(name, "DECIMAL"),
+		strings.EqualFold(name, "NUMERIC"),
+		strings.EqualFold(name, "NEWDECIMAL"),
+		strings.EqualFold(name, "FLOAT"),
+		strings.EqualFold(name, "DOUBLE"),
+		strings.EqualFold(name, "REAL"):
+		return true
+	default:
+		return false
+	}
+}
+
+func numericJSON(text []byte) any {
+	raw := string(text)
+	if raw == "" {
+		return nil
+	}
+	if _, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		return json.Number(raw)
+	}
+	if _, err := strconv.ParseFloat(raw, 64); err == nil {
+		return json.Number(raw)
+	}
+	return raw
 }
 
 // quoteIdentifier writes a MySQL identifier in back quotes.
