@@ -80,14 +80,16 @@ func Listen(options Options) (*Service, error) {
 		log:      logger,
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", writeService)
+	mux.HandleFunc("GET /{$}", service.writeRoot)
 	mux.HandleFunc("GET /{table}", service.readTable)
 	mux.HandleFunc("HEAD /{table}", service.readTable)
 	mux.HandleFunc("POST /{table}", service.insertTable)
 	mux.HandleFunc("PATCH /{table}", service.patchTable)
 	mux.HandleFunc("DELETE /{table}", service.deleteTable)
+	mux.HandleFunc("OPTIONS /{table}", service.optionsTable)
 	mux.HandleFunc("POST /rpc/{name}", service.callRoutine)
 	mux.HandleFunc("GET /rpc/{name}", service.getRoutine)
+	mux.HandleFunc("OPTIONS /rpc/{name}", service.optionsRoutine)
 	mux.HandleFunc("/", writeNoHandler)
 	service.server = &http.Server{
 		Handler: withCORS(options.Settings.Server.CORSAllowedOrigins, mux),
@@ -108,10 +110,4 @@ func (s *Service) URL() string {
 // Close stops the service listener.
 func (s *Service) Close() error {
 	return s.server.Close()
-}
-
-// writeService answers the root path. The OpenAPI output of the parity target
-// comes with the discovery ticket.
-func writeService(writer http.ResponseWriter, _ *http.Request) {
-	writeJSON(writer, http.StatusOK, map[string]string{"service": "myrest"})
 }

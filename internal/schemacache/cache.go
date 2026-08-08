@@ -379,6 +379,17 @@ func (c *Cache) TableWithPrivilege(role Role, id TableID, privilege string) (Tab
 	return table, true
 }
 
+// TableIDs lists every table the cache holds, in no special order.
+func TableIDs(c *Cache) []TableID {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	ids := make([]TableID, 0, len(c.tables))
+	for id := range c.tables {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 // Views are the views the catalog holds for later tickets. This ticket does
 // not expose them as HTTP resources.
 func (c *Cache) Views() []TableID {
