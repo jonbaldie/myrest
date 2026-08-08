@@ -39,6 +39,13 @@ refuses with `PGRST123` and the message
 
 Spread embeds beyond that refuse path are not part of this ticket.
 
+## Full match rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| Aggregate forms, automatic grouping, and disabled gate | full match | read-010, read-011 |
+| Aggregate with an allowed embed relationship | full match | read-012 |
+
 ## Gap list rows
 
 | Item | Parity label | Scenarios |

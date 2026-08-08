@@ -20,10 +20,11 @@ func authScenarios() ScenarioIndex {
 		{ID: "auth-001", Area: "auth", Label: FullMatch, Outcome: Success},
 		{ID: "auth-002", Area: "auth", Label: FullMatch, Outcome: Success},
 		{ID: "auth-003", Area: "auth", Label: FullMatch, Outcome: Refuse},
-		{ID: "auth-004", Area: "auth", Label: PartialMatch, Outcome: Observation},
+		{ID: "auth-004", Area: "auth", Label: PartialMatch, Outcome: Success},
 		{ID: "auth-005", Area: "auth", Label: NotSupported, Outcome: Refuse},
 		{ID: "auth-006", Area: "auth", Label: NotSupported, Outcome: Refuse},
 		{ID: "auth-007", Area: "auth", Label: NotSupported, Outcome: Refuse},
+		{ID: "auth-008", Area: "auth", Label: PartialMatch, Outcome: Refuse},
 	}
 }
 
@@ -36,7 +37,7 @@ func cacheAndConfigScenarios() ScenarioIndex {
 		{ID: "cache-005", Area: "schema-cache", Label: NotSupported, Outcome: Refuse},
 		{ID: "cfg-001", Area: "config", Label: FullMatch, Outcome: Refuse},
 		{ID: "cfg-002", Area: "config", Label: FullMatch, Outcome: Success},
-		{ID: "cfg-003", Area: "config", Label: NotSupported, Outcome: Observation},
+		{ID: "cfg-003", Area: "config", Label: NotSupported, Outcome: Refuse},
 	}
 }
 
@@ -103,6 +104,9 @@ func representationScenarios() ScenarioIndex {
 		{ID: "repr-005", Area: "representation", Label: FullMatch, Outcome: Success},
 		{ID: "repr-006", Area: "representation", Label: FullMatch, Outcome: Success},
 		{ID: "repr-007", Area: "representation", Label: NotSupported, Outcome: Refuse},
+		{ID: "repr-008", Area: "representation", Label: FullMatch, Outcome: Refuse},
+		{ID: "repr-009", Area: "representation", Label: NotSupported, Outcome: Refuse},
+		{ID: "repr-010", Area: "representation", Label: NotSupported, Outcome: Refuse},
 		{ID: "prefer-001", Area: "representation", Label: NotSupported, Outcome: Refuse},
 	}
 }
@@ -113,14 +117,35 @@ func errorDiscoveryTxScenarios() ScenarioIndex {
 		{ID: "err-002", Area: "errors", Label: FullMatch, Outcome: Refuse},
 		{ID: "err-003", Area: "errors", Label: FullMatch, Outcome: Refuse},
 		{ID: "err-004", Area: "errors", Label: PartialMatch, Outcome: Success},
-		{ID: "err-005", Area: "errors", Label: PartialMatch, Outcome: Fallback},
-		{ID: "discovery-001", Area: "discovery", Label: PartialMatch, Outcome: Observation},
-		{ID: "discovery-002", Area: "discovery", Label: PartialMatch, Outcome: Observation},
-		{ID: "discovery-003", Area: "discovery", Label: PartialMatch, Outcome: Observation},
-		{ID: "discovery-004", Area: "discovery", Label: NotSupported, Outcome: Observation},
+		{ID: "err-005", Area: "errors", Label: PartialMatch, Outcome: Refuse},
+		{ID: "discovery-001", Area: "discovery", Label: PartialMatch, Outcome: Success},
+		{ID: "discovery-002", Area: "discovery", Label: PartialMatch, Outcome: Success},
+		{ID: "discovery-003", Area: "discovery", Label: PartialMatch, Outcome: Success},
+		{ID: "discovery-004", Area: "discovery", Label: NotSupported, Outcome: Refuse},
+		{ID: "discovery-005", Area: "discovery", Label: PartialMatch, Outcome: Refuse},
+		{ID: "discovery-006", Area: "discovery", Label: PartialMatch, Outcome: Refuse},
+		{ID: "discovery-007", Area: "discovery", Label: PartialMatch, Outcome: Refuse},
+		{ID: "discovery-008", Area: "discovery", Label: FullMatch, Outcome: Refuse},
+		{ID: "discovery-009", Area: "discovery", Label: FullMatch, Outcome: Success},
+		{ID: "discovery-010", Area: "discovery", Label: FullMatch, Outcome: Success},
+		{ID: "discovery-011", Area: "discovery", Label: FullMatch, Outcome: Success},
+		{ID: "discovery-012", Area: "discovery", Label: FullMatch, Outcome: Refuse},
+		{ID: "discovery-013", Area: "discovery", Label: FullMatch, Outcome: Success},
+		{ID: "discovery-014", Area: "discovery", Label: FullMatch, Outcome: Success},
+		{ID: "discovery-015", Area: "discovery", Label: FullMatch, Outcome: Success},
+		{ID: "discovery-016", Area: "discovery", Label: FullMatch, Outcome: Success},
+		{ID: "discovery-017", Area: "discovery", Label: FullMatch, Outcome: Success},
+		{ID: "discovery-018", Area: "discovery", Label: FullMatch, Outcome: Success},
+		{ID: "discovery-019", Area: "discovery", Label: FullMatch, Outcome: Success},
+		{ID: "cors-001", Area: "cors-proxy", Label: FullMatch, Outcome: Success},
+		{ID: "cors-002", Area: "cors-proxy", Label: FullMatch, Outcome: Success},
+		{ID: "cors-003", Area: "cors-proxy", Label: FullMatch, Outcome: Success},
+		{ID: "cors-004", Area: "cors-proxy", Label: FullMatch, Outcome: Success},
+		{ID: "cors-005", Area: "cors-proxy", Label: FullMatch, Outcome: Success},
+		{ID: "cors-006", Area: "cors-proxy", Label: FullMatch, Outcome: Success},
 		{ID: "tx-001", Area: "transactions", Label: FullMatch, Outcome: Success},
-		{ID: "tx-002", Area: "transactions", Label: NotSupported, Outcome: Observation},
-		{ID: "tx-003", Area: "transactions", Label: NotSupported, Outcome: Observation},
+		{ID: "tx-002", Area: "transactions", Label: NotSupported, Outcome: Refuse},
+		{ID: "tx-003", Area: "transactions", Label: NotSupported, Outcome: Refuse},
 	}
 }
 

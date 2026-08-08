@@ -15,8 +15,8 @@ cross-area smoke set. Capability-area chapters stay the source of truth for
 - Prove parity at the HTTP API boundary with rewritten **normative scenarios**.
 - Coverage follows the **parity label**:
   - **full match** — success path; claimed error path only when the chapter names one
-  - **partial match** — one in-subset success and one outside-subset refuse (or an observational partial match when the chapter names only an observation)
-  - **not supported** — one stable refuse or documented non-offer
+  - **partial match** — one in-subset success and one outside-subset refuse
+  - **not supported** — one stable refuse and no success path
 - Scenario bodies live in capability-area chapters and in the HTTP acceptance
   tests under `test/acceptance`. This page indexes them by stable `area-nnn` id.
 
@@ -52,10 +52,11 @@ acceptance package). `make test` runs that package and the rest of the suite.
 | `auth-001` | auth | full match | success |
 | `auth-002` | auth | full match | success |
 | `auth-003` | auth | full match | refuse |
-| `auth-004` | auth | partial match | observation |
+| `auth-004` | auth | partial match | success |
 | `auth-005` | auth | not supported | refuse |
 | `auth-006` | auth | not supported | refuse |
 | `auth-007` | auth | not supported | refuse |
+| `auth-008` | auth | partial match | refuse |
 | `cache-001` | schema-cache | full match | success |
 | `cache-002` | schema-cache | full match | refuse |
 | `cache-003` | schema-cache | full match | success |
@@ -63,7 +64,7 @@ acceptance package). `make test` runs that package and the rest of the suite.
 | `cache-005` | schema-cache | not supported | refuse |
 | `cfg-001` | config | full match | refuse |
 | `cfg-002` | config | full match | success |
-| `cfg-003` | config | not supported | observation |
+| `cfg-003` | config | not supported | refuse |
 | `read-001` | read | full match | success |
 | `read-002` | read | full match | success |
 | `read-003` | read | partial match | success |
@@ -110,19 +111,43 @@ acceptance package). `make test` runs that package and the rest of the suite.
 | `repr-005` | representation | full match | success |
 | `repr-006` | representation | full match | success |
 | `repr-007` | representation | not supported | refuse |
+| `repr-008` | representation | full match | refuse |
+| `repr-009` | representation | not supported | refuse |
+| `repr-010` | representation | not supported | refuse |
 | `prefer-001` | representation | not supported | refuse |
 | `err-001` | errors | full match | refuse |
 | `err-002` | errors | full match | refuse |
 | `err-003` | errors | full match | refuse |
 | `err-004` | errors | partial match | success |
-| `err-005` | errors | partial match | fallback |
-| `discovery-001` | discovery | partial match | observation |
-| `discovery-002` | discovery | partial match | observation |
-| `discovery-003` | discovery | partial match | observation |
-| `discovery-004` | discovery | not supported | observation |
+| `err-005` | errors | partial match | refuse |
+| `discovery-001` | discovery | partial match | success |
+| `discovery-002` | discovery | partial match | success |
+| `discovery-003` | discovery | partial match | success |
+| `discovery-004` | discovery | not supported | refuse |
+| `discovery-005` | discovery | partial match | refuse |
+| `discovery-006` | discovery | partial match | refuse |
+| `discovery-007` | discovery | partial match | refuse |
+| `discovery-008` | discovery | full match | refuse |
+| `discovery-009` | discovery | full match | success |
+| `discovery-010` | discovery | full match | success |
+| `discovery-011` | discovery | full match | success |
+| `discovery-012` | discovery | full match | refuse |
+| `discovery-013` | discovery | full match | success |
+| `discovery-014` | discovery | full match | success |
+| `discovery-015` | discovery | full match | success |
+| `discovery-016` | discovery | full match | success |
+| `discovery-017` | discovery | full match | success |
+| `discovery-018` | discovery | full match | success |
+| `discovery-019` | discovery | full match | success |
+| `cors-001` | cors-proxy | full match | success |
+| `cors-002` | cors-proxy | full match | success |
+| `cors-003` | cors-proxy | full match | success |
+| `cors-004` | cors-proxy | full match | success |
+| `cors-005` | cors-proxy | full match | success |
+| `cors-006` | cors-proxy | full match | success |
 | `tx-001` | transactions | full match | success |
-| `tx-002` | transactions | not supported | observation |
-| `tx-003` | transactions | not supported | observation |
+| `tx-002` | transactions | not supported | refuse |
+| `tx-003` | transactions | not supported | refuse |
 | `smoke-001` | verification | full match | success |
 | `smoke-002` | verification | full match | success |
 | `smoke-003` | verification | partial match | success |
@@ -141,14 +166,15 @@ re-derive; `go test ./internal/verification` fails when this table drifts.
 | Chapter | Item | Parity label | Scenarios |
 | --- | --- | --- | --- |
 | aggregates.md | Aggregate inside a one-to-many or many-to-many spread | not supported | read-013 |
-| auth.md | Role impersonation identity (`CURRENT_USER`) | partial match | auth-004 |
+| auth.md | Role impersonation identity (`CURRENT_USER`) | partial match | auth-004, auth-008 |
 | auth.md | Postgres row-level security | not supported | auth-005 |
 | auth.md | Request GUCs / `request.jwt.claims` in SQL | not supported | auth-006 |
 | auth.md | Non-Bearer credential schemes | not supported | auth-007 |
 | config.md | Config drop-list knobs (in-database config, NOTIFY channel, search_path extras, GUC hoist, plan-media gate, admin listen) | not supported | cfg-003 |
-| discovery.md | OPTIONS method source (grants, not object-kind / view triggers) | partial match | discovery-001 |
-| discovery.md | OpenAPI `info` from schema comments | partial match | discovery-002 |
-| discovery.md | OpenAPI path verbs from grants vs insertable flags | partial match | discovery-003 |
+| config.md | Live config reload | not supported | cfg-003 |
+| discovery.md | OPTIONS method source (grants, not object-kind / view triggers) | partial match | discovery-001, discovery-005 |
+| discovery.md | OpenAPI `info` from schema comments | partial match | discovery-002, discovery-006 |
+| discovery.md | OpenAPI path verbs from grants vs insertable flags | partial match | discovery-003, discovery-007 |
 | discovery.md | OpenAPI parameters, definitions, consumes/produces matrix, examples, externalDocs | not supported | discovery-004 |
 | embed.md | Embed with no declared foreign-key path | not supported | embed-003 |
 | embed.md | Computed relationship embed | not supported | embed-004 |
@@ -157,6 +183,8 @@ re-derive; `go test ./internal/verification` fails when this table drifts.
 | media-types-and-prefer.md | Plan media types | not supported | repr-007 |
 | media-types-and-prefer.md | Custom media type handlers | not supported | repr-007 |
 | media-types-and-prefer.md | Unclaimed `Accept` values | not supported | repr-007 |
+| media-types-and-prefer.md | `text/csv` request body | not supported | repr-009 |
+| media-types-and-prefer.md | `application/x-www-form-urlencoded` request body | not supported | repr-010 |
 | media-types-and-prefer.md | Prefer `timezone` | not supported | prefer-001 |
 | read-parity-boundaries.md | Text-case subset | partial match | read-003, read-004 |
 | read-parity-boundaries.md | JSON path subset | partial match | read-005, read-006 |

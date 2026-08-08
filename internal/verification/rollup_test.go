@@ -23,13 +23,23 @@ func TestDerivedGapListMatchesVerificationDoc(t *testing.T) {
 	}
 
 	index := verification.NormativeScenarios()
+	if err := index.Validate(); err != nil {
+		t.Fatal(err)
+	}
 	if err := index.RequireSmokeSet(); err != nil {
 		t.Fatal(err)
 	}
 	if err := verification.CheckCoverage(gaps, index); err != nil {
 		t.Fatalf("gap coverage: %v", err)
 	}
-	if err := verification.CheckBehaviourCoverage(verification.FullMatchBehaviours(), index); err != nil {
+	fullMatches, err := verification.DeriveFullMatchBehaviours(chapters)
+	if err != nil {
+		t.Fatalf("derive full matches: %v", err)
+	}
+	if len(fullMatches) == 0 {
+		t.Fatal("derived full match rows are empty")
+	}
+	if err := verification.CheckBehaviourCoverage(fullMatches, index); err != nil {
 		t.Fatalf("full match coverage: %v", err)
 	}
 

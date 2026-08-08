@@ -49,6 +49,12 @@ error) and is not applied, as the **parity target** does.
 | Routine-level isolation override (`SET default_transaction_isolation` on a function) | **not supported** | myrest does not hoist Postgres function GUCs onto the request transaction. |
 | Transaction-scoped request GUCs / `request.jwt.claims` | **not supported** | Already refused; see [Authentication](auth.md). |
 
+## Full match rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| Write and RPC units, db-tx-end modes, and default isolation | full match | tx-001 |
+
 ## Gap list rows
 
 | Item | Parity label | Scenarios |

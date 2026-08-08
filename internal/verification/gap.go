@@ -37,6 +37,42 @@ func ParseGapRows(markdown string) ([]GapRow, error) {
 	return rowsFromGapTable(table)
 }
 
+// ParseFullMatchRows reads the Full match rows table from one capability chapter.
+func ParseFullMatchRows(markdown string) ([]Behaviour, error) {
+	section, ok := sectionAfterHeading(markdown, "## Full match rows")
+	if !ok {
+		return nil, nil
+	}
+	table, ok := firstMarkdownTable(section)
+	if !ok {
+		return nil, nil
+	}
+	headers := splitRow(table[0])
+	itemCol, labelCol, scenarioCol, err := gapColumns(headers)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]Behaviour, 0, len(table)-2)
+	for _, line := range table[2:] {
+		cells := splitRow(line)
+		if len(cells) <= itemCol || len(cells) <= labelCol {
+			continue
+		}
+		label := ParityLabel(strings.Trim(strings.TrimSpace(cells[labelCol]), "*"))
+		if label != FullMatch {
+			return nil, fmt.Errorf("full match row has parity label %q", cells[labelCol])
+		}
+		row := Behaviour{Item: strings.TrimSpace(cells[itemCol]), Label: label}
+		if scenarioCol >= 0 && scenarioCol < len(cells) {
+			row.Scenarios = splitScenarios(cells[scenarioCol])
+		}
+		if row.Item != "" {
+			rows = append(rows, row)
+		}
+	}
+	return rows, nil
+}
+
 func rowsFromGapTable(table []string) ([]GapRow, error) {
 	headers := splitRow(table[0])
 	itemCol, labelCol, scenarioCol, err := gapColumns(headers)
@@ -98,6 +134,25 @@ func DeriveGapList(chapters map[string]string) ([]GapRow, error) {
 		}
 	}
 	return gaps, nil
+}
+
+// DeriveFullMatchBehaviours merges Full match rows from capability chapters.
+func DeriveFullMatchBehaviours(chapters map[string]string) ([]Behaviour, error) {
+	names := make([]string, 0, len(chapters))
+	for name := range chapters {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	behaviours := make([]Behaviour, 0)
+	for _, name := range names {
+		rows, err := ParseFullMatchRows(chapters[name])
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		behaviours = append(behaviours, rows...)
+	}
+	return behaviours, nil
 }
 
 // FormatGapListMarkdown writes the derived gap list as a markdown table.

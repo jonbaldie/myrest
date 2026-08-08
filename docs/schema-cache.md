@@ -8,6 +8,13 @@ myrest builds a **schema cache** from MySQL catalog data for the databases in
 
 See [ADR 0003](adr/0003-schema-cache-and-resource-exposure.md).
 
+## Full match rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| Privilege-filtered resource exposure | full match | cache-001, cache-002 |
+| Explicit schema cache reload | full match | cache-003 |
+
 ## Gap list rows
 
 | Item | Parity label | Scenarios |

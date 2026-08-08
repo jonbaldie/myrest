@@ -34,6 +34,13 @@ is not supported. A computed relationship is not supported.
 
 Aggregate plus embed is owned by the Read area. See [Aggregates](aggregates.md).
 
+## Full match rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| Nested select over a declared foreign key | full match | embed-001 |
+| Nested filter, order, and page | full match | embed-002 |
+
 ## Gap list rows
 
 | Item | Parity label | Scenarios |

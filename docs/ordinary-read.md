@@ -45,3 +45,10 @@ JSON path subsets, and the refusals for FTS, array/range operators, and
 Ticket [#31](https://github.com/jonbaldie/myrest/issues/31) owns aggregates
 (`sum` / `count` / `avg` / `min` / `max`) behind `db-aggregates-enabled`. See
 [Aggregates](aggregates.md).
+
+## Full match rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| Ordinary read select, filter, order, page, and HEAD | full match | read-001 |
+| Exact count | full match | read-002 |

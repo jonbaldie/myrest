@@ -54,6 +54,12 @@ Argument names stay out of the filter surface:
 When the result is not a row set, any of filter, order, pagination, or embed
 refuses with HTTP 400, the error envelope, and code `MYREST001`.
 
+## Full match rows
+
+| Item | Parity label | Scenarios |
+| --- | --- | --- |
+| Filter, order, page, and embed on row-set RPC results | full match | rpc-005 |
+
 ## Gap list rows
 
 | Item | Parity label | Scenarios |

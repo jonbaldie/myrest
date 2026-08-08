@@ -72,7 +72,7 @@ func TestAcceptSingularObjectReturnsOneObject(t *testing.T) {
 	}
 }
 
-// repr-005: singular Accept refuses when the result is not exactly one row.
+// repr-008: singular Accept refuses when the result is not exactly one row.
 func TestAcceptSingularObjectRefusesWrongCardinality(t *testing.T) {
 	t.Parallel()
 
@@ -185,6 +185,34 @@ func TestUnclaimedAcceptMediaTypesRefuse(t *testing.T) {
 		if !strings.Contains(failure.Message, accept) {
 			t.Fatalf("Accept %q: message = %q", accept, failure.Message)
 		}
+	}
+}
+
+// repr-009 and repr-010: CSV and form write bodies refuse at the HTTP seam.
+func TestUnclaimedWriteBodyMediaTypesRefuse(t *testing.T) {
+	t.Parallel()
+
+	service := serveWrite(t, &reader{}, &writer{})
+	for _, contentType := range []string{"text/csv", "application/x-www-form-urlencoded"} {
+		request, err := http.NewRequest(
+			http.MethodPost,
+			service.URL()+"/items",
+			strings.NewReader("name,alpha"),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Content-Type", contentType)
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload, err := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		apitest.AssertEnvelope(t, response, payload, http.StatusBadRequest, "PGRST102")
 	}
 }
 
