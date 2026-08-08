@@ -54,20 +54,20 @@ claim.
 
 ## Full match rows
 
-| Item | Parity label | Scenarios |
-| --- | --- | --- |
-| Hidden resource refusal | full match | discovery-008 |
-| OPTIONS advertises PUT for writable tables | full match | discovery-009 |
-| OpenAPI follow-privileges mode | full match | discovery-010 |
-| OpenAPI ignore-privileges mode | full match | discovery-011 |
-| OpenAPI disabled mode | full match | discovery-012 |
-| OpenAPI security switch | full match | discovery-013 |
-| OpenAPI proxy URI | full match | discovery-014 |
-| Root specification routine | full match | discovery-015 |
-| OpenAPI 2.0 marker | full match | discovery-016 |
-| OpenAPI host, schemes, and base path | full match | discovery-017 |
-| OpenAPI resource paths | full match | discovery-018 |
-| OpenAPI security definitions | full match | discovery-019 |
+| Item | Parity label | Scenarios | Client-visible error |
+| --- | --- | --- | --- |
+| Hidden resource refusal | full match | discovery-008 | yes |
+| OPTIONS advertises PUT for writable tables | full match | discovery-009 | |
+| OpenAPI follow-privileges mode | full match | discovery-010 | |
+| OpenAPI ignore-privileges mode | full match | discovery-011 | |
+| OpenAPI disabled mode | full match | discovery-012 | yes |
+| OpenAPI security switch | full match | discovery-013 | |
+| OpenAPI proxy URI | full match | discovery-014 | |
+| Root specification routine | full match | discovery-015 | |
+| OpenAPI 2.0 marker | full match | discovery-016 | |
+| OpenAPI host, schemes, and base path | full match | discovery-017 | |
+| OpenAPI resource paths | full match | discovery-018 | |
+| OpenAPI security definitions | full match | discovery-019 | |
 
 ## Gap list rows
 

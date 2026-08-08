@@ -79,6 +79,50 @@ func TestCoverageDutyRejectsNotSupportedSuccessPath(t *testing.T) {
 	}
 }
 
+func TestFullMatchCoverageRejectsRefusalForOrdinaryItem(t *testing.T) {
+	behaviours := []verification.Behaviour{{
+		Item:      "Ordinary read",
+		Label:     verification.FullMatch,
+		Scenarios: []string{"read-001"},
+	}}
+	index := verification.ScenarioIndex{
+		{ID: "read-001", Area: "read", Label: verification.FullMatch, Outcome: verification.Refuse},
+	}
+	if err := verification.CheckBehaviourCoverage(behaviours, index); err == nil {
+		t.Fatal("CheckBehaviourCoverage() = nil, want a missing success error")
+	}
+}
+
+func TestFullMatchCoverageAllowsClaimedClientVisibleError(t *testing.T) {
+	behaviours := []verification.Behaviour{{
+		Item:               "Missing resource",
+		Label:              verification.FullMatch,
+		Scenarios:          []string{"discovery-008"},
+		ClientVisibleError: true,
+	}}
+	index := verification.ScenarioIndex{
+		{ID: "discovery-008", Area: "discovery", Label: verification.FullMatch, Outcome: verification.Refuse},
+	}
+	if err := verification.CheckBehaviourCoverage(behaviours, index); err != nil {
+		t.Fatalf("CheckBehaviourCoverage: %v", err)
+	}
+}
+
+func TestFullMatchCoverageRejectsClaimedClientVisibleErrorWithoutRefuse(t *testing.T) {
+	behaviours := []verification.Behaviour{{
+		Item:               "Missing resource",
+		Label:              verification.FullMatch,
+		Scenarios:          []string{"discovery-008"},
+		ClientVisibleError: true,
+	}}
+	index := verification.ScenarioIndex{
+		{ID: "discovery-008", Area: "discovery", Label: verification.FullMatch, Outcome: verification.Success},
+	}
+	if err := verification.CheckBehaviourCoverage(behaviours, index); err == nil {
+		t.Fatal("CheckBehaviourCoverage() = nil, want a missing refuse error")
+	}
+}
+
 func TestFullMatchCoverageNeedsSuccess(t *testing.T) {
 	behaviours := []verification.Behaviour{
 		{

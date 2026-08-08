@@ -95,9 +95,10 @@ func TestDeriveFullMatchBehavioursReadsChapterRows(t *testing.T) {
 		"auth.md": trimLines(`
 			## Full match rows
 
-			| Item | Parity label | Scenarios |
-			| --- | --- | --- |
-			| Bearer JWT ordinary read | full match | auth-001, auth-003 |
+			| Item | Parity label | Scenarios | Client-visible error |
+			| --- | --- | --- | --- |
+			| Bearer JWT ordinary read | full match | auth-001, auth-003 | |
+			| Missing resource | full match | discovery-008 | yes |
 		`),
 	}
 
@@ -105,8 +106,8 @@ func TestDeriveFullMatchBehavioursReadsChapterRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DeriveFullMatchBehaviours: %v", err)
 	}
-	if len(behaviours) != 1 {
-		t.Fatalf("len(behaviours) = %d, want 1", len(behaviours))
+	if len(behaviours) != 2 {
+		t.Fatalf("len(behaviours) = %d, want 2", len(behaviours))
 	}
 	if behaviours[0].Item != "Bearer JWT ordinary read" {
 		t.Fatalf("behaviour item = %q", behaviours[0].Item)
@@ -116,6 +117,9 @@ func TestDeriveFullMatchBehavioursReadsChapterRows(t *testing.T) {
 	}
 	if got := strings.Join(behaviours[0].Scenarios, ","); got != "auth-001,auth-003" {
 		t.Fatalf("behaviour scenarios = %q", got)
+	}
+	if !behaviours[1].ClientVisibleError {
+		t.Fatal("missing-resource row must be a client-visible error")
 	}
 }
 

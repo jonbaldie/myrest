@@ -100,11 +100,11 @@ does not send that text to the client.
 
 ## Full match rows
 
-| Item | Parity label | Scenarios |
-| --- | --- | --- |
-| Error envelope shape | full match | err-001 |
-| PGRST codes for direct counterparts | full match | err-002 |
-| Stable myrest codes for MySQL gaps | full match | err-003 |
+| Item | Parity label | Scenarios | Client-visible error |
+| --- | --- | --- | --- |
+| Error envelope shape | full match | err-001 | yes |
+| PGRST codes for direct counterparts | full match | err-002 | yes |
+| Stable myrest codes for MySQL gaps | full match | err-003 | yes |
 
 ## Gap list rows
 

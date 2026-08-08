@@ -38,9 +38,10 @@ var smokeIDs = []string{
 
 // Behaviour is one labelled behaviour with the scenarios that prove it.
 type Behaviour struct {
-	Item      string
-	Label     ParityLabel
-	Scenarios []string
+	Item               string
+	Label              ParityLabel
+	Scenarios          []string
+	ClientVisibleError bool
 }
 
 // Validate checks that every scenario has one stable, complete index row.
@@ -62,9 +63,6 @@ func (index ScenarioIndex) Validate() error {
 		}
 		if !validOutcome(scenario.Outcome) {
 			return fmt.Errorf("scenario %s has unknown outcome %q", scenario.ID, scenario.Outcome)
-		}
-		if scenario.Label == FullMatch && scenario.Outcome != Success && scenario.Outcome != Refuse {
-			return fmt.Errorf("scenario %s has invalid full-match outcome %q", scenario.ID, scenario.Outcome)
 		}
 	}
 	return nil

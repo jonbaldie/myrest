@@ -11,10 +11,10 @@ See [ADR 0007](adr/0007-config-surface-mapping.md) and
 
 ## Full match rows
 
-| Item | Parity label | Scenarios |
-| --- | --- | --- |
-| Serve gate for an incomplete minimum run set | full match | cfg-001 |
-| Config file and MYREST_* environment delivery | full match | cfg-002 |
+| Item | Parity label | Scenarios | Client-visible error |
+| --- | --- | --- | --- |
+| Serve gate for an incomplete minimum run set | full match | cfg-001 | yes |
+| Config file and MYREST_* environment delivery | full match | cfg-002 | |
 
 ## Gap list rows
 
