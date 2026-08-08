@@ -137,17 +137,17 @@ the gate stays honest on MySQL.
 
 ## Full match rows
 
-| Item | Parity label | Scenarios |
-| --- | --- | --- |
-| POST insert, including bulk | full match | write-001 |
-| PATCH by filter | full match | write-002 |
-| DELETE by filter | full match | write-003 |
-| PUT upsert by primary key and resolution | full match | write-004 |
-| Unbounded write safety gate | full match | write-005 |
-| Writes through an updatable view | full match | write-006 |
-| Prefer return=minimal and return=headers-only | full match | write-007 |
-| Prefer missing, max-affected, and handling | full match | write-010 |
-| Embed after write with an honest representation | full match | write-011 |
+| Item | Parity label | Scenarios | Client-visible error |
+| --- | --- | --- | --- |
+| POST insert, including bulk | full match | write-001 | |
+| PATCH by filter | full match | write-002 | |
+| DELETE by filter | full match | write-003 | |
+| PUT upsert by primary key and resolution | full match | write-004 | |
+| Unbounded write safety gate | full match | write-005 | yes |
+| Writes through an updatable view | full match | write-006 | |
+| Prefer return=minimal and return=headers-only | full match | write-007 | |
+| Prefer missing, max-affected, and handling | full match | write-010 | |
+| Embed after write with an honest representation | full match | write-011 | |
 
 ## Gap list rows
 

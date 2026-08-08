@@ -47,35 +47,88 @@ func ParseFullMatchRows(markdown string) ([]Behaviour, error) {
 	if !ok {
 		return nil, nil
 	}
+	return rowsFromFullMatchTable(table)
+}
+
+func rowsFromFullMatchTable(table []string) ([]Behaviour, error) {
 	headers := splitRow(table[0])
-	itemCol, labelCol, scenarioCol, err := gapColumns(headers)
+	itemCol, labelCol, scenarioCol, clientErrorCol, err := fullMatchColumns(headers)
 	if err != nil {
 		return nil, err
 	}
 	rows := make([]Behaviour, 0, len(table)-2)
 	for _, line := range table[2:] {
-		cells := splitRow(line)
-		if len(cells) <= itemCol || len(cells) <= labelCol {
-			continue
+		row, ok, err := fullMatchRowFromCells(splitRow(line), itemCol, labelCol, scenarioCol, clientErrorCol)
+		if err != nil {
+			return nil, err
 		}
-		label := ParityLabel(strings.Trim(strings.TrimSpace(cells[labelCol]), "*"))
-		if label != FullMatch {
-			return nil, fmt.Errorf("full match row has parity label %q", cells[labelCol])
-		}
-		row := Behaviour{Item: strings.TrimSpace(cells[itemCol]), Label: label}
-		if scenarioCol >= 0 && scenarioCol < len(cells) {
-			row.Scenarios = splitScenarios(cells[scenarioCol])
-		}
-		if row.Item != "" {
+		if ok {
 			rows = append(rows, row)
 		}
 	}
 	return rows, nil
 }
 
+func fullMatchRowFromCells(cells []string, itemCol, labelCol, scenarioCol, clientErrorCol int) (Behaviour, bool, error) {
+	if len(cells) <= itemCol || len(cells) <= labelCol {
+		return Behaviour{}, false, nil
+	}
+	label := ParityLabel(strings.Trim(strings.TrimSpace(cells[labelCol]), "*"))
+	if label != FullMatch {
+		return Behaviour{}, false, fmt.Errorf("full match row has parity label %q", cells[labelCol])
+	}
+	clientVisibleError, err := parseClientVisibleError(cellAt(cells, clientErrorCol))
+	if err != nil {
+		return Behaviour{}, false, err
+	}
+	row := Behaviour{
+		Item:               strings.TrimSpace(cells[itemCol]),
+		Label:              label,
+		Scenarios:          splitScenarios(cellAt(cells, scenarioCol)),
+		ClientVisibleError: clientVisibleError,
+	}
+	if row.Item == "" {
+		return Behaviour{}, false, nil
+	}
+	return row, true, nil
+}
+
+func cellAt(cells []string, index int) string {
+	if index < 0 || index >= len(cells) {
+		return ""
+	}
+	return cells[index]
+}
+
+func fullMatchColumns(headers []string) (itemCol, labelCol, scenarioCol, clientErrorCol int, err error) {
+	itemCol, labelCol, scenarioCol, err = parityColumns(headers)
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	clientErrorCol = -1
+	for i, header := range headers {
+		if strings.EqualFold(strings.TrimSpace(header), "Client-visible error") {
+			clientErrorCol = i
+			break
+		}
+	}
+	return itemCol, labelCol, scenarioCol, clientErrorCol, nil
+}
+
+func parseClientVisibleError(raw string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "":
+		return false, nil
+	case "yes":
+		return true, nil
+	default:
+		return false, fmt.Errorf("client-visible error marker %q must be yes or empty", raw)
+	}
+}
+
 func rowsFromGapTable(table []string) ([]GapRow, error) {
 	headers := splitRow(table[0])
-	itemCol, labelCol, scenarioCol, err := gapColumns(headers)
+	itemCol, labelCol, scenarioCol, err := parityColumns(headers)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +236,7 @@ func parseGapLabel(raw string) (ParityLabel, error) {
 	}
 }
 
-func gapColumns(headers []string) (itemCol, labelCol, scenarioCol int, err error) {
+func parityColumns(headers []string) (itemCol, labelCol, scenarioCol int, err error) {
 	itemCol, labelCol, scenarioCol = -1, -1, -1
 	for i, header := range headers {
 		switch strings.ToLower(strings.TrimSpace(header)) {

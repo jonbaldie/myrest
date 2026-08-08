@@ -77,7 +77,7 @@ func outcomeFlags(behaviour Behaviour, index ScenarioIndex) (outcomeSet, error) 
 func dutyError(behaviour Behaviour, flags outcomeSet) error {
 	switch behaviour.Label {
 	case FullMatch:
-		return fullMatchDuty(behaviour.Item, flags)
+		return fullMatchDuty(behaviour, flags)
 	case PartialMatch:
 		return partialMatchDuty(behaviour.Item, flags)
 	case NotSupported:
@@ -87,11 +87,15 @@ func dutyError(behaviour Behaviour, flags outcomeSet) error {
 	}
 }
 
-func fullMatchDuty(item string, flags outcomeSet) error {
-	// A full-match success path needs Success. A claimed client-visible
-	// error for a full-match behaviour is a Refuse scenario on its own.
-	if !flags.success && !flags.refuse {
-		return fmt.Errorf("%s: full match needs a success or claimed-error scenario", item)
+func fullMatchDuty(behaviour Behaviour, flags outcomeSet) error {
+	if behaviour.ClientVisibleError {
+		if !flags.refuse {
+			return fmt.Errorf("%s: claimed client-visible error needs a refuse scenario", behaviour.Item)
+		}
+		return nil
+	}
+	if !flags.success {
+		return fmt.Errorf("%s: full match needs a success scenario", behaviour.Item)
 	}
 	return nil
 }

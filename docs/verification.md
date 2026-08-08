@@ -14,7 +14,7 @@ cross-area smoke set. Capability-area chapters stay the source of truth for
 
 - Prove parity at the HTTP API boundary with rewritten **normative scenarios**.
 - Coverage follows the **parity label**:
-  - **full match** — success path; claimed error path only when the chapter names one
+  - **full match** — success path, or claimed-error refuse when the labelled item itself is the client-visible error
   - **partial match** — one in-subset success and one outside-subset refuse
   - **not supported** — one stable refuse and no success path
 - Scenario bodies live in capability-area chapters and in the HTTP acceptance
