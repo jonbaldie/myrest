@@ -6,8 +6,8 @@
 test:
 	go test -p 1 ./...
 
-# Run every normative scenario at the HTTP seam (MySQL 8 acceptance package).
-# See docs/verification.md for the scenario index, gap list, and smoke set.
+# Run every normative scenario package: process seam, HTTP API, acceptance,
+# and Verification roll-up checks. See docs/verification.md.
 scenarios:
 	go test -p 1 ./cmd/myrest ./internal/httpapi ./test/acceptance ./internal/verification
 

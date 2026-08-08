@@ -26,7 +26,7 @@ go install github.com/quality-gates/mutago/v2/cmd/mutago@latest
 | --- | --- |
 | `go run ./cmd/myrest [config-file]` | Start the myrest service (`MYREST_LISTEN`, default `127.0.0.1:3000`) |
 | `make test` | Run tests (unit tests, process tests, and the MySQL 8 acceptance tests in `test/acceptance`) |
-| `make scenarios` | Run every normative scenario at the HTTP seam (`test/acceptance`) plus the Verification roll-up checks |
+| `make scenarios` | Run normative scenario packages: `./cmd/myrest`, `./internal/httpapi`, `./test/acceptance`, `./internal/verification` |
 | `make messgo` | Run messgo `design` and `codesize` rulesets (must report no violations) |
 | `make mutago` | Run mutago on the production packages with `--coverage --min-covered-msi 80` |
 | `make mysql-fixtures` | Start MySQL 8.0+ and load `testdata/fixtures/schema.sql` |

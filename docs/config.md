@@ -22,3 +22,6 @@ See [ADR 0007](adr/0007-config-surface-mapping.md) and
 | --- | --- | --- |
 | Config drop-list knobs (in-database config, NOTIFY channel, search_path extras, GUC hoist, plan-media gate, admin listen) | not supported | cache-004 |
 | Live config reload | not supported | cfg-003 |
+
+Drop-list knobs share one refuse path: the process refuses an unknown knob in
+the config file. `cache-004` proves that path with `db-channel` (NOTIFY).
