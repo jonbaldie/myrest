@@ -13,7 +13,9 @@ func TestAcceptSingularObjectOverMySQL(t *testing.T) {
 	headers := make(http.Header)
 	headers.Set("Accept", "application/vnd.pgrst.object+json")
 	response, body := apitest.Do(
-		t, http.MethodGet, serve(t, "myrest_fixture").URL()+"/items?id=eq.1", headers,
+		t, http.MethodGet,
+		serve(t, "myrest_fixture").URL()+"/items?select=id,name&id=eq.1",
+		headers,
 	)
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d; body = %s", response.StatusCode, body)
