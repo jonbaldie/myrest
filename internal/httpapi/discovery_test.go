@@ -128,6 +128,45 @@ func TestOptionsOnHiddenTableGivesPGRST205(t *testing.T) {
 	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
 }
 
+// OPTIONS on a view name is not a table resource, even when a privilege fact
+// names that view.
+func TestOptionsOnViewIsNotATableResource(t *testing.T) {
+	t.Parallel()
+
+	itemsView := schemacache.TableID{Database: "shop", Name: "items_view"}
+	cache := schemacache.Build(schemacache.Catalog{
+		Tables: []schemacache.TableID{{Database: "shop", Name: "items"}},
+		Views:  []schemacache.TableID{itemsView},
+		Columns: []schemacache.ColumnFact{
+			{Table: schemacache.TableID{Database: "shop", Name: "items"}, Name: "id"},
+			{Table: itemsView, Name: "id"},
+		},
+		Selects: []schemacache.SelectFact{
+			{Role: "myrest_anon", Table: schemacache.TableID{Database: "shop", Name: "items"}},
+			{Role: "myrest_anon", Table: itemsView},
+		},
+		TablePrivileges: []schemacache.TablePrivilegeFact{
+			{Role: "myrest_anon", Table: schemacache.TableID{Database: "shop", Name: "items"}, Privilege: "SELECT"},
+			{Role: "myrest_anon", Table: itemsView, Privilege: "SELECT"},
+		},
+	})
+	resolved := settings()
+	service, err := httpapi.Listen(httpapi.Options{
+		Addr:     "127.0.0.1:0",
+		Settings: resolved,
+		Cache:    cache,
+		Reader:   &reader{},
+	})
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go func() { _ = service.Serve() }()
+	t.Cleanup(func() { _ = service.Close() })
+
+	response, body := apitest.Do(t, http.MethodOptions, service.URL()+"/items_view", nil)
+	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
+}
+
 // OPTIONS on a routine reports methods from EXECUTE and read-safety.
 func TestOptionsOnRoutineReportsMethods(t *testing.T) {
 	t.Parallel()

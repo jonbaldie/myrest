@@ -55,8 +55,13 @@ func (s *Service) optionsRoutine(writer http.ResponseWriter, request *http.Reque
 
 // tableAllowMethods builds the Allow list for a table from grants. OPTIONS is
 // always present when the role holds any usable privilege. PUT upsert is not
-// on the served surface yet, so it is never advertised.
+// on the served surface yet, so it is never advertised. A name that is not a
+// table in the schema cache is not a resource, even when a privilege fact
+// names it (for example a view).
 func tableAllowMethods(cache *schemacache.Cache, role schemacache.Role, id schemacache.TableID) []string {
+	if !cache.HasTable(id) {
+		return nil
+	}
 	methods := []string{http.MethodOptions}
 	usable := false
 	if cache.HasTablePrivilege(role, id, "SELECT") {

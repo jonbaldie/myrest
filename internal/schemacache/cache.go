@@ -390,6 +390,14 @@ func TableIDs(c *Cache) []TableID {
 	return ids
 }
 
+// HasTable says whether the cache holds this table id (not a view).
+func (c *Cache) HasTable(id TableID) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	_, held := c.tables[id]
+	return held
+}
+
 // Views are the views the catalog holds for later tickets. This ticket does
 // not expose them as HTTP resources.
 func (c *Cache) Views() []TableID {
