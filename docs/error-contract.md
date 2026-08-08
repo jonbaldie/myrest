@@ -56,7 +56,9 @@ relationship embed is a MySQL gap and uses `MYREST001`. See [Embed](embed.md).
 also uses `MYREST001`. See [GET /rpc read-safe routines](rpc-get.md). Unusual
 `POST /rpc` whole-body argument modes (single unnamed `json`/`jsonb`/`bytea`/
 `text`/`xml`) use the same gap code. See
-[RPC whole-body argument modes](rpc-body-modes.md).
+[RPC whole-body argument modes](rpc-body-modes.md). Filter, order, pagination,
+or embed on a scalar or non-tabular RPC result uses the same gap code. See
+[RPC row-set results](rpc-row-set.md).
 
 ## MySQL SQLSTATE to HTTP status
 
