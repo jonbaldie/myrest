@@ -120,6 +120,13 @@ BEGIN
   SET label = CONCAT(label, '!');
 END;
 
+-- Row-set RPC result: one SELECT result set is a tabular body (rpc-005).
+CREATE PROCEDURE list_items()
+  READS SQL DATA
+BEGIN
+  SELECT id, name FROM items ORDER BY id;
+END;
+
 -- db-pre-request fixtures: a marker log and zero-argument procedures.
 CREATE TABLE pre_request_log (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -193,6 +200,7 @@ GRANT EXECUTE ON PROCEDURE myrest_fixture.write_marker TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.ping TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.echo_name TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.bump_label TO 'myrest_anon';
+GRANT EXECUTE ON PROCEDURE myrest_fixture.list_items TO 'myrest_anon';
 GRANT INSERT ON myrest_fixture.addresses TO 'myrest_anon';
 GRANT SELECT, INSERT, DELETE ON myrest_fixture.pre_request_log TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.before_request TO 'myrest_anon';

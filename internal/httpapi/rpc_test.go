@@ -7,6 +7,7 @@ import (
 
 	"github.com/jonbaldie/myrest/internal/apitest"
 	"github.com/jonbaldie/myrest/internal/httpapi"
+	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
@@ -37,18 +38,32 @@ func (c *caller) Call(
 
 func rpcCache() *schemacache.Cache {
 	items := schemacache.TableID{Database: "shop", Name: "items"}
+	orders := schemacache.TableID{Database: "shop", Name: "orders"}
 	addThem := schemacache.RoutineID{Database: "shop", Name: "add_them"}
 	ping := schemacache.RoutineID{Database: "shop", Name: "ping"}
 	secret := schemacache.RoutineID{Database: "shop", Name: "secret_count"}
 	writeMarker := schemacache.RoutineID{Database: "shop", Name: "write_marker"}
+	listItems := schemacache.RoutineID{Database: "shop", Name: "list_items"}
 
 	return schemacache.Build(schemacache.Catalog{
-		Tables: []schemacache.TableID{items},
+		Tables: []schemacache.TableID{items, orders},
 		Columns: []schemacache.ColumnFact{
 			{Table: items, Name: "id"},
 			{Table: items, Name: "name"},
+			{Table: orders, Name: "id"},
+			{Table: orders, Name: "item_id"},
 		},
-		Selects: []schemacache.SelectFact{{Role: "myrest_anon", Table: items}},
+		Selects: []schemacache.SelectFact{
+			{Role: "myrest_anon", Table: items},
+			{Role: "myrest_anon", Table: orders},
+		},
+		ForeignKeys: []schemacache.ForeignKeyFact{{
+			Name:              "orders_item",
+			Table:             orders,
+			Columns:           []string{"item_id"},
+			ReferencedTable:   items,
+			ReferencedColumns: []string{"id"},
+		}},
 		Routines: []schemacache.RoutineFact{
 			{
 				ID:            addThem,
@@ -76,11 +91,17 @@ func rpcCache() *schemacache.Cache {
 				Kind:          "PROCEDURE",
 				SQLDataAccess: "MODIFIES SQL DATA",
 			},
+			{
+				ID:            listItems,
+				Kind:          "PROCEDURE",
+				SQLDataAccess: "READS SQL DATA",
+			},
 		},
 		RoutinePrivileges: []schemacache.RoutinePrivilegeFact{
 			{Role: "myrest_anon", Routine: addThem, Privilege: "EXECUTE"},
 			{Role: "myrest_anon", Routine: ping, Privilege: "EXECUTE"},
 			{Role: "myrest_anon", Routine: writeMarker, Privilege: "EXECUTE"},
+			{Role: "myrest_anon", Routine: listItems, Privilege: "EXECUTE"},
 		},
 	})
 }
@@ -317,4 +338,94 @@ func TestPostRPCWholeBodyXMLArgumentRefusesStably(t *testing.T) {
 	if source.routine.ID.Name != "" {
 		t.Fatalf("caller ran for %v, want no call", source.routine.ID)
 	}
+}
+
+// rpc-005: filter, order, and pagination on a row-set RPC result succeed.
+func TestPostRPCRowSetSupportsFilterOrderAndPage(t *testing.T) {
+	t.Parallel()
+
+	source := &caller{body: []rows.Row{
+		{Columns: []string{"id", "name"}, Values: []any{int64(1), "alpha"}},
+		{Columns: []string{"id", "name"}, Values: []any{int64(2), "beta"}},
+	}}
+	response, body := apitest.PostJSON(
+		t,
+		serveRPC(t, source).URL()+"/rpc/list_items?id=gt.1&order=name.desc&limit=1",
+		`{}`,
+	)
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if string(body) != `[{"id":2,"name":"beta"}]`+"\n" {
+		t.Fatalf("body = %s, want beta only", body)
+	}
+}
+
+// rpc-005: embed on a row-set RPC result succeeds when the relationship is in
+// the schema cache.
+func TestPostRPCRowSetSupportsEmbed(t *testing.T) {
+	t.Parallel()
+
+	source := &caller{body: []rows.Row{
+		{Columns: []string{"id", "name"}, Values: []any{int64(1), "alpha"}},
+	}}
+	service := serveRPCWithReader(t, source, &reader{read: []rows.Row{{
+		Columns: []string{"id", "item_id"}, Values: []any{int64(10), int64(1)},
+	}}})
+	response, body := apitest.PostJSON(
+		t,
+		service.URL()+"/rpc/list_items?select=id,name,orders(id)",
+		`{}`,
+	)
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want := `[{"id":1,"name":"alpha","orders":[{"id":10}]}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+// rpc-006: filter, order, pagination, or embed on a scalar RPC result refuses.
+func TestPostRPCScalarRefusesRowSetFeatures(t *testing.T) {
+	t.Parallel()
+
+	cases := []string{
+		"/rpc/add_them?limit=1",
+		"/rpc/add_them?order=a.asc",
+		"/rpc/add_them?a=eq.1",
+		"/rpc/add_them?select=*,items(id)",
+	}
+	for _, path := range cases {
+		source := &caller{body: int64(3)}
+		response, body := apitest.PostJSON(t, serveRPC(t, source).URL()+path, `{"a":1,"b":2}`)
+		failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+		if want := "Filter, order, pagination, and embed need a row-set RPC result"; failure.Message != want {
+			t.Fatalf("path %s: message = %q, want %q", path, failure.Message, want)
+		}
+	}
+}
+
+func serveRPCWithReader(t *testing.T, source httpapi.Caller, sourceReader httpapi.Reader) *httpapi.Service {
+	t.Helper()
+
+	service, err := httpapi.Listen(httpapi.Options{
+		Addr:     "127.0.0.1:0",
+		Settings: settings(),
+		Cache:    rpcCache(),
+		Reader:   sourceReader,
+		Caller:   source,
+	})
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go func() { _ = service.Serve() }()
+	t.Cleanup(func() {
+		if err := service.Close(); err != nil {
+			t.Errorf("close service: %v", err)
+		}
+	})
+	return service
 }

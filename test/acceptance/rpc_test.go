@@ -210,3 +210,59 @@ func TestPostRPCWholeBodyXMLArgumentRefuses(t *testing.T) {
 		t.Fatalf("message = %q, want %q", failure.Message, want)
 	}
 }
+
+// rpc-005: filter, order, and pagination on a row-set RPC result succeed, and
+// embed succeeds when the relationship is in the schema cache.
+func TestRPCRowSetSupportsFilterOrderPageAndEmbed(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	response, body := apitest.PostJSON(
+		t,
+		service.URL()+"/rpc/list_items?id=eq.1&order=name.asc&limit=1",
+		`{}`,
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if string(body) != `[{"id":1,"name":"alpha"}]`+"\n" {
+		t.Fatalf("body = %s, want alpha only", body)
+	}
+
+	response, body = apitest.PostJSON(
+		t,
+		service.URL()+"/rpc/list_items?select=id,name,orders(id)&id=eq.1&orders.order=id.asc",
+		`{}`,
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("embed status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want := `[{"id":1,"name":"alpha","orders":[{"id":1},{"id":2}]}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("embed body = %s, want %s", body, want)
+	}
+}
+
+// rpc-006: filter, order, pagination, or embed on a scalar RPC result refuses.
+func TestRPCScalarRefusesRowSetFeatures(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	response, body := apitest.PostJSON(
+		t,
+		service.URL()+"/rpc/add_them?limit=1",
+		`{"a":1,"b":2}`,
+	)
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if want := "Filter, order, pagination, and embed need a row-set RPC result"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+
+	response, body = apitest.PostJSON(
+		t,
+		service.URL()+"/rpc/ping?order=id.asc",
+		`{}`,
+	)
+	failure = apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if want := "Filter, order, pagination, and embed need a row-set RPC result"; failure.Message != want {
+		t.Fatalf("procedure message = %q, want %q", failure.Message, want)
+	}
+}

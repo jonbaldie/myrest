@@ -11,8 +11,9 @@ import (
 )
 
 // Call runs a routine as the database role with named JSON arguments.
-// Functions return the scalar value. Procedures return the stable object of
-// OUT and INOUT parameter values (an empty object when there are none).
+// Functions return the scalar value. Procedures return []rows.Row when CALL
+// yields a SELECT result set; otherwise they return the stable object of OUT
+// and INOUT parameter values (an empty object when there are none).
 func (p *Pool) Call(
 	ctx context.Context,
 	role schemacache.Role,
@@ -86,10 +87,54 @@ func callProcedure(
 	if err != nil {
 		return nil, err
 	}
-	if _, err := conn.ExecContext(ctx, procedureCallStatement(routine, built.placeholders), built.bound...); err != nil {
+	result, err := conn.QueryContext(
+		ctx,
+		procedureCallStatement(routine, built.placeholders),
+		built.bound...,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer func() { _ = result.Close() }()
+
+	set, tabular, err := readFirstResultSet(result)
+	if err != nil {
+		return nil, err
+	}
+	// Drain further result sets so the connection can read OUT variables.
+	for result.NextResultSet() {
+	}
+	if tabular {
+		return set, nil
+	}
 	return readProcedureOutputs(ctx, conn, built.outNames, built.outVars)
+}
+
+// readFirstResultSet reads the first CALL result set. A set with column
+// metadata is tabular even when it holds zero rows.
+func readFirstResultSet(result *sql.Rows) ([]rows.Row, bool, error) {
+	columns, err := result.Columns()
+	if err != nil {
+		return nil, false, err
+	}
+	if len(columns) == 0 {
+		return nil, false, nil
+	}
+	set := []rows.Row{}
+	for result.Next() {
+		values, err := scanValues(result, len(columns))
+		if err != nil {
+			return nil, false, err
+		}
+		set = append(set, rows.Row{
+			Columns: append([]string(nil), columns...),
+			Values:  values,
+		})
+	}
+	if err := result.Err(); err != nil {
+		return nil, false, err
+	}
+	return set, true, nil
 }
 
 func buildProcedureCall(

@@ -27,6 +27,7 @@ curl -X POST http://127.0.0.1:3000/rpc/echo_name \
 {"dst":"alpha"}
 ```
 
-Result sets that a procedure may return are outside this shape. Later RPC
-tickets cover read features on row-set results. This ticket keeps one stable
-procedure body so clients do not need a second URL family.
+When a procedure returns a SELECT result set, that row set is the HTTP body
+instead of the OUT/INOUT object. See [RPC row-set results](rpc-row-set.md).
+This ticket keeps one stable procedure body for the non-tabular case so clients
+do not need a second URL family.
