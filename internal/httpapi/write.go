@@ -84,6 +84,16 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 
+	query, err := parseMutateQuery(request)
+	if err != nil {
+		writeQueryFailure(writer, err)
+		return
+	}
+	plan, ok := s.planWriteEmbeds(writer, role, asked, prefer, query)
+	if !ok {
+		return
+	}
+
 	primaryKey := schemacache.PrimaryKeyOf(s.cache.KeysOf(asked))
 	options, ok := s.buildWriteOptions(writer, role, asked, prefer, primaryKey, writeKindInsert)
 	if !ok {
@@ -101,7 +111,7 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 		s.writeWriteFailure(writer, err)
 		return
 	}
-	s.writeWriteResponse(writer, prefer, http.MethodPost, asked.Name, primaryKey, result)
+	s.writeWriteResponse(writer, request, role, table, prefer, http.MethodPost, asked.Name, primaryKey, result, query, plan)
 }
 
 // patchTable answers PATCH /<table> with the ordinary-read filter surface.
@@ -125,6 +135,10 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 	if refuseUnbounded(writer, prefer, query) {
 		return
 	}
+	plan, ok := s.planWriteEmbeds(writer, role, asked, prefer, query)
+	if !ok {
+		return
+	}
 
 	primaryKey := schemacache.PrimaryKeyOf(s.cache.KeysOf(asked))
 	options, ok := s.buildWriteOptions(writer, role, asked, prefer, primaryKey, writeKindPatch)
@@ -142,7 +156,7 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 		s.writeWriteFailure(writer, err)
 		return
 	}
-	s.writeWriteResponse(writer, prefer, http.MethodPatch, asked.Name, primaryKey, result)
+	s.writeWriteResponse(writer, request, role, table, prefer, http.MethodPatch, asked.Name, primaryKey, result, query, plan)
 }
 
 // deleteTable answers DELETE /<table> with the ordinary-read filter surface.
@@ -166,6 +180,10 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 	if refuseUnbounded(writer, prefer, query) {
 		return
 	}
+	plan, ok := s.planWriteEmbeds(writer, role, asked, prefer, query)
+	if !ok {
+		return
+	}
 
 	primaryKey := schemacache.PrimaryKeyOf(s.cache.KeysOf(asked))
 	options, ok := s.buildWriteOptions(writer, role, asked, prefer, primaryKey, writeKindDelete)
@@ -179,7 +197,7 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 		s.writeWriteFailure(writer, err)
 		return
 	}
-	s.writeWriteResponse(writer, prefer, http.MethodDelete, asked.Name, primaryKey, result)
+	s.writeWriteResponse(writer, request, role, table, prefer, http.MethodDelete, asked.Name, primaryKey, result, query, plan)
 }
 
 // putTable answers PUT /<table>?pk=eq.value: one-row upsert by primary key.
@@ -597,13 +615,63 @@ func writeMinimal(writer http.ResponseWriter, status int) {
 	writer.WriteHeader(status)
 }
 
+// planWriteEmbeds resolves nested select relationships before a write when
+// Prefer return=representation asks for an embed. A missing relationship
+// refuses here so myrest never invents one and never writes on a bad select.
+func (s *Service) planWriteEmbeds(
+	writer http.ResponseWriter,
+	role schemacache.Role,
+	origin schemacache.TableID,
+	prefer writePrefer,
+	query readquery.Query,
+) ([]plannedEmbed, bool) {
+	if prefer.Return != returnRepresentation || len(query.Embeds) == 0 {
+		return nil, true
+	}
+	plan, err := s.planEmbeds(role, origin, query.Embeds)
+	if err != nil {
+		if writeEmbedPlanFailure(writer, err) {
+			return nil, false
+		}
+		writeFailure(writer, http.StatusBadRequest, codeParseFailure, err.Error())
+		return nil, false
+	}
+	return plan, true
+}
+
+func (s *Service) shapeWriteRepresentation(
+	ctx context.Context,
+	role schemacache.Role,
+	table schemacache.Table,
+	set []rows.Row,
+	query readquery.Query,
+	plan []plannedEmbed,
+) ([]rows.Row, error) {
+	if set == nil {
+		set = []rows.Row{}
+	}
+	if len(plan) > 0 {
+		nested, err := s.nestEmbeds(ctx, role, table, set, plan)
+		if err != nil {
+			return nil, err
+		}
+		set = nested
+	}
+	return readquery.Project(set, query)
+}
+
 func (s *Service) writeWriteResponse(
 	writer http.ResponseWriter,
+	request *http.Request,
+	role schemacache.Role,
+	table schemacache.Table,
 	prefer writePrefer,
 	method string,
 	tableName string,
 	primaryKey []string,
 	result writequery.Result,
+	query readquery.Query,
+	plan []plannedEmbed,
 ) {
 	setPreferenceApplied(writer, prefer)
 
@@ -616,10 +684,14 @@ func (s *Service) writeWriteResponse(
 				writer.Header().Set("Location", location)
 			}
 		}
-		if result.Rows == nil {
-			result.Rows = []rows.Row{}
+		shaped, err := s.shapeWriteRepresentation(
+			request.Context(), role, table, result.Rows, query, plan,
+		)
+		if err != nil {
+			s.writeReadFailure(writer, table.ID, role, err)
+			return
 		}
-		writeJSON(writer, status, result.Rows)
+		writeJSON(writer, status, shaped)
 	case returnHeadersOnly:
 		if location := locationHeader(tableName, primaryKey, result.Keys); location != "" {
 			writer.Header().Set("Location", location)

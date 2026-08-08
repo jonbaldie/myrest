@@ -157,20 +157,32 @@ func serveWrite(
 // writeCache grants INSERT, UPDATE, and DELETE on items for the anonymous role.
 func writeCache() *schemacache.Cache {
 	items := schemacache.TableID{Database: "shop", Name: "items"}
+	orders := schemacache.TableID{Database: "shop", Name: "orders"}
+	profiles := schemacache.TableID{Database: "shop", Name: "profiles"}
 	secrets := schemacache.TableID{Database: "shop", Name: "secrets"}
 
 	return schemacache.Build(schemacache.Catalog{
-		Tables: []schemacache.TableID{items, secrets},
+		Tables: []schemacache.TableID{items, orders, profiles, secrets},
 		Columns: []schemacache.ColumnFact{
 			{Table: items, Name: "id"},
 			{Table: items, Name: "name"},
+			{Table: orders, Name: "id"},
+			{Table: orders, Name: "item_id"},
+			{Table: profiles, Name: "id"},
 			{Table: secrets, Name: "payload"},
 		},
 		Keys: []schemacache.KeyFact{
 			{Table: items, Name: "PRIMARY", Kind: "PRIMARY", Columns: []string{"id"}},
+			{Table: orders, Name: "PRIMARY", Kind: "PRIMARY", Columns: []string{"id"}},
 		},
+		ForeignKeys: []schemacache.ForeignKeyFact{{
+			Name: "orders_item", Table: orders, Columns: []string{"item_id"},
+			ReferencedTable: items, ReferencedColumns: []string{"id"},
+		}},
 		Selects: []schemacache.SelectFact{
 			{Role: "myrest_anon", Table: items},
+			{Role: "myrest_anon", Table: orders},
+			{Role: "myrest_anon", Table: profiles},
 			{Role: "myrest_user", Table: items},
 			{Role: "myrest_user", Table: secrets},
 		},
@@ -179,6 +191,9 @@ func writeCache() *schemacache.Cache {
 			{Role: "myrest_anon", Table: items, Privilege: "INSERT"},
 			{Role: "myrest_anon", Table: items, Privilege: "UPDATE"},
 			{Role: "myrest_anon", Table: items, Privilege: "DELETE"},
+			{Role: "myrest_anon", Table: orders, Privilege: "SELECT"},
+			{Role: "myrest_anon", Table: orders, Privilege: "INSERT"},
+			{Role: "myrest_anon", Table: profiles, Privilege: "SELECT"},
 			{Role: "myrest_user", Table: items, Privilege: "SELECT"},
 			{Role: "myrest_user", Table: secrets, Privilege: "SELECT"},
 		},
@@ -633,6 +648,128 @@ func TestPreferReturnRepresentation(t *testing.T) {
 	}
 	if !sink.options.ReturnRepresentation {
 		t.Fatalf("options = %#v", sink.options)
+	}
+}
+
+// write-011: return=representation with a nested select over a cache
+// relationship nests the related rows in the write body.
+func TestPreferReturnRepresentationWithEmbed(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{
+		resultRows: []rows.Row{
+			{Columns: []string{"id", "item_id"}, Values: []any{int64(9), int64(1)}},
+		},
+		resultKeys: []map[string]any{{"id": int64(9)}},
+	}
+	source := &multiReader{answers: []readAnswer{
+		{rows: []rows.Row{{Columns: []string{"id", "name"}, Values: []any{int64(1), "alpha"}}}},
+	}}
+	request, err := http.NewRequest(
+		http.MethodPost,
+		serveWrite(t, source, sink).URL()+"/orders?select=id,items(id,name)",
+		strings.NewReader(`{"item_id":1}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
+	}
+	want := `[{"id":9,"items":{"id":1,"name":"alpha"}}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+	if sink.called != "insert" {
+		t.Fatalf("called = %q, want insert", sink.called)
+	}
+}
+
+// Nested filter and order on a write representation follow embed read rules.
+func TestPreferReturnRepresentationEmbedNestedFilterOrder(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{
+		resultRows: []rows.Row{
+			{Columns: []string{"id"}, Values: []any{int64(1)}},
+		},
+		resultKeys: []map[string]any{{"id": int64(1)}},
+		updated:    1,
+	}
+	source := &multiReader{answers: []readAnswer{
+		{rows: []rows.Row{
+			{Columns: []string{"id", "item_id"}, Values: []any{int64(2), int64(1)}},
+			{Columns: []string{"id", "item_id"}, Values: []any{int64(1), int64(1)}},
+		}},
+	}}
+	request, err := http.NewRequest(
+		http.MethodPatch,
+		serveWrite(t, source, sink).URL()+
+			"/items?id=eq.1&select=id,orders(id)&orders.order=id.desc&orders.limit=1&orders.id=gt.1",
+		strings.NewReader(`{"name":"alpha"}`),
+	)
+	if err != nil {
+		t.Fatalf("new PATCH: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want := `[{"id":1,"orders":[{"id":2}]}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+// write-012: return=representation with a nested select and no cache
+// relationship refuses stably and does not write.
+func TestPreferReturnRepresentationEmbedWithoutRelationshipRefuses(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{}
+	request, err := http.NewRequest(
+		http.MethodPost,
+		serveWrite(t, &reader{}, sink).URL()+"/items?select=id,profiles(id)",
+		strings.NewReader(`{"name":"gamma"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST200")
+	if sink.called != "" {
+		t.Fatalf("called = %q, want no write", sink.called)
 	}
 }
 

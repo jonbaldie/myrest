@@ -438,6 +438,105 @@ func TestPreferReturnRepresentationOverMySQL(t *testing.T) {
 	}
 }
 
+// write-011: return=representation with a nested select over a cache
+// relationship nests the related rows.
+func TestPreferReturnRepresentationWithEmbedOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	request, err := http.NewRequest(
+		http.MethodPost,
+		service.URL()+"/orders?select=id,items(id,name)",
+		strings.NewReader(`{"item_id":1}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d; body = %s", response.StatusCode, body)
+	}
+	if !strings.Contains(string(body), `"items":{"id":1,"name":"alpha"}`) {
+		t.Fatalf("body = %s, want nested items", body)
+	}
+}
+
+// Nested filter and order on a write representation follow embed read rules.
+func TestPreferReturnRepresentationEmbedNestedFilterOrderOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	request, err := http.NewRequest(
+		http.MethodPatch,
+		service.URL()+"/items?id=eq.1&select=id,orders(id)&orders.order=id.desc&orders.limit=1&orders.id=gt.1",
+		strings.NewReader(`{"name":"alpha"}`),
+	)
+	if err != nil {
+		t.Fatalf("new PATCH: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d; body = %s", response.StatusCode, body)
+	}
+	want := `[{"id":1,"orders":[{"id":2}]}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+// write-012: return=representation with a nested select and no cache
+// relationship refuses stably.
+func TestPreferReturnRepresentationEmbedWithoutRelationshipRefusesOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	request, err := http.NewRequest(
+		http.MethodPost,
+		service.URL()+"/items?select=id,profiles(id)",
+		strings.NewReader(`{"name":"no-embed"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST200")
+
+	response, body = get(t, service, "/items?select=name&name=eq.no-embed")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("read-back status = %d; body = %s", response.StatusCode, body)
+	}
+	if string(body) != "[]\n" {
+		t.Fatalf("read-back body = %s, want no inserted row", body)
+	}
+}
+
 // write-009: return=representation refuses when an honest body is not available.
 func TestPreferReturnRepresentationWithoutPrimaryKeyRefusesOverMySQL(t *testing.T) {
 	service := serve(t, "myrest_fixture")

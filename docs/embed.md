@@ -33,3 +33,9 @@ myrest never invents a relationship. A view chain with no declared foreign key
 is not supported. A computed relationship is not supported.
 
 Aggregate plus embed is owned by the Read area. See [Aggregates](aggregates.md).
+
+## Embed after write
+
+A write with `Prefer: return=representation` may use the same nested select
+syntax. The nested data follows the rules on this page. See
+[Ordinary write](write.md).
