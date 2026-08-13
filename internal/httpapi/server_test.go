@@ -186,6 +186,15 @@ func TestTableTheRoleCannotSelectGivesTheErrorEnvelope(t *testing.T) {
 	}
 }
 
+// Query errors keep their established priority over a Resource refusal.
+func TestInvalidReadQueryPrecedesResourceRefusal(t *testing.T) {
+	t.Parallel()
+
+	response, body := get(t, serve(t, &reader{}, settings()), "/secrets?bad")
+
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST100")
+}
+
 // A request names no database, so the read goes to the default database: the
 // first of db-schemas. A table of another configured database cannot answer
 // in its place.
