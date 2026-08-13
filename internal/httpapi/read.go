@@ -33,7 +33,11 @@ const (
 // Accept-Profile selects the database; with no header the table comes from
 // the default database.
 func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
-	requested, ok := s.selectReadResource(writer, request, headerAcceptProfile)
+	role, ok := s.requestRole(writer, request)
+	if !ok {
+		return
+	}
+	requested, ok := s.selectResource(writer, request, role, headerAcceptProfile)
 	if !ok {
 		return
 	}

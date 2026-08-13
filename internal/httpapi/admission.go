@@ -6,45 +6,60 @@ import (
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
-// readResource identifies a requested read Resource under the selected
-// database role. The HTTP read module validates its query before this module
-// admits the Resource, as the established refusal order requires.
-type readResource struct {
+// requestedResource identifies a requested Resource under the selected
+// database role.
+type requestedResource struct {
 	role  schemacache.Role
 	asked schemacache.TableID
 }
 
-// selectReadResource selects the database role and database of a requested
-// read Resource. It keeps request role and Accept-Profile work together.
-func (s *Service) selectReadResource(
+// selectResource selects the database of a requested Resource for a known
+// database role. The caller chooses the profile header for its HTTP method.
+func (s *Service) selectResource(
 	writer http.ResponseWriter,
 	request *http.Request,
+	role schemacache.Role,
 	profileHeader string,
-) (readResource, bool) {
-	role, ok := s.requestRole(writer, request)
-	if !ok {
-		return readResource{}, false
-	}
+) (requestedResource, bool) {
 	database, ok := s.requestDatabase(writer, request, profileHeader)
 	if !ok {
-		return readResource{}, false
+		return requestedResource{}, false
 	}
 	asked := schemacache.TableID{
 		Database: database,
 		Name:     request.PathValue("table"),
 	}
-	return readResource{role: role, asked: asked}, true
+	return requestedResource{role: role, asked: asked}, true
 }
 
 // admitReadResource admits a readable table Resource. A refused Resource
 // always gets the established table-not-found response.
 func (s *Service) admitReadResource(
 	writer http.ResponseWriter,
-	requested readResource,
+	requested requestedResource,
 ) (schemacache.Table, bool) {
 	table, ok := s.cache.Resource(requested.role, requested.asked)
 	if !ok {
 		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(requested.asked))
+		return schemacache.Table{}, false
+	}
+	return table, true
+}
+
+// admitWriteResource admits a writable table Resource with the method grant.
+// A denied grant and a non-updatable view keep their established refusals.
+func (s *Service) admitWriteResource(
+	writer http.ResponseWriter,
+	requested requestedResource,
+	privilege string,
+) (schemacache.Table, bool) {
+	table, ok := s.cache.TableWithPrivilege(requested.role, requested.asked, privilege)
+	if !ok {
+		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(requested.asked))
+		return schemacache.Table{}, false
+	}
+	if !s.cache.IsWritable(requested.asked) {
+		writeFailure(writer, http.StatusBadRequest, codePostgresOnlyFeature, "The view is not updatable")
 		return schemacache.Table{}, false
 	}
 	return table, true

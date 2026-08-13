@@ -501,24 +501,15 @@ func (s *Service) lookupWriteTable(
 		writeNoHandler(writer, request)
 		return "", schemacache.TableID{}, schemacache.Table{}, false
 	}
-	database, ok := s.requestDatabase(writer, request, headerContentProfile)
+	requested, ok := s.selectResource(writer, request, role, headerContentProfile)
 	if !ok {
 		return "", schemacache.TableID{}, schemacache.Table{}, false
 	}
-	asked := schemacache.TableID{
-		Database: database,
-		Name:     request.PathValue("table"),
-	}
-	table, isResource := s.cache.TableWithPrivilege(role, asked, privilege)
-	if !isResource {
-		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(asked))
+	table, ok := s.admitWriteResource(writer, requested, privilege)
+	if !ok {
 		return "", schemacache.TableID{}, schemacache.Table{}, false
 	}
-	if !s.cache.IsWritable(asked) {
-		writeFailure(writer, http.StatusBadRequest, codePostgresOnlyFeature, "The view is not updatable")
-		return "", schemacache.TableID{}, schemacache.Table{}, false
-	}
-	return role, asked, table, true
+	return requested.role, requested.asked, table, true
 }
 
 func refuseUnbounded(writer http.ResponseWriter, prefer writePrefer, query readquery.Query) bool {
