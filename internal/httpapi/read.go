@@ -37,7 +37,9 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 	if !ok {
 		return
 	}
-	requested, ok := s.selectResource(writer, request, role, headerAcceptProfile)
+	requested, ok := s.selectResource(
+		writer, request, role, headerAcceptProfile, request.PathValue("table"),
+	)
 	if !ok {
 		return
 	}
@@ -63,7 +65,7 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 
 	read, err := s.readWithEmbeds(request.Context(), requested.role, table, query)
 	if err != nil {
-		s.writeReadFailure(writer, requested.asked, requested.role, err)
+		s.writeReadFailure(writer, requested.table(), requested.role, err)
 		return
 	}
 	writeRead(writer, request.Method == http.MethodHead, query, read, repr)

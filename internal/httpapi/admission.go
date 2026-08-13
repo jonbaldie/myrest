@@ -9,27 +9,33 @@ import (
 // requestedResource identifies a requested Resource under the selected
 // database role.
 type requestedResource struct {
-	role  schemacache.Role
-	asked schemacache.TableID
+	role     schemacache.Role
+	database string
+	name     string
 }
 
-// selectResource selects the database of a requested Resource for a known
-// database role. The caller chooses the profile header for its HTTP method.
+// selectResource selects a requested Resource for a known database role. The
+// caller chooses the profile header and route name for its HTTP method.
 func (s *Service) selectResource(
 	writer http.ResponseWriter,
 	request *http.Request,
 	role schemacache.Role,
 	profileHeader string,
+	name string,
 ) (requestedResource, bool) {
 	database, ok := s.requestDatabase(writer, request, profileHeader)
 	if !ok {
 		return requestedResource{}, false
 	}
-	asked := schemacache.TableID{
-		Database: database,
-		Name:     request.PathValue("table"),
-	}
-	return requestedResource{role: role, asked: asked}, true
+	return requestedResource{role: role, database: database, name: name}, true
+}
+
+func (requested requestedResource) table() schemacache.TableID {
+	return schemacache.TableID{Database: requested.database, Name: requested.name}
+}
+
+func (requested requestedResource) routine() schemacache.RoutineID {
+	return schemacache.RoutineID{Database: requested.database, Name: requested.name}
 }
 
 // admitReadResource admits a readable table Resource. A refused Resource
@@ -38,9 +44,10 @@ func (s *Service) admitReadResource(
 	writer http.ResponseWriter,
 	requested requestedResource,
 ) (schemacache.Table, bool) {
-	table, ok := s.cache.Resource(requested.role, requested.asked)
+	asked := requested.table()
+	table, ok := s.cache.Resource(requested.role, asked)
 	if !ok {
-		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(requested.asked))
+		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(asked))
 		return schemacache.Table{}, false
 	}
 	return table, true
@@ -53,14 +60,30 @@ func (s *Service) admitWriteResource(
 	requested requestedResource,
 	privilege string,
 ) (schemacache.Table, bool) {
-	table, ok := s.cache.TableWithPrivilege(requested.role, requested.asked, privilege)
+	asked := requested.table()
+	table, ok := s.cache.TableWithPrivilege(requested.role, asked, privilege)
 	if !ok {
-		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(requested.asked))
+		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(asked))
 		return schemacache.Table{}, false
 	}
-	if !s.cache.IsWritable(requested.asked) {
+	if !s.cache.IsWritable(asked) {
 		writeFailure(writer, http.StatusBadRequest, codePostgresOnlyFeature, "The view is not updatable")
 		return schemacache.Table{}, false
 	}
 	return table, true
+}
+
+// admitRoutineResource admits a routine Resource with EXECUTE. A refused
+// Resource always gets the established routine-not-found response.
+func (s *Service) admitRoutineResource(
+	writer http.ResponseWriter,
+	requested requestedResource,
+) (schemacache.RoutineFact, bool) {
+	asked := requested.routine()
+	routine, ok := s.cache.Routine(requested.role, asked)
+	if !ok {
+		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
+		return schemacache.RoutineFact{}, false
+	}
+	return routine, true
 }
