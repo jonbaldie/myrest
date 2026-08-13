@@ -39,6 +39,7 @@ func multiSchemaCache() *schemacache.Cache {
 			{Role: "myrest_anon", Table: shopItems, Privilege: "INSERT"},
 			{Role: "myrest_anon", Table: warehouseItems, Privilege: "SELECT"},
 			{Role: "myrest_anon", Table: warehouseItems, Privilege: "INSERT"},
+			{Role: "myrest_user", Table: warehouseItems, Privilege: "INSERT"},
 		},
 	})
 }
@@ -126,6 +127,51 @@ func TestReadAdmissionKeepsRoleProfileAndResource(t *testing.T) {
 	}
 	if want := (schemacache.TableID{Database: "warehouse", Name: "items"}); source.table.ID != want {
 		t.Fatalf("read table %v, want %v", source.table.ID, want)
+	}
+}
+
+// The HTTP listener admits a write with its database role, Content-Profile,
+// and Resource together. This keeps the client contract while write admission
+// moves behind the common Resource seam.
+func TestWriteAdmissionKeepsRoleProfileAndResource(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{}
+	resolved := multiSchemaSettings()
+	resolved.JWT.Secret = jwtSecret
+	headers := bearer(t, gojwt.MapClaims{"role": "myrest_user"})
+	headers.Set("Content-Profile", "warehouse")
+	request, err := http.NewRequest(
+		http.MethodPost,
+		serveWrite(t, &reader{}, sink, httpapi.Options{
+			Settings: resolved,
+			Cache:    multiSchemaCache(),
+		}).URL()+"/items",
+		strings.NewReader(`{"sku":"gamma"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header = headers
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
+	}
+	if sink.role != "myrest_user" {
+		t.Fatalf("write as role %q, want myrest_user", sink.role)
+	}
+	if want := (schemacache.TableID{Database: "warehouse", Name: "items"}); sink.table.ID != want {
+		t.Fatalf("write table %v, want %v", sink.table.ID, want)
 	}
 }
 
