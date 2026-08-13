@@ -14,16 +14,15 @@ func (s *Service) optionsTable(writer http.ResponseWriter, request *http.Request
 	if !ok {
 		return
 	}
-	database, ok := s.requestDatabase(writer, request, headerAcceptProfile)
+	requested, ok := s.selectResource(
+		writer, request, role, headerAcceptProfile, request.PathValue("table"),
+	)
 	if !ok {
 		return
 	}
-	asked := schemacache.TableID{
-		Database: database,
-		Name:     request.PathValue("table"),
-	}
-	methods := tableAllowMethods(s.cache, role, asked)
+	methods := s.tableAllowMethods(requested)
 	if len(methods) == 0 {
+		asked := requested.table()
 		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(asked))
 		return
 	}
@@ -37,69 +36,17 @@ func (s *Service) optionsRoutine(writer http.ResponseWriter, request *http.Reque
 	if !ok {
 		return
 	}
-	database, ok := s.requestDatabase(writer, request, headerAcceptProfile)
+	requested, ok := s.selectResource(
+		writer, request, role, headerAcceptProfile, request.PathValue("name"),
+	)
 	if !ok {
 		return
 	}
-	asked := schemacache.RoutineID{
-		Database: database,
-		Name:     request.PathValue("name"),
-	}
-	routine, isResource := s.cache.Routine(role, asked)
-	if !isResource {
-		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
+	routine, ok := s.admitRoutineResource(writer, requested)
+	if !ok {
 		return
 	}
 	writeAllow(writer, routineAllowMethods(routine))
-}
-
-// tableAllowMethods builds the Allow list for a table or view from grants.
-// OPTIONS is always present when the role holds any usable privilege. PUT
-// upsert needs INSERT; merge-duplicates also needs UPDATE at request time.
-// Write methods on a view need the grant and an updatable view. A name that
-// is not a relation in the schema cache is not a resource.
-func tableAllowMethods(cache *schemacache.Cache, role schemacache.Role, id schemacache.TableID) []string {
-	if !cache.HasTable(id) {
-		return nil
-	}
-	methods := []string{http.MethodOptions}
-	usable := false
-	if cache.HasTablePrivilege(role, id, "SELECT") {
-		methods = append(methods, http.MethodGet, http.MethodHead)
-		usable = true
-	}
-	if cache.IsWritable(id) {
-		methods, usable = appendWriteAllowMethods(methods, usable, cache, role, id)
-	}
-	if !usable {
-		return nil
-	}
-	return methods
-}
-
-// appendWriteAllowMethods adds POST/PUT/PATCH/DELETE when the role holds the
-// matching write grant. The caller already checked that the relation is writable.
-// INSERT yields both POST and PUT.
-func appendWriteAllowMethods(
-	methods []string,
-	usable bool,
-	cache *schemacache.Cache,
-	role schemacache.Role,
-	id schemacache.TableID,
-) ([]string, bool) {
-	if cache.HasTablePrivilege(role, id, "INSERT") {
-		methods = append(methods, http.MethodPost, http.MethodPut)
-		usable = true
-	}
-	if cache.HasTablePrivilege(role, id, "UPDATE") {
-		methods = append(methods, http.MethodPatch)
-		usable = true
-	}
-	if cache.HasTablePrivilege(role, id, "DELETE") {
-		methods = append(methods, http.MethodDelete)
-		usable = true
-	}
-	return methods, usable
 }
 
 // routineAllowMethods builds the Allow list for a routine. EXECUTE is already

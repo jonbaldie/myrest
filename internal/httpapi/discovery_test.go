@@ -59,10 +59,21 @@ func discoveryCache() *schemacache.Cache {
 func serveDiscovery(t *testing.T, resolved config.Settings, caller ...httpapi.Caller) *httpapi.Service {
 	t.Helper()
 
+	return serveDiscoveryCache(t, resolved, discoveryCache(), caller...)
+}
+
+func serveDiscoveryCache(
+	t *testing.T,
+	resolved config.Settings,
+	cache *schemacache.Cache,
+	caller ...httpapi.Caller,
+) *httpapi.Service {
+	t.Helper()
+
 	options := httpapi.Options{
 		Addr:     "127.0.0.1:0",
 		Settings: resolved,
-		Cache:    discoveryCache(),
+		Cache:    cache,
 		Reader:   &reader{},
 	}
 	if len(caller) == 1 {
@@ -286,6 +297,57 @@ func TestOpenAPIListsOnlyPrivilegedResources(t *testing.T) {
 		if _, held := doc[key]; held {
 			t.Fatalf("OpenAPI held %s; that document depth is not supported", key)
 		}
+	}
+}
+
+// Discovery keeps its admitted Resources from one complete schema-cache
+// snapshot. A Resource changes only after the cache replacement returns.
+func TestDiscoveryChangesAdmittedResourcesAfterCacheReplacement(t *testing.T) {
+	t.Parallel()
+
+	cache := discoveryCache()
+	service := serveDiscoveryCache(t, settings(), cache)
+
+	_, body := get(t, service, "/")
+	before := decodeOpenAPI(t, body)
+	beforePaths, _ := before["paths"].(map[string]any)
+	if _, held := beforePaths["/items"]; !held {
+		t.Fatalf("paths before replacement = %v, want /items", beforePaths)
+	}
+	if _, held := beforePaths["/orders"]; held {
+		t.Fatalf("paths before replacement held /orders")
+	}
+
+	orders := schemacache.TableID{Database: "shop", Name: "orders"}
+	cache.Replace(schemacache.Catalog{
+		Tables: []schemacache.TableID{orders},
+		Columns: []schemacache.ColumnFact{
+			{Table: orders, Name: "id"},
+		},
+		Selects: []schemacache.SelectFact{
+			{Role: "myrest_anon", Table: orders},
+		},
+		TablePrivileges: []schemacache.TablePrivilegeFact{
+			{Role: "myrest_anon", Table: orders, Privilege: "SELECT"},
+		},
+	})
+
+	_, body = get(t, service, "/")
+	after := decodeOpenAPI(t, body)
+	afterPaths, _ := after["paths"].(map[string]any)
+	if _, held := afterPaths["/items"]; held {
+		t.Fatalf("paths after replacement held /items")
+	}
+	if _, held := afterPaths["/orders"]; !held {
+		t.Fatalf("paths after replacement = %v, want /orders", afterPaths)
+	}
+
+	response, responseBody := apitest.Do(t, http.MethodOptions, service.URL()+"/orders", nil)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("OPTIONS after replacement status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, responseBody)
+	}
+	if got := response.Header.Get("Allow"); got != "OPTIONS,GET,HEAD" {
+		t.Fatalf("OPTIONS after replacement Allow = %q, want OPTIONS,GET,HEAD", got)
 	}
 }
 
