@@ -100,20 +100,17 @@ func (s *Service) lookupRoutine(
 	if request.Method == http.MethodGet || request.Method == http.MethodHead {
 		header = headerAcceptProfile
 	}
-	database, ok := s.requestDatabase(writer, request, header)
+	requested, ok := s.selectResource(
+		writer, request, role, header, request.PathValue("name"),
+	)
 	if !ok {
 		return "", schemacache.RoutineID{}, schemacache.RoutineFact{}, false
 	}
-	asked := schemacache.RoutineID{
-		Database: database,
-		Name:     request.PathValue("name"),
-	}
-	routine, isResource := s.cache.Routine(role, asked)
-	if !isResource {
-		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
+	routine, ok := s.admitRoutineResource(writer, requested)
+	if !ok {
 		return "", schemacache.RoutineID{}, schemacache.RoutineFact{}, false
 	}
-	return role, asked, routine, true
+	return requested.role, requested.routine(), routine, true
 }
 
 func (s *Service) invokeRoutine(

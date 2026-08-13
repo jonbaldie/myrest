@@ -501,7 +501,9 @@ func (s *Service) lookupWriteTable(
 		writeNoHandler(writer, request)
 		return "", schemacache.TableID{}, schemacache.Table{}, false
 	}
-	requested, ok := s.selectResource(writer, request, role, headerContentProfile)
+	requested, ok := s.selectResource(
+		writer, request, role, headerContentProfile, request.PathValue("table"),
+	)
 	if !ok {
 		return "", schemacache.TableID{}, schemacache.Table{}, false
 	}
@@ -509,7 +511,7 @@ func (s *Service) lookupWriteTable(
 	if !ok {
 		return "", schemacache.TableID{}, schemacache.Table{}, false
 	}
-	return requested.role, requested.asked, table, true
+	return requested.role, requested.table(), table, true
 }
 
 func refuseUnbounded(writer http.ResponseWriter, prefer writePrefer, query readquery.Query) bool {

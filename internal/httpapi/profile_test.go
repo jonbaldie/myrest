@@ -20,6 +20,8 @@ import (
 func multiSchemaCache() *schemacache.Cache {
 	shopItems := schemacache.TableID{Database: "shop", Name: "items"}
 	warehouseItems := schemacache.TableID{Database: "warehouse", Name: "items"}
+	shopCount := schemacache.RoutineID{Database: "shop", Name: "item_count"}
+	warehouseCount := schemacache.RoutineID{Database: "warehouse", Name: "item_count"}
 
 	return schemacache.Build(schemacache.Catalog{
 		Tables: []schemacache.TableID{shopItems, warehouseItems},
@@ -40,6 +42,14 @@ func multiSchemaCache() *schemacache.Cache {
 			{Role: "myrest_anon", Table: warehouseItems, Privilege: "SELECT"},
 			{Role: "myrest_anon", Table: warehouseItems, Privilege: "INSERT"},
 			{Role: "myrest_user", Table: warehouseItems, Privilege: "INSERT"},
+		},
+		Routines: []schemacache.RoutineFact{
+			{ID: shopCount, Kind: "FUNCTION", ReturnType: "bigint", SQLDataAccess: "NO SQL"},
+			{ID: warehouseCount, Kind: "FUNCTION", ReturnType: "bigint", SQLDataAccess: "NO SQL"},
+		},
+		RoutinePrivileges: []schemacache.RoutinePrivilegeFact{
+			{Role: "myrest_anon", Routine: shopCount, Privilege: "EXECUTE"},
+			{Role: "myrest_user", Routine: warehouseCount, Privilege: "EXECUTE"},
 		},
 	})
 }
@@ -69,6 +79,24 @@ func serveProfiles(t *testing.T, source httpapi.Reader, sink httpapi.Writer) *ht
 			t.Errorf("close service: %v", err)
 		}
 	})
+	return service
+}
+
+func serveProfileRPC(t *testing.T, source httpapi.Caller, resolved config.Settings) *httpapi.Service {
+	t.Helper()
+
+	service, err := httpapi.Listen(httpapi.Options{
+		Addr:     "127.0.0.1:0",
+		Settings: resolved,
+		Cache:    multiSchemaCache(),
+		Reader:   &reader{},
+		Caller:   source,
+	})
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go func() { _ = service.Serve() }()
+	t.Cleanup(func() { _ = service.Close() })
 	return service
 }
 
@@ -172,6 +200,66 @@ func TestWriteAdmissionKeepsRoleProfileAndResource(t *testing.T) {
 	}
 	if want := (schemacache.TableID{Database: "warehouse", Name: "items"}); sink.table.ID != want {
 		t.Fatalf("write table %v, want %v", sink.table.ID, want)
+	}
+}
+
+// The HTTP listener admits an RPC Resource with its database role and the
+// profile for the request method. This keeps the GET and POST RPC contract
+// while routine admission moves behind the common Resource seam.
+func TestRPCAdmissionKeepsRoleProfileAndResource(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name   string
+		method string
+		header string
+	}{
+		{name: "GET", method: http.MethodGet, header: "Accept-Profile"},
+		{name: "POST", method: http.MethodPost, header: "Content-Profile"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source := &caller{body: int64(3)}
+			resolved := multiSchemaSettings()
+			resolved.JWT.Secret = jwtSecret
+			headers := bearer(t, gojwt.MapClaims{"role": "myrest_user"})
+			headers.Set(test.header, "warehouse")
+			service := serveProfileRPC(t, source, resolved)
+
+			var response *http.Response
+			var body []byte
+			if test.method == http.MethodGet {
+				response, body = apitest.Do(t, test.method, service.URL()+"/rpc/item_count", headers)
+			} else {
+				request, err := http.NewRequest(test.method, service.URL()+"/rpc/item_count", strings.NewReader(`{}`))
+				if err != nil {
+					t.Fatalf("new POST: %v", err)
+				}
+				request.Header = headers
+				request.Header.Set("Content-Type", "application/json")
+				response, err = http.DefaultClient.Do(request)
+				if err != nil {
+					t.Fatalf("POST: %v", err)
+				}
+				t.Cleanup(func() { _ = response.Body.Close() })
+				body, err = io.ReadAll(response.Body)
+				if err != nil {
+					t.Fatalf("read body: %v", err)
+				}
+			}
+
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+			}
+			if string(body) != "3\n" {
+				t.Fatalf("body = %q, want 3", body)
+			}
+			if source.role != "myrest_user" {
+				t.Fatalf("called as role %q, want myrest_user", source.role)
+			}
+			if want := (schemacache.RoutineID{Database: "warehouse", Name: "item_count"}); source.routine.ID != want {
+				t.Fatalf("called routine %v, want %v", source.routine.ID, want)
+			}
+		})
 	}
 }
 
