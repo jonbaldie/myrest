@@ -80,10 +80,71 @@ func (s *Service) admitRoutineResource(
 	requested requestedResource,
 ) (schemacache.RoutineFact, bool) {
 	asked := requested.routine()
-	routine, ok := s.cache.Routine(requested.role, asked)
+	routine, ok := s.routineResource(requested)
 	if !ok {
 		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
 		return schemacache.RoutineFact{}, false
 	}
 	return routine, true
+}
+
+// routineResource gives the routine Resource that the selected database role
+// can use. Callers that answer HTTP refusals use admitRoutineResource.
+func (s *Service) routineResource(requested requestedResource) (schemacache.RoutineFact, bool) {
+	return routineResource(schemacache.ReadSnapshot(s.cache), requested)
+}
+
+func routineResource(
+	snapshot schemacache.Snapshot,
+	requested requestedResource,
+) (schemacache.RoutineFact, bool) {
+	return schemacache.RoutineFrom(snapshot, requested.role, requested.routine())
+}
+
+// tableAllowMethods gives the methods OPTIONS and discovery can advertise for
+// one Resource. The snapshot keeps all grant and writability facts together.
+func (s *Service) tableAllowMethods(requested requestedResource) []string {
+	return tableAllowMethods(schemacache.ReadSnapshot(s.cache), requested)
+}
+
+func tableAllowMethods(snapshot schemacache.Snapshot, requested requestedResource) []string {
+	id := requested.table()
+	if !schemacache.HasTableIn(snapshot, id) {
+		return nil
+	}
+	methods := []string{http.MethodOptions}
+	usable := false
+	if schemacache.HasTablePrivilegeFrom(snapshot, requested.role, id, "SELECT") {
+		methods = append(methods, http.MethodGet, http.MethodHead)
+		usable = true
+	}
+	if schemacache.IsWritableIn(snapshot, id) {
+		methods, usable = appendWriteAllowMethods(methods, usable, snapshot, requested.role, id)
+	}
+	if !usable {
+		return nil
+	}
+	return methods
+}
+
+func appendWriteAllowMethods(
+	methods []string,
+	usable bool,
+	snapshot schemacache.Snapshot,
+	role schemacache.Role,
+	id schemacache.TableID,
+) ([]string, bool) {
+	if schemacache.HasTablePrivilegeFrom(snapshot, role, id, "INSERT") {
+		methods = append(methods, http.MethodPost, http.MethodPut)
+		usable = true
+	}
+	if schemacache.HasTablePrivilegeFrom(snapshot, role, id, "UPDATE") {
+		methods = append(methods, http.MethodPatch)
+		usable = true
+	}
+	if schemacache.HasTablePrivilegeFrom(snapshot, role, id, "DELETE") {
+		methods = append(methods, http.MethodDelete)
+		usable = true
+	}
+	return methods, usable
 }

@@ -53,10 +53,9 @@ func (s *Service) writeRootSpec(
 		writeFailure(writer, http.StatusInternalServerError, codeMySQLDatabaseFailure, err.Error())
 		return
 	}
-	asked := schemacache.RoutineID{Database: database, Name: routineName}
-	routine, isResource := s.cache.Routine(role, asked)
-	if !isResource {
-		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
+	requested := requestedResource{role: role, database: database, name: routineName}
+	routine, ok := s.admitRoutineResource(writer, requested)
+	if !ok {
 		return
 	}
 	result, err := s.caller.Call(
@@ -83,7 +82,7 @@ func splitRootSpec(name string) (database, routine string, err error) {
 }
 
 func (s *Service) openAPIDocument(role schemacache.Role) map[string]any {
-	paths := openAPIPaths(s.cache, s.settings, role)
+	paths := s.openAPIPaths(role)
 	doc := map[string]any{
 		"swagger": "2.0",
 		"info": map[string]any{
@@ -98,12 +97,9 @@ func (s *Service) openAPIDocument(role schemacache.Role) map[string]any {
 	return doc
 }
 
-func openAPIPaths(
-	cache *schemacache.Cache,
-	settings config.Settings,
-	role schemacache.Role,
-) map[string]any {
-	followPrivileges := settings.OpenAPI.Mode != config.OpenAPIModeIgnorePrivileges
+func (s *Service) openAPIPaths(role schemacache.Role) map[string]any {
+	snapshot := schemacache.ReadSnapshot(s.cache)
+	followPrivileges := s.settings.OpenAPI.Mode != config.OpenAPIModeIgnorePrivileges
 	paths := map[string]any{
 		"/": map[string]any{
 			"get": map[string]any{
@@ -114,25 +110,25 @@ func openAPIPaths(
 			},
 		},
 	}
-	addOpenAPITables(paths, cache, settings, role, followPrivileges)
-	addOpenAPIRoutines(paths, cache, settings, role, followPrivileges)
+	s.addOpenAPITables(paths, snapshot, role, followPrivileges)
+	s.addOpenAPIRoutines(paths, snapshot, role, followPrivileges)
 	return paths
 }
 
-func addOpenAPITables(
+func (s *Service) addOpenAPITables(
 	paths map[string]any,
-	cache *schemacache.Cache,
-	settings config.Settings,
+	snapshot schemacache.Snapshot,
 	role schemacache.Role,
 	followPrivileges bool,
 ) {
-	for _, id := range schemacache.TableIDs(cache) {
-		if !settings.HasDatabase(id.Database) {
+	for _, id := range schemacache.TableIDsFrom(snapshot) {
+		if !s.settings.HasDatabase(id.Database) {
 			continue
 		}
-		methods := ignorePrivilegeTableMethods(cache, id)
+		methods := ignorePrivilegeTableMethods(snapshot, id)
 		if followPrivileges {
-			methods = tableAllowMethods(cache, role, id)
+			requested := requestedResource{role: role, database: id.Database, name: id.Name}
+			methods = tableAllowMethods(snapshot, requested)
 		}
 		if len(methods) == 0 {
 			continue
@@ -141,19 +137,23 @@ func addOpenAPITables(
 	}
 }
 
-func addOpenAPIRoutines(
+func (s *Service) addOpenAPIRoutines(
 	paths map[string]any,
-	cache *schemacache.Cache,
-	settings config.Settings,
+	snapshot schemacache.Snapshot,
 	role schemacache.Role,
 	followPrivileges bool,
 ) {
-	for _, routine := range cache.Routines() {
-		if !settings.HasDatabase(routine.ID.Database) {
+	for _, routine := range schemacache.RoutinesFrom(snapshot) {
+		if !s.settings.HasDatabase(routine.ID.Database) {
 			continue
 		}
-		if followPrivileges && !cache.HasRoutinePrivilege(role, routine.ID, "EXECUTE") {
-			continue
+		if followPrivileges {
+			requested := requestedResource{role: role, database: routine.ID.Database, name: routine.ID.Name}
+			admitted, ok := routineResource(snapshot, requested)
+			if !ok {
+				continue
+			}
+			routine = admitted
 		}
 		paths["/rpc/"+routine.ID.Name] = pathItemFromMethods(routineAllowMethods(routine))
 	}
@@ -174,13 +174,13 @@ func applyOpenAPISecurity(doc map[string]any, active bool) {
 	doc["security"] = []map[string]any{{"JWT": []any{}}}
 }
 
-func ignorePrivilegeTableMethods(cache *schemacache.Cache, id schemacache.TableID) []string {
+func ignorePrivilegeTableMethods(snapshot schemacache.Snapshot, id schemacache.TableID) []string {
 	methods := []string{
 		http.MethodOptions,
 		http.MethodGet,
 		http.MethodHead,
 	}
-	if cache.IsWritable(id) {
+	if schemacache.IsWritableIn(snapshot, id) {
 		methods = append(methods, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete)
 	}
 	return methods
