@@ -97,7 +97,6 @@ type Cache struct {
 	foreignKeys       []ForeignKeyFact
 	routines          []RoutineFact
 	routinesByID      map[RoutineID]RoutineFact
-	selects           map[Role]map[TableID]bool
 	tablePrivileges   map[Role]map[tablePrivilege]bool
 	routinePrivileges map[Role]map[routinePrivilege]bool
 }
@@ -162,7 +161,6 @@ func (c *Cache) replaceUnlocked(catalog Catalog) {
 	columns := make(map[TableID][]Column)
 	comments := make(map[TableID]string, len(catalog.RelationComments))
 	keys := make(map[TableID][]KeyFact)
-	selects := make(map[Role]map[TableID]bool)
 
 	for _, fact := range catalog.Columns {
 		columns[fact.Table] = append(columns[fact.Table], Column{
@@ -191,11 +189,6 @@ func (c *Cache) replaceUnlocked(catalog Catalog) {
 		keys[fact.Table] = append(keys[fact.Table], fact)
 	}
 
-	grants := grantGraph(catalog)
-	for role := range grants.roles() {
-		selects[role] = grants.reachable(role)
-	}
-
 	tablePrivileges := privilegeGraph(catalog)
 	routinePrivileges := routinePrivilegeGraph(catalog)
 
@@ -213,7 +206,6 @@ func (c *Cache) replaceUnlocked(catalog Catalog) {
 	c.foreignKeys = foreignKeys
 	c.routines = routines
 	c.routinesByID = routinesByID
-	c.selects = selects
 	c.tablePrivileges = tablePrivileges
 	c.routinePrivileges = routinePrivileges
 }
@@ -254,6 +246,13 @@ func privilegeGraph(catalog Catalog) map[Role]map[tablePrivilege]bool {
 			direct[role] = make(map[tablePrivilege]struct{})
 		}
 		direct[role][tablePrivilege{table: fact.Table, privilege: fact.Privilege}] = struct{}{}
+	}
+	for _, fact := range catalog.Selects {
+		role := bareName(fact.Role)
+		if direct[role] == nil {
+			direct[role] = make(map[tablePrivilege]struct{})
+		}
+		direct[role][tablePrivilege{table: fact.Table, privilege: "SELECT"}] = struct{}{}
 	}
 	grants := grantGraph(catalog)
 	found := make(map[Role]map[tablePrivilege]bool)
@@ -338,25 +337,15 @@ func walkRoutinePrivileges(
 	}
 }
 
-// grants holds the SELECT privileges of each role and the role grants between
-// them, which is what the walk over the grants of one role needs.
+// grants holds the role grants between database roles.
 type grants struct {
-	direct  map[Role]map[TableID]struct{}
 	granted map[Role][]Role
 }
 
 // grantGraph reads the grant facts of the catalog, by role name.
 func grantGraph(catalog Catalog) grants {
 	graph := grants{
-		direct:  make(map[Role]map[TableID]struct{}),
 		granted: make(map[Role][]Role),
-	}
-	for _, fact := range catalog.Selects {
-		role := bareName(fact.Role)
-		if graph.direct[role] == nil {
-			graph.direct[role] = make(map[TableID]struct{})
-		}
-		graph.direct[role][fact.Table] = struct{}{}
 	}
 	for _, fact := range catalog.Roles {
 		holder := bareName(fact.Holder)
@@ -370,37 +359,10 @@ func grantGraph(catalog Catalog) grants {
 // no table, whether the cache knows the name or not.
 func (g grants) roles() map[Role]struct{} {
 	found := make(map[Role]struct{})
-	for role := range g.direct {
-		found[role] = struct{}{}
-	}
 	for role := range g.granted {
 		found[role] = struct{}{}
 	}
 	return found
-}
-
-// reachable gives every table the role can select from: its own grants and the
-// grants of every role it reaches.
-func (g grants) reachable(role Role) map[TableID]bool {
-	found := make(map[TableID]bool)
-	g.walk(role, make(map[Role]bool), found)
-	return found
-}
-
-// walk follows the role grants. A role myrest already walked ends the walk
-// there, because MySQL takes a role that is granted back to its holder.
-func (g grants) walk(role Role, walked map[Role]bool, found map[TableID]bool) {
-	if walked[role] {
-		return
-	}
-	walked[role] = true
-
-	for table := range g.direct[role] {
-		found[table] = true
-	}
-	for _, next := range g.granted[role] {
-		g.walk(next, walked, found)
-	}
 }
 
 // bareName gives the name part of a role. MySQL names a role name@host, and
@@ -418,25 +380,21 @@ func bareName(role Role) Role {
 // not a resource, and neither is a name the cache does not hold. The caller
 // names the database, so that one name can never answer from another one.
 func (c *Cache) Resource(role Role, id TableID) (Table, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	table, held := c.tables[id]
-	if !held || !c.selects[bareName(role)][id] {
-		return Table{}, false
-	}
-	return table, true
+	return TableWithPrivilegeFrom(ReadSnapshot(c), role, id, "SELECT")
 }
 
 // TableWithPrivilege gives the table or view when the database role holds the
 // named privilege on it. Exposure of a resource does not imply every HTTP
 // method: INSERT, UPDATE, and DELETE each need their own grant.
 func (c *Cache) TableWithPrivilege(role Role, id TableID, privilege string) (Table, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	return TableWithPrivilegeFrom(ReadSnapshot(c), role, id, privilege)
+}
 
-	table, held := c.tables[id]
-	if !held || !c.tablePrivileges[bareName(role)][tablePrivilege{table: id, privilege: privilege}] {
+// TableWithPrivilegeFrom gives a table or view of one schema-cache snapshot
+// when the database role holds the named privilege on it.
+func TableWithPrivilegeFrom(snapshot Snapshot, role Role, id TableID, privilege string) (Table, bool) {
+	table, held := snapshot.tables[id]
+	if !held || !snapshot.tablePrivileges[bareName(role)][tablePrivilege{table: id, privilege: privilege}] {
 		return Table{}, false
 	}
 	return table, true

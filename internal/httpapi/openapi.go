@@ -149,11 +149,11 @@ func (s *Service) addOpenAPIRoutines(
 		}
 		if followPrivileges {
 			requested := requestedResource{role: role, database: routine.ID.Database, name: routine.ID.Name}
-			admitted, ok := routineResource(snapshot, requested)
-			if !ok {
+			admission := admitFrom(snapshot, admissionRequest{requested: requested, need: routineNeed})
+			if admission.refusal != noAdmissionRefusal {
 				continue
 			}
-			routine = admitted
+			routine = admission.routine
 		}
 		paths["/rpc/"+routine.ID.Name] = pathItemFromMethods(routineAllowMethods(routine))
 	}
