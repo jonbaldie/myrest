@@ -33,12 +33,7 @@ const (
 // Accept-Profile selects the database; with no header the table comes from
 // the default database.
 func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
-	role, ok := s.requestRole(writer, request)
-	if !ok {
-		return
-	}
-
-	database, ok := s.requestDatabase(writer, request, headerAcceptProfile)
+	requested, ok := s.selectReadResource(writer, request, headerAcceptProfile)
 	if !ok {
 		return
 	}
@@ -52,14 +47,8 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 		writeFailure(writer, http.StatusBadRequest, codeAggregatesDisabled, msgAggregatesDisabled)
 		return
 	}
-
-	asked := schemacache.TableID{
-		Database: database,
-		Name:     request.PathValue("table"),
-	}
-	table, isResource := s.cache.Resource(role, asked)
-	if !isResource {
-		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(asked))
+	table, ok := s.admitReadResource(writer, requested)
+	if !ok {
 		return
 	}
 
@@ -68,9 +57,9 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	read, err := s.readWithEmbeds(request.Context(), role, table, query)
+	read, err := s.readWithEmbeds(request.Context(), requested.role, table, query)
 	if err != nil {
-		s.writeReadFailure(writer, asked, role, err)
+		s.writeReadFailure(writer, requested.asked, requested.role, err)
 		return
 	}
 	writeRead(writer, request.Method == http.MethodHead, query, read, repr)

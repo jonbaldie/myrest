@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	gojwt "github.com/golang-jwt/jwt/v5"
 	"github.com/jonbaldie/myrest/internal/apitest"
 	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/httpapi"
@@ -31,6 +32,7 @@ func multiSchemaCache() *schemacache.Cache {
 		Selects: []schemacache.SelectFact{
 			{Role: "myrest_anon", Table: shopItems},
 			{Role: "myrest_anon", Table: warehouseItems},
+			{Role: "myrest_user", Table: warehouseItems},
 		},
 		TablePrivileges: []schemacache.TablePrivilegeFact{
 			{Role: "myrest_anon", Table: shopItems, Privilege: "SELECT"},
@@ -85,6 +87,42 @@ func TestAcceptProfileSelectsAConfiguredDatabase(t *testing.T) {
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if want := (schemacache.TableID{Database: "warehouse", Name: "items"}); source.table.ID != want {
+		t.Fatalf("read table %v, want %v", source.table.ID, want)
+	}
+}
+
+// The HTTP listener admits a read with its database role, Accept-Profile, and
+// Resource together. This protects the client contract while admission work
+// moves behind one seam.
+func TestReadAdmissionKeepsRoleProfileAndResource(t *testing.T) {
+	t.Parallel()
+
+	source := &reader{}
+	resolved := multiSchemaSettings()
+	resolved.JWT.Secret = jwtSecret
+	headers := bearer(t, gojwt.MapClaims{"role": "myrest_user"})
+	headers.Set("Accept-Profile", "warehouse")
+	service, err := httpapi.Listen(httpapi.Options{
+		Addr:     "127.0.0.1:0",
+		Settings: resolved,
+		Cache:    multiSchemaCache(),
+		Reader:   source,
+	})
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go func() { _ = service.Serve() }()
+	t.Cleanup(func() { _ = service.Close() })
+
+	response, body := apitest.Do(t, http.MethodGet, service.URL()+"/items", headers)
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if source.role != "myrest_user" {
+		t.Fatalf("read as role %q, want myrest_user", source.role)
 	}
 	if want := (schemacache.TableID{Database: "warehouse", Name: "items"}); source.table.ID != want {
 		t.Fatalf("read table %v, want %v", source.table.ID, want)
