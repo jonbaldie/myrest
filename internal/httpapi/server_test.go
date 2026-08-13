@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -160,6 +161,164 @@ func TestAnonymousReadRunsAsTheAnonymousDatabaseRole(t *testing.T) {
 	// goes away stops the work in the database.
 	if !source.stoppable {
 		t.Error("the read carries no context a request can stop")
+	}
+}
+
+// The HTTP listener admits a read from the schema-cache SELECT privilege. It
+// must use the same privilege fact that OPTIONS and discovery use.
+func TestReadAdmissionUsesTheSchemaCacheSelectPrivilege(t *testing.T) {
+	t.Parallel()
+
+	items := schemacache.TableID{Database: "shop", Name: "items"}
+	admissionCache := schemacache.Build(schemacache.Catalog{
+		Tables: []schemacache.TableID{items},
+		Columns: []schemacache.ColumnFact{
+			{Table: items, Name: "id"},
+		},
+		TablePrivileges: []schemacache.TablePrivilegeFact{
+			{Role: "myrest_anon", Table: items, Privilege: "SELECT"},
+		},
+	})
+	source := &reader{}
+	service, err := httpapi.Listen(httpapi.Options{
+		Addr:     "127.0.0.1:0",
+		Settings: settings(),
+		Cache:    admissionCache,
+		Reader:   source,
+	})
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go func() { _ = service.Serve() }()
+	t.Cleanup(func() { _ = service.Close() })
+
+	response, body := get(t, service, "/items")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if source.role != "myrest_anon" {
+		t.Fatalf("read as role %q, want myrest_anon", source.role)
+	}
+	if source.table.ID != items {
+		t.Fatalf("read table = %v, want %v", source.table.ID, items)
+	}
+}
+
+// The HTTP listener keeps Resource admission and refusal behavior the same
+// for reads, writes, RPC, OPTIONS, and discovery.
+func TestResourceAdmissionKeepsTheHTTPContractAcrossRoutes(t *testing.T) {
+	t.Parallel()
+
+	items := schemacache.TableID{Database: "shop", Name: "items"}
+	hidden := schemacache.TableID{Database: "shop", Name: "hidden"}
+	count := schemacache.RoutineID{Database: "shop", Name: "item_count"}
+	privateCount := schemacache.RoutineID{Database: "shop", Name: "private_count"}
+	admissionCache := schemacache.Build(schemacache.Catalog{
+		Tables: []schemacache.TableID{items, hidden},
+		Columns: []schemacache.ColumnFact{
+			{Table: items, Name: "id"},
+			{Table: hidden, Name: "id"},
+		},
+		TablePrivileges: []schemacache.TablePrivilegeFact{
+			{Role: "myrest_anon", Table: items, Privilege: "SELECT"},
+			{Role: "myrest_anon", Table: items, Privilege: "INSERT"},
+		},
+		Routines: []schemacache.RoutineFact{
+			{ID: count, Kind: "FUNCTION", ReturnType: "bigint", SQLDataAccess: "NO SQL"},
+			{ID: privateCount, Kind: "FUNCTION", ReturnType: "bigint", SQLDataAccess: "NO SQL"},
+		},
+		RoutinePrivileges: []schemacache.RoutinePrivilegeFact{
+			{Role: "myrest_anon", Routine: count, Privilege: "EXECUTE"},
+		},
+	})
+	source := &reader{}
+	sink := &writer{}
+	caller := &caller{body: int64(3)}
+	service, err := httpapi.Listen(httpapi.Options{
+		Addr:     "127.0.0.1:0",
+		Settings: settings(),
+		Cache:    admissionCache,
+		Reader:   source,
+		Writer:   sink,
+		Caller:   caller,
+	})
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go func() { _ = service.Serve() }()
+	t.Cleanup(func() { _ = service.Close() })
+
+	post := func(path string) (*http.Response, []byte) {
+		t.Helper()
+		request, err := http.NewRequest(http.MethodPost, service.URL()+path, strings.NewReader(`{}`))
+		if err != nil {
+			t.Fatalf("new POST %s: %v", path, err)
+		}
+		request.Header.Set("Content-Type", "application/json")
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatalf("POST %s: %v", path, err)
+		}
+		t.Cleanup(func() { _ = response.Body.Close() })
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatalf("read POST %s body: %v", path, err)
+		}
+		return response, body
+	}
+
+	response, body := get(t, service, "/items")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("GET status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if source.role != "myrest_anon" || source.table.ID != items {
+		t.Fatalf("read = (%q, %v), want (myrest_anon, %v)", source.role, source.table.ID, items)
+	}
+
+	response, body = post("/items")
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("POST status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
+	}
+	if sink.role != "myrest_anon" || sink.table.ID != items {
+		t.Fatalf("write = (%q, %v), want (myrest_anon, %v)", sink.role, sink.table.ID, items)
+	}
+
+	response, body = post("/rpc/item_count")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("RPC status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if caller.role != "myrest_anon" || caller.routine.ID != count {
+		t.Fatalf("RPC = (%q, %v), want (myrest_anon, %v)", caller.role, caller.routine.ID, count)
+	}
+
+	response, body = apitest.Do(t, http.MethodOptions, service.URL()+"/items", nil)
+	if response.StatusCode != http.StatusOK || response.Header.Get("Allow") != "OPTIONS,GET,HEAD,POST,PUT" {
+		t.Fatalf("OPTIONS = (%d, %q), want (200, OPTIONS,GET,HEAD,POST,PUT); body = %s", response.StatusCode, response.Header.Get("Allow"), body)
+	}
+
+	_, body = get(t, service, "/")
+	paths, _ := decodeOpenAPI(t, body)["paths"].(map[string]any)
+	for _, path := range []string{"/items", "/rpc/item_count"} {
+		if _, found := paths[path]; !found {
+			t.Fatalf("paths = %v, want %s", paths, path)
+		}
+	}
+
+	response, body = get(t, service, "/hidden")
+	_ = apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
+	response, body = post("/hidden")
+	_ = apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
+	response, body = post("/rpc/private_count")
+	_ = apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST202")
+	response, body = apitest.Do(t, http.MethodOptions, service.URL()+"/hidden", nil)
+	_ = apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
+
+	_, body = get(t, service, "/")
+	paths, _ = decodeOpenAPI(t, body)["paths"].(map[string]any)
+	for _, path := range []string{"/hidden", "/rpc/private_count"} {
+		if _, found := paths[path]; found {
+			t.Fatalf("paths = %v, must not hold %s", paths, path)
+		}
 	}
 }
 

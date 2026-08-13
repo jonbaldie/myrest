@@ -73,7 +73,7 @@ func (c *Cache) ResolveEmbed(role Role, origin TableID, targetName, hint string)
 		}
 		return Relationship{}, RelationshipMissing{Origin: origin, Target: targetName}
 	}
-	if !c.selects[bareName(role)][targetID] {
+	if !c.tablePrivileges[bareName(role)][tablePrivilege{table: targetID, privilege: "SELECT"}] {
 		return Relationship{}, RelationshipMissing{Origin: origin, Target: targetName}
 	}
 
