@@ -1,217 +1,140 @@
 # myrest
 
-myrest is an HTTP API service that exposes MySQL 8.0+ with PostgREST-compatible
-client contracts. The **parity target** is PostgREST v14.16.
+[![Go Report Card](https://github.com/jonbaldie/myrest/actions/workflows/goreportcard.yml/badge.svg)](https://github.com/jonbaldie/myrest/actions/workflows/goreportcard.yml)
+[![Security](https://github.com/jonbaldie/myrest/actions/workflows/security.yml/badge.svg)](https://github.com/jonbaldie/myrest/actions/workflows/security.yml)
+[![Release](https://img.shields.io/github/v/release/jonbaldie/myrest)](https://github.com/jonbaldie/myrest/releases/latest)
 
-The service covers the locked parent **capability areas**: Bearer JWT auth with
-**database role** selection, **schema cache** **resources**, ordinary reads
-(including aggregates when enabled), **embed** over declared foreign keys,
-ordinary writes (including updatable views), `/rpc` for functions and
-procedures, the named representation and Prefer values, the error envelope, and
-the config surface. Every labelled behaviour has one **parity label**. Partial
-match and not-supported edges stay in the derived **gap list**; see
-[Verification](docs/verification.md) for that list and the scenario index.
+myrest exposes MySQL 8.0+ as a REST API. It supports the parts of the
+[PostgREST](https://postgrest.org/) client contract that map clearly to MySQL.
+
+Use myrest when you want PostgREST-style reads, writes, embedded resources,
+JWT roles, and routine calls for a MySQL database.
+
+## Features
+
+- Read and write MySQL tables and updatable views through HTTP.
+- Filter, select, order, and page rows with PostgREST query parameters.
+- Embed related rows through declared foreign keys.
+- Call MySQL functions and procedures through `/rpc` routes.
+- Use Bearer JWTs to select MySQL database roles.
+- Expose more than one database with profile headers.
+- Return JSON, CSV, and PostgREST error envelopes.
+- Generate an OpenAPI document from the live schema cache.
+- Reload the schema cache without a process restart.
+
+myrest targets PostgREST v14.16. Compatibility is tested, but it is not
+complete. See [Compatibility](#compatibility) before you use it as a
+replacement for PostgREST.
 
 ## Requirements
 
-- Go 1.26+
-- Docker (for the MySQL 8.0+ test harness)
-- [`messgo`](https://github.com/quality-gates/messgo) and [`mutago`](https://github.com/quality-gates/mutago) on `PATH`
+- Go 1.26.5 or later
+- MySQL 8.0 or later
+- Docker for the development database and acceptance tests
+
+## Install
+
+Install the latest release with Go:
 
 ```bash
-go install github.com/quality-gates/messgo/cmd/messgo@latest
-go install github.com/quality-gates/mutago/v2/cmd/mutago@latest
+go install github.com/jonbaldie/myrest/cmd/myrest@latest
 ```
 
-## Commands
-
-| Command | Purpose |
-| --- | --- |
-| `go run ./cmd/myrest [config-file]` | Start the myrest service (`MYREST_LISTEN`, default `127.0.0.1:3000`) |
-| `make test` | Run tests (unit tests, process tests, and the MySQL 8 acceptance tests in `test/acceptance`) |
-| `make scenarios` | Run normative scenario packages: `./cmd/myrest`, `./internal/httpapi`, `./test/acceptance`, `./internal/verification` |
-| `make messgo` | Run messgo `design` and `codesize` rulesets (must report no violations) |
-| `make mutago` | Run mutago on the production packages with `--coverage --min-covered-msi 80` |
-| `make mysql-fixtures` | Start MySQL 8.0+ and load `testdata/fixtures/schema.sql` |
-| `make verification-docs` | Rebuild `docs/verification.md` from capability-area Gap list rows and the scenario index |
-
-## Reading a table
-
-A client that sends no JWT reads a table as the **anonymous database role** of `db-anon-role`:
+Or build it from source:
 
 ```bash
-curl "http://127.0.0.1:3000/items?select=id,name&name=eq.alpha&order=id.asc&limit=1"
-[{"id":1,"name":"alpha"}]
+git clone https://github.com/jonbaldie/myrest.git
+cd myrest
+make build
 ```
 
-A client that sends a valid Bearer JWT reads as the **database role** named by the role claim (default `role`):
+The source build writes the binary to `bin/myrest`.
+
+## Quick start
+
+The repository includes a disposable MySQL fixture. From a source checkout,
+start it in one terminal:
 
 ```bash
-curl http://127.0.0.1:3000/secrets \
-  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-[{"id":1,"payload":"top-secret"}]
+make mysql-fixtures
 ```
 
-`HEAD` uses the same read intent and returns no body. `Prefer: count=exact`
-puts the exact total in `Content-Range`. `db-max-rows` is a hard row cap when
-set. See [Ordinary read](docs/ordinary-read.md) for the full-match filter
-operator list, and [Read parity boundaries](docs/read-parity-boundaries.md)
-for the text-case and JSON path subsets and the stable refusals
-(`ilike`, JSON `->` / `->>`, and refused FTS / array / range / planned count).
-
-## Embed
-
-A nested select loads related rows when a **relationship** is in the **schema
-cache**. Relationships come only from declared foreign keys:
-
-```bash
-curl "http://127.0.0.1:3000/orders?select=id,items(id,name)&id=eq.1"
-[{"id":1,"items":{"id":1,"name":"alpha"}}]
-```
-
-Nested filter, order, and limit use the embed name as a prefix
-(`orders.order=id.desc&orders.limit=1`). Many-to-many uses a declared join
-table. When more than one foreign key applies, disambiguate with `!fk_name`.
-See [Embed](docs/embed.md).
-
-## Aggregates
-
-Aggregates are off by default (`db-aggregates-enabled = false`). When the
-operator turns them on, `sum` / `count` / `avg` / `min` / `max` select forms
-and automatic group behaviour match the parity target:
-
-```bash
-curl "http://127.0.0.1:3000/orders?select=count(),item_id"
-[{"count":2,"item_id":1},{"count":1,"item_id":2}]
-```
-
-While the gate is off, an aggregate select refuses with `PGRST123`. Aggregate
-plus **embed** works when the parity target allows it and the **relationship**
-is in the **schema cache**. Aggregates inside a to-many spread refuse with
-`PGRST127`. See [Aggregates](docs/aggregates.md).
-
-myrest opens pooled MySQL connections as the **authenticator** of `db-uri` and activates the database role for each request, so MySQL grants — not a second access list — say what a client may read. After the **role switch**, grants follow the active role, but SQL `CURRENT_USER()` stays the authenticator (a documented **partial match**). See [Authentication](docs/auth.md).
-
-A table or view is a **resource** of the request only when it is in the selected MySQL database and the active role holds the relevant privilege on it, of itself or through a role granted to it. With no profile header the selected database is the **default database** (the first of `db-schemas`). `Accept-Profile` selects the database for a read; `Content-Profile` selects it for a write. A profile outside `db-schemas` refuses with `PGRST106`. Any other table or view name gets the PostgREST error envelope:
-
-```bash
-curl http://127.0.0.1:3000/secrets
-{"code":"PGRST205","message":"Could not find the table 'shop.secrets' in the schema cache","details":null,"hint":null}
-```
-
-```bash
-curl http://127.0.0.1:3000/items -H 'Accept-Profile: warehouse'
-# reads warehouse.items when warehouse is in db-schemas
-```
-
-When MySQL itself refuses a read — a grant taken away after start-up, for example — the client gets the same envelope with a message of myrest. What MySQL said names the accounts of the deployment, so it goes to the log of the operator and not to the client.
-
-A view with `SELECT` is readable through the ordinary read surface. A write through a view needs the matching write grant and MySQL `IS_UPDATABLE = YES` in the **schema cache**. A non-updatable view refuses writes with `MYREST001`. See [Views as resources](docs/views.md) and [Ordinary write](docs/write.md).
-
-myrest builds the **schema cache** from the MySQL catalog at start-up. Send `SIGUSR1` to reload it after DDL or grant changes; a process restart is not required for that refresh. Config changes still need a restart.
-
-## Writing a table
-
-`POST /{table}` inserts one object or a JSON array. `PATCH` and `DELETE` use
-the ordinary-read filter surface. `PUT /{table}?pk=eq.value` upserts one row
-by primary key. Unbounded `PATCH`/`DELETE` need a filter or `Prefer: all-rows`.
-Write Prefer values:
-
-- `return=minimal` (default) and `return=headers-only` are **full match**
-- `return=representation` is **partial match**: honest body only when myrest
-  can re-read affected rows (primary key + `SELECT` for insert/update)
-- Embed after write with `return=representation` is **full match** when the
-  **relationship** is in the **schema cache**; otherwise myrest refuses
-- `missing=default`, `max-affected`, and `handling=strict|lenient` are **full match**
-
-See [Ordinary write](docs/write.md) and [Embed](docs/embed.md).
-
-## Calling a routine
-
-`POST /rpc/<name>` calls a MySQL function or procedure in the selected database when the active **database role** holds `EXECUTE` on it. With no profile header that database is the **default database**. `Content-Profile` selects the database for `POST /rpc`; `Accept-Profile` selects it for `GET /rpc`. Named JSON object keys are the argument names:
-
-```bash
-curl -X POST http://127.0.0.1:3000/rpc/add_them \
-  -H 'Content-Type: application/json' \
-  -d '{"a":1,"b":2}'
-3
-```
-
-Functions match the PostgREST scalar body. Procedures use the same path and return one stable JSON object of `OUT`/`INOUT` values (or `{}` when there are none). See [Procedure RPC response shape](docs/rpc-procedures.md).
-
-`GET /rpc/<name>` is a **partial match**: it runs only when the routine is **read-safe** under MySQL `SQL_DATA_ACCESS`. Named query-string keys are the argument names. A non-read-safe routine refuses stably. See [GET /rpc read-safe routines](docs/rpc-get.md).
-
-Unusual whole-body `POST /rpc` argument modes (single unnamed `json`/`jsonb`/`bytea`/`text`/`xml`) are **not supported** and refuse stably. See [RPC whole-body argument modes](docs/rpc-body-modes.md).
-
-## Media types and Prefer timezone
-
-Ordinary row data claims `application/json`, `application/vnd.pgrst.array+json`,
-`application/vnd.pgrst.object+json` (exactly one row), and `text/csv`. An
-unclaimed `Accept` value — including `application/geo+json`, plan media, and
-custom handlers — refuses with `PGRST107`. Prefer `timezone` refuses with
-`MYREST001`. Prefer `tx=` follows `db-tx-end`; see
-[Transaction end and isolation](docs/transactions.md). The full label list is
-in [Media types and the remaining Prefer values](docs/media-types-and-prefer.md)
-and [ADR 0014](docs/adr/0014-media-types-and-remaining-prefer.md).
-
-## CORS and proxy URLs
-
-`server-cors-allowed-origins` sets the browser origin policy. An empty list accepts every origin. Allowed origins get the PostgREST CORS response and preflight headers; an origin outside the list gets no `Access-Control-Allow-Origin`. myrest never takes host or scheme from `X-Forwarded-*` or `Forwarded`. When it reports an absolute base URL, `openapi-server-proxy-uri` wins when set. See [CORS origins and proxy header behaviour](docs/cors-and-proxy.md) and [ADR 0012](docs/adr/0012-cors-and-proxy-headers.md).
-
-## Discovery
-
-`OPTIONS` on a table or `/rpc` path reports `Allow` from the grants of the active **database role** in the **schema cache**. `GET /` serves an OpenAPI 2.0 document from the same cache and privileges. `openapi-mode`, `openapi-security-active`, `openapi-server-proxy-uri`, and `db-root-spec` change that output as documented. See [Discovery: OPTIONS and OpenAPI](docs/discovery.md).
-
-## Configuration
-
-Give myrest its settings in a config file, in `MYREST_*` environment variables, or in both. The one optional argument of the process is the path of the config file. An environment variable with a value wins over the same knob in the file; an empty variable counts as a variable nobody set. A restart applies a changed value; there is no live configuration reload.
+The command prints the random host port for MySQL. Replace `PORT` in this
+configuration with that value:
 
 ```conf
 # myrest.conf
-db-uri = "mysql://authenticator:secret@127.0.0.1:3306/"
-db-schemas = "shop, warehouse"
+db-uri = "mysql://authenticator:secret@127.0.0.1:PORT/"
+db-schemas = "myrest_fixture"
 db-anon-role = "myrest_anon"
-db-aggregates-enabled = false
-db-max-rows = 1000
 ```
 
-Each knob keeps its PostgREST kebab-case name. Its environment variable is the name in capitals, with `MYREST_` in front and underscores instead of dashes: `db-uri` becomes `MYREST_DB_URI`.
+Start myrest in a second terminal:
 
-### Minimum run set
+```bash
+make build
+MYREST_LISTEN=127.0.0.1:3000 ./bin/myrest ./myrest.conf
+```
 
-myrest serves the API only when it has all of these. If one is missing, the process says which knob is missing and stops.
+Read the fixture data:
 
-| Knob | Meaning |
+```bash
+curl "http://127.0.0.1:3000/items?select=id,name&order=id.asc&limit=1"
+```
+
+The response is:
+
+```json
+[{"id":1,"name":"alpha"}]
+```
+
+Stop the fixture with Ctrl+C when you finish.
+
+## Configuration
+
+Pass a configuration file as the optional command-line argument:
+
+```bash
+myrest /etc/myrest.conf
+```
+
+You can also use `MYREST_*` environment variables. An environment value takes
+precedence over the matching file value. For example, `db-uri` maps to
+`MYREST_DB_URI`.
+
+The minimum configuration is:
+
+| Setting | Purpose |
 | --- | --- |
-| `db-uri` | The MySQL authenticator URI |
-| `db-schemas` | One or more MySQL databases to expose |
-| `jwt-secret` and/or `db-anon-role` | The JWT secret, the anonymous database role, or both |
+| `db-uri` | MySQL URI for the authenticator account |
+| `db-schemas` | Comma-separated databases to expose |
+| `jwt-secret` and/or `db-anon-role` | JWT secret, anonymous role, or both |
 
-### Other kept knobs
+Common optional settings include:
 
-`server-cors-allowed-origins` and `openapi-server-proxy-uri` drive the CORS and reported-base-URL behaviour above. The JWT knobs (`jwt-secret-is-base64`, `jwt-aud`, `jwt-role-claim-key`, `jwt-cache-max-entries`) drive Bearer JWT verification; see [Authentication](docs/auth.md). The OpenAPI knobs (`openapi-mode`, `openapi-security-active`, `openapi-server-proxy-uri`, `db-root-spec`) drive discovery; see [Discovery: OPTIONS and OpenAPI](docs/discovery.md). `db-tx-end` ends write and **RPC** request transactions; see [Transaction end and isolation](docs/transactions.md).
-
-| Knob | Type | Default |
+| Setting | Default | Purpose |
 | --- | --- | --- |
-| `jwt-secret-is-base64` | boolean | `false` |
-| `jwt-aud` | text | none |
-| `jwt-role-claim-key` | text | `.role` |
-| `jwt-cache-max-entries` | count | `1000` |
-| `db-aggregates-enabled` | boolean | `false` |
-| `db-max-rows` | count | no cap |
-| `db-pre-request` | text (`database.routine`) | none |
-| `db-tx-end` | `commit`, `commit-allow-override`, `rollback`, `rollback-allow-override` | `commit` |
-| `server-cors-allowed-origins` | list | every origin |
-| `openapi-mode` | `follow-privileges`, `ignore-privileges`, `disabled` | `follow-privileges` |
-| `openapi-security-active` | boolean | `false` |
-| `openapi-server-proxy-uri` | text | none |
-| `db-root-spec` | text | none |
+| `db-aggregates-enabled` | `false` | Enable aggregate queries |
+| `db-max-rows` | no limit | Set a maximum row count |
+| `db-tx-end` | `commit` | Set write and RPC transaction behavior |
+| `server-cors-allowed-origins` | all origins | Set the browser origin policy |
+| `openapi-mode` | `follow-privileges` | Control OpenAPI output |
+| `openapi-server-proxy-uri` | none | Set the public base URL in OpenAPI |
 
-Knobs on the drop list of [ADR 0007](docs/adr/0007-config-surface-mapping.md) — in-database config, NOTIFY channel, `search_path` extras, GUC or `app.settings` injection, plan-media gate, admin listen — are not on this surface. myrest refuses a config file that holds a name it does not know. `MYREST_LISTEN` is process tuning, not parity law, so it has no config file entry.
+`MYREST_LISTEN` sets the listen address. Its default is `127.0.0.1:3000`.
+Configuration changes need a process restart.
 
-## Database accounts
+See the [configuration documentation](docs/config.md),
+[authentication documentation](docs/auth.md), and
+[transaction documentation](docs/transactions.md) for more details.
 
-myrest logs in as one account and takes its privileges from the database role of the request. Give the authenticator no privileges of its own:
+## Database access
+
+myrest connects as one MySQL authenticator account. For each request, it
+activates the database role from the JWT or `db-anon-role`. MySQL grants decide
+which resources and methods the client can use.
+
+A minimal anonymous setup looks like this:
 
 ```sql
 CREATE ROLE 'myrest_anon';
@@ -221,16 +144,111 @@ SET DEFAULT ROLE NONE TO 'authenticator'@'%';
 GRANT SELECT ON shop.items TO 'myrest_anon';
 ```
 
-The authenticator must hold every database role myrest activates, because MySQL shows catalog rows only to an account that holds a privilege on them. See [ADR 0010](docs/adr/0010-catalog-read-under-authenticator-roles.md). A role granted to `myrest_anon` widens what an anonymous client reads, because MySQL reads with the privileges of the roles granted to the active role. See [ADR 0011](docs/adr/0011-bare-table-name-reads-the-default-database.md).
+Grant each selectable role to the authenticator. Give table and routine grants
+to those roles, not directly to the authenticator.
 
-## Verification
+## API examples
 
-The scenario index, derived **gap list**, and cross-area smoke set live in
-[Verification](docs/verification.md). That roll-up is the proof surface for
-[parent spec #20](https://github.com/jonbaldie/myrest/issues/20).
-`make scenarios` runs the normative scenario packages (`./cmd/myrest`,
-`./internal/httpapi`, `./test/acceptance`, and `./internal/verification`).
+Read and filter rows:
 
-## Fixture DDL
+```bash
+curl "http://127.0.0.1:3000/items?select=id,name&name=eq.alpha&limit=1"
+```
 
-`testdata/fixtures/schema.sql` creates the databases `myrest_fixture` and `myrest_hidden`, the tables the tests read, the authenticator login, the anonymous database role, and the JWT role `myrest_user`. Parent-spec fixtures stay intent-only; this file is the concrete DDL for the harness.
+Embed a related resource:
+
+```bash
+curl "http://127.0.0.1:3000/orders?select=id,items(id,name)"
+```
+
+Insert a row and return it:
+
+```bash
+curl -X POST http://127.0.0.1:3000/items \
+  -H "Content-Type: application/json" \
+  -H "Prefer: return=representation" \
+  -d '{"name":"bravo"}'
+```
+
+Call a routine:
+
+```bash
+curl -X POST http://127.0.0.1:3000/rpc/add_them \
+  -H "Content-Type: application/json" \
+  -d '{"a":1,"b":2}'
+```
+
+Send a JWT with the standard authorization header:
+
+```bash
+curl http://127.0.0.1:3000/secrets \
+  -H "Authorization: Bearer TOKEN"
+```
+
+The JWT role claim is `role` by default.
+
+## Main routes
+
+| Route | Purpose |
+| --- | --- |
+| `GET /<table>`, `HEAD /<table>` | Read rows |
+| `POST /<table>` | Insert rows |
+| `PATCH /<table>` | Update filtered rows |
+| `DELETE /<table>` | Delete filtered rows |
+| `PUT /<table>` | Upsert one row by primary key |
+| `GET /rpc/<name>`, `POST /rpc/<name>` | Call a function or procedure |
+| `GET /` | Get the OpenAPI 2.0 document |
+| `OPTIONS /<resource>` | Get allowed methods |
+
+## Schema changes
+
+myrest reads tables, views, grants, routines, and relationships into a schema
+cache at start-up. Send `SIGUSR1` after a DDL or grant change:
+
+```bash
+kill -USR1 12345
+```
+
+Replace `12345` with the myrest process ID. This reloads the schema cache. It
+does not reload the configuration.
+
+## Compatibility
+
+The parity target is PostgREST v14.16. MySQL and PostgreSQL do not have the
+same feature set, so myrest documents each full match, partial match, and
+unsupported behavior.
+
+Start with these documents:
+
+- [Verification matrix and known gaps](docs/verification.md)
+- [Read filters and query options](docs/ordinary-read.md)
+- [Read compatibility boundaries](docs/read-parity-boundaries.md)
+- [Embedded resources](docs/embed.md)
+- [Writes](docs/write.md)
+- [RPC behavior](docs/rpc-procedures.md)
+- [Media types and Prefer values](docs/media-types-and-prefer.md)
+
+## Development
+
+Install the quality tools when you need the full local checks:
+
+```bash
+go install github.com/quality-gates/messgo/cmd/messgo@latest
+go install github.com/quality-gates/mutago/v2/cmd/mutago@latest
+```
+
+| Command | Purpose |
+| --- | --- |
+| `make test` | Run all Go tests, including MySQL acceptance tests |
+| `make scenarios` | Run the normative behavior scenarios |
+| `make build` | Build `bin/myrest` |
+| `make mysql-fixtures` | Start MySQL and load the test fixture |
+| `make messgo` | Run design and code-size checks |
+| `make mutago` | Run mutation tests with the required score |
+| `make verification-docs` | Rebuild the verification matrix |
+
+The acceptance tests use a disposable `mysql:8.0` Docker container. Set
+`MYREST_MYSQL_HARNESS_PORT` to use an existing local MySQL test server instead.
+
+Architecture decisions are in [docs/adr](docs/adr). Domain terms are in
+[CONTEXT.md](CONTEXT.md).
