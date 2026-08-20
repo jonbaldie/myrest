@@ -152,6 +152,39 @@ func TestStringifyValueMoreKinds(t *testing.T) {
 	}
 }
 
+func TestEmbedKeysPreserveEmptyAndCompositeValues(t *testing.T) {
+	t.Parallel()
+
+	empty := []rows.Row{{Columns: []string{"id"}, Values: []any{""}}}
+	if len(uniqueKeyTuples(empty, []string{"id"})) != 1 {
+		t.Fatal("empty string key was dropped")
+	}
+	if len(uniqueKeyTuples(append(empty, rows.Row{
+		Columns: []string{"id"}, Values: []any{"0:"},
+	}), []string{"id"})) != 2 {
+		t.Fatal("empty string key collided with a real key")
+	}
+
+	composite := []rows.Row{
+		{Columns: []string{"first", "second"}, Values: []any{"a", "b\x1fc"}},
+		{Columns: []string{"first", "second"}, Values: []any{"a\x1fb", "c"}},
+	}
+	if rowKey(composite[0], []string{"first", "second"}) == rowKey(composite[1], []string{"first", "second"}) {
+		t.Fatal("distinct composite keys collided")
+	}
+	if len(uniqueKeyTuples(composite, []string{"first", "second"})) != 2 {
+		t.Fatal("distinct composite keys collapsed")
+	}
+}
+
+func TestStringifyValuePreservesFractionalFloat(t *testing.T) {
+	t.Parallel()
+
+	if got := stringifyValue(float64(1.5)); got != "1.5" {
+		t.Fatalf("float64 key = %q, want 1.5", got)
+	}
+}
+
 func TestColumnListAndSelectedNames(t *testing.T) {
 	t.Parallel()
 

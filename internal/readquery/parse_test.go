@@ -75,6 +75,49 @@ func TestParseRejectsUnknownOperator(t *testing.T) {
 	}
 }
 
+func TestParseRejectsExtraLogicalClosingParenthesis(t *testing.T) {
+	t.Parallel()
+
+	_, err := readquery.Parse(url.Values{"or": []string{"(id.eq.1))"}}, nil)
+	if err == nil {
+		t.Fatal("Parse accepted an extra logical closing parenthesis")
+	}
+}
+
+func TestParseRejectsExtraInClosingParenthesis(t *testing.T) {
+	t.Parallel()
+
+	_, err := readquery.Parse(url.Values{"id": []string{"in.(1))"}}, nil)
+	if err == nil {
+		t.Fatal("Parse accepted an extra in-filter closing parenthesis")
+	}
+}
+
+func TestParseInListUnescapesQuotedDoubleQuote(t *testing.T) {
+	t.Parallel()
+
+	query, err := readquery.Parse(url.Values{"id": []string{`in.("a""b")`}}, nil)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(query.Filters) != 1 || len(query.Filters[0].Values) != 1 || query.Filters[0].Values[0] != `a"b` {
+		t.Fatalf("filter = %#v", query.Filters)
+	}
+}
+
+func TestParseInListPreservesInvalidUTF8Bytes(t *testing.T) {
+	t.Parallel()
+
+	value := string([]byte{0xea})
+	query, err := readquery.Parse(url.Values{"id": []string{"in.(\"" + value + "\")"}}, nil)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(query.Filters) != 1 || len(query.Filters[0].Values) != 1 || query.Filters[0].Values[0] != value {
+		t.Fatalf("filter = %#v, want byte %x", query.Filters, []byte(value))
+	}
+}
+
 func TestParseAcceptsILikeAsPartialMatch(t *testing.T) {
 	t.Parallel()
 

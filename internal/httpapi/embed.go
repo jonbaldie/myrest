@@ -580,16 +580,33 @@ func columnValue(row rows.Row, column string) any {
 }
 
 func rowKey(row rows.Row, columns []string) string {
+	if len(columns) == 0 {
+		return ""
+	}
 	parts := make([]string, len(columns))
 	for i, column := range columns {
-		parts[i] = stringifyValue(columnValue(row, column))
-	}
-	for _, part := range parts {
-		if part == "" {
+		value := columnValue(row, column)
+		if value == nil {
 			return ""
 		}
+		parts[i] = stringifyValue(value)
 	}
-	return strings.Join(parts, "\x1f")
+	if len(parts) == 1 {
+		if parts[0] == "" {
+			return "\x00"
+		}
+		if strings.HasPrefix(parts[0], "\x00") {
+			return "\x00" + parts[0]
+		}
+		return parts[0]
+	}
+	var key strings.Builder
+	for _, part := range parts {
+		key.WriteString(strconv.Itoa(len(part)))
+		key.WriteByte(':')
+		key.WriteString(part)
+	}
+	return key.String()
 }
 
 func stringifyKeys(keys [][]any) []string {
@@ -613,7 +630,7 @@ func stringifyValue(value any) string {
 	case uint64:
 		return strconv.FormatUint(typed, 10)
 	case float64:
-		return strconv.FormatInt(int64(typed), 10)
+		return strconv.FormatFloat(typed, 'g', -1, 64)
 	default:
 		return fmt.Sprint(typed)
 	}

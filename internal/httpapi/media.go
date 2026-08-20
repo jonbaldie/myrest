@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -115,7 +116,7 @@ func parseMediaPreference(part string) (mediaType string, quality float64, ok bo
 			continue
 		}
 		parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-		if err != nil || parsed < 0 || parsed > 1 {
+		if err != nil || math.IsNaN(parsed) || parsed < 0 || parsed > 1 {
 			return mediaType, 0, true
 		}
 		quality = parsed
