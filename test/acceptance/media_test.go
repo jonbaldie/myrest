@@ -49,6 +49,49 @@ func TestAcceptCSVOverMySQL(t *testing.T) {
 	}
 }
 
+// Accept quality values select the highest acceptable claimed representation.
+func TestAcceptQualityValuesOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+	for _, tc := range []struct {
+		name        string
+		accept      string
+		status      int
+		contentType string
+		code        string
+	}{
+		{
+			name:   "refuses a zero quality representation",
+			accept: "application/json;q=0",
+			status: http.StatusUnsupportedMediaType,
+			code:   "PGRST107",
+		},
+		{
+			name:        "selects the highest quality representation",
+			accept:      "application/json;q=0.1, text/csv;q=1",
+			status:      http.StatusOK,
+			contentType: "text/csv; charset=utf-8",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			headers := make(http.Header)
+			headers.Set("Accept", tc.accept)
+			response, body := apitest.Do(
+				t, http.MethodGet, service.URL()+"/items?select=id,name&order=id.asc", headers,
+			)
+			if tc.code != "" {
+				apitest.AssertEnvelope(t, response, body, tc.status, tc.code)
+				return
+			}
+			if response.StatusCode != tc.status {
+				t.Fatalf("status = %d; body = %s", response.StatusCode, body)
+			}
+			if got := response.Header.Get("Content-Type"); got != tc.contentType {
+				t.Fatalf("Content-Type = %q, want %q", got, tc.contentType)
+			}
+		})
+	}
+}
+
 // repr-007: unclaimed Accept media types refuse over MySQL 8.
 func TestUnclaimedAcceptMediaTypesOverMySQL(t *testing.T) {
 	headers := make(http.Header)

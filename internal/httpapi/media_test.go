@@ -49,6 +49,53 @@ func TestAcceptJSONAndWildcardKeepJSONArray(t *testing.T) {
 	}
 }
 
+// Quality values select an acceptable claimed representation. A q=0 media
+// type is not acceptable.
+func TestAcceptQualityValues(t *testing.T) {
+	t.Parallel()
+
+	source := &reader{read: []rows.Row{
+		{Columns: []string{"id", "name"}, Values: []any{int64(1), "alpha"}},
+	}}
+	service := serve(t, source, settings())
+	for _, tc := range []struct {
+		name        string
+		accept      string
+		status      int
+		contentType string
+		code        string
+	}{
+		{
+			name:   "refuses a zero quality representation",
+			accept: "application/json;q=0",
+			status: http.StatusUnsupportedMediaType,
+			code:   "PGRST107",
+		},
+		{
+			name:        "selects the highest quality representation",
+			accept:      "application/json;q=0.1, text/csv;q=1",
+			status:      http.StatusOK,
+			contentType: "text/csv; charset=utf-8",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			headers := make(http.Header)
+			headers.Set("Accept", tc.accept)
+			response, body := apitest.Do(t, http.MethodGet, service.URL()+"/items", headers)
+			if tc.code != "" {
+				apitest.AssertEnvelope(t, response, body, tc.status, tc.code)
+				return
+			}
+			if response.StatusCode != tc.status {
+				t.Fatalf("status = %d; body = %s", response.StatusCode, body)
+			}
+			if got := response.Header.Get("Content-Type"); got != tc.contentType {
+				t.Fatalf("Content-Type = %q, want %q", got, tc.contentType)
+			}
+		})
+	}
+}
+
 // repr-005: application/vnd.pgrst.object+json returns one object.
 func TestAcceptSingularObjectReturnsOneObject(t *testing.T) {
 	t.Parallel()
