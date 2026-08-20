@@ -109,26 +109,41 @@ func parseInList(raw string) ([]string, error) {
 	if inner == "" {
 		return []string{}, nil
 	}
-	return splitCSV(inner), nil
+	return splitCSV(inner)
 }
 
-func splitCSV(raw string) []string {
+func splitCSV(raw string) ([]string, error) {
 	var parts []string
 	var current strings.Builder
 	inQuotes := false
-	for _, ch := range raw {
+	depth := 0
+	for i := 0; i < len(raw); i++ {
+		ch := raw[i]
 		switch {
 		case ch == '"':
 			inQuotes = !inQuotes
+			current.WriteByte(ch)
 		case ch == ',' && !inQuotes:
 			parts = append(parts, unquote(current.String()))
 			current.Reset()
+		case ch == '(' && !inQuotes:
+			depth++
+			current.WriteByte(ch)
+		case ch == ')' && !inQuotes:
+			if depth == 0 {
+				return nil, ParseFailure{Message: "in filter has unbalanced parentheses"}
+			}
+			depth--
+			current.WriteByte(ch)
 		default:
-			current.WriteRune(ch)
+			current.WriteByte(ch)
 		}
 	}
+	if depth != 0 || inQuotes {
+		return nil, ParseFailure{Message: "in filter has unbalanced parentheses or quotes"}
+	}
 	parts = append(parts, unquote(current.String()))
-	return parts
+	return parts, nil
 }
 
 func unquote(raw string) string {
@@ -151,7 +166,11 @@ func parseGroup(raw string, or bool) (Group, error) {
 	}
 	inner := strings.TrimSuffix(strings.TrimPrefix(body, "("), ")")
 	group := Group{Or: or, Negated: negated}
-	for _, part := range splitTopLevel(inner) {
+	parts, err := splitTopLevel(inner)
+	if err != nil {
+		return Group{}, err
+	}
+	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
@@ -208,33 +227,40 @@ func parseNestedGroup(part string) (Group, error) {
 	return group, nil
 }
 
-func splitTopLevel(raw string) []string {
+func splitTopLevel(raw string) ([]string, error) {
 	var parts []string
 	var current strings.Builder
 	depth := 0
 	inQuotes := false
-	for _, ch := range raw {
+	for i := 0; i < len(raw); i++ {
+		ch := raw[i]
 		switch {
 		case ch == '"':
 			inQuotes = !inQuotes
-			current.WriteRune(ch)
+			current.WriteByte(ch)
 		case inQuotes:
-			current.WriteRune(ch)
+			current.WriteByte(ch)
 		case ch == '(':
 			depth++
-			current.WriteRune(ch)
+			current.WriteByte(ch)
 		case ch == ')':
+			if depth == 0 {
+				return nil, ParseFailure{Message: "logical filter has unbalanced parentheses"}
+			}
 			depth--
-			current.WriteRune(ch)
+			current.WriteByte(ch)
 		case ch == ',' && depth == 0:
 			parts = append(parts, current.String())
 			current.Reset()
 		default:
-			current.WriteRune(ch)
+			current.WriteByte(ch)
 		}
+	}
+	if depth != 0 || inQuotes {
+		return nil, ParseFailure{Message: "logical filter has unbalanced parentheses or quotes"}
 	}
 	if current.Len() > 0 {
 		parts = append(parts, current.String())
 	}
-	return parts
+	return parts, nil
 }
