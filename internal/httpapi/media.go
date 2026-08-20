@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/jonbaldie/myrest/internal/readquery"
@@ -54,19 +55,72 @@ func requestRepresentation(writer http.ResponseWriter, request *http.Request) (r
 // */* claim the JSON array. Object and CSV are claimed. Every other type
 // refuses with PGRST107.
 func negotiateRepresentation(acceptHeaders []string) (representation, error) {
-	offered := acceptMediaTypes(acceptHeaders)
-	if len(offered) == 0 {
+	preferences := acceptMediaPreferences(acceptHeaders)
+	if len(preferences) == 0 {
 		return representation{
 			kind:        representationJSONArray,
 			contentType: mediaJSON,
 		}, nil
 	}
-	for _, offeredType := range offered {
-		if chosen, ok := claimRepresentation(offeredType); ok {
-			return chosen, nil
+
+	var selected representation
+	quality := -1.0
+	for _, preference := range preferences {
+		if preference.quality == 0 {
+			continue
+		}
+		if chosen, ok := claimRepresentation(preference.mediaType); ok && preference.quality > quality {
+			selected = chosen
+			quality = preference.quality
 		}
 	}
-	return representation{}, &unsupportedMediaError{offered: offered}
+	if quality >= 0 {
+		return selected, nil
+	}
+	return representation{}, &unsupportedMediaError{offered: acceptMediaTypes(acceptHeaders)}
+}
+
+type mediaPreference struct {
+	mediaType string
+	quality   float64
+}
+
+func acceptMediaPreferences(headers []string) []mediaPreference {
+	var preferences []mediaPreference
+	for _, header := range headers {
+		for _, part := range strings.Split(header, ",") {
+			mediaType, quality, ok := parseMediaPreference(part)
+			if !ok {
+				continue
+			}
+			preferences = append(preferences, mediaPreference{
+				mediaType: mediaType,
+				quality:   quality,
+			})
+		}
+	}
+	return preferences
+}
+
+func parseMediaPreference(part string) (mediaType string, quality float64, ok bool) {
+	parts := strings.Split(part, ";")
+	mediaType = strings.ToLower(strings.TrimSpace(parts[0]))
+	if mediaType == "" {
+		return "", 0, false
+	}
+	quality = 1
+	for _, parameter := range parts[1:] {
+		name, value, hasValue := strings.Cut(strings.TrimSpace(parameter), "=")
+		if !hasValue || !strings.EqualFold(strings.TrimSpace(name), "q") {
+			continue
+		}
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		if err != nil || parsed < 0 || parsed > 1 {
+			return mediaType, 0, true
+		}
+		quality = parsed
+	}
+	return mediaType, quality, true
 }
 
 func acceptMediaTypes(headers []string) []string {
