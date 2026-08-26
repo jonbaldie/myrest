@@ -77,6 +77,21 @@ func TestInvalidJWTGivesPGRST301(t *testing.T) {
 	apitest.AssertEnvelope(t, response, body, http.StatusUnauthorized, "PGRST301")
 }
 
+// auth-003: an empty Bearer token is an invalid JWT, not a non-Bearer scheme.
+// HTTP header rules remove the trailing space from "Bearer ".
+func TestEmptyBearerTokenGivesPGRST301(t *testing.T) {
+	t.Parallel()
+
+	headers := make(http.Header)
+	headers.Set("Authorization", "Bearer ")
+	response, body := apitest.Do(t, http.MethodGet, serve(t, &reader{}, jwtSettings()).URL()+"/items", headers)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusUnauthorized, "PGRST301")
+	if failure.Message != "Empty JWT is sent in Authorization header" {
+		t.Fatalf("message = %q, want Empty JWT is sent in Authorization header", failure.Message)
+	}
+}
+
 // auth-003: an expired JWT gives PGRST303.
 func TestExpiredJWTGivesPGRST303(t *testing.T) {
 	t.Parallel()

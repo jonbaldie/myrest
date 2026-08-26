@@ -23,7 +23,7 @@ myrest answers with `PGRST302`.
 
 | Failure | Code | HTTP status |
 | --- | --- | --- |
-| Invalid or undecodable JWT | `PGRST301` | 401 |
+| Invalid or undecodable JWT, including an empty Bearer token | `PGRST301` | 401 |
 | No Bearer JWT and anonymous access disabled | `PGRST302` | 401 |
 | JWT claims validation failed (expired, audience, …) | `PGRST303` | 401 |
 

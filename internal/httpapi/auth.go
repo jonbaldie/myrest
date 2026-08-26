@@ -62,13 +62,17 @@ func refuseUnsupportedAuth(writer http.ResponseWriter, request *http.Request) bo
 
 // bearerToken reads a Bearer credential. hasBearer is false when the header is
 // absent. ok is false when the header is present but not a Bearer scheme.
+// A scheme-only Bearer value (HTTP trims "Bearer " to "Bearer") is an empty token.
 func bearerToken(writer http.ResponseWriter, request *http.Request) (token string, hasBearer, ok bool) {
-	authorization := request.Header.Get("Authorization")
+	authorization := strings.TrimSpace(request.Header.Get("Authorization"))
 	if authorization == "" {
 		return "", false, true
 	}
 
 	scheme, value, found := strings.Cut(authorization, " ")
+	if !found && strings.EqualFold(authorization, "Bearer") {
+		return "", true, true
+	}
 	if !found || scheme == "" || !strings.EqualFold(scheme, "Bearer") {
 		writeUnsupportedFeature(writer, "Only Bearer JWT credentials are supported")
 		return "", false, false
