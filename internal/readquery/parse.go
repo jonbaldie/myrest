@@ -212,7 +212,11 @@ func parseSelect(raw string, query *Query) error {
 	if raw == "" || raw == "*" {
 		return nil
 	}
-	for _, part := range splitSelectParts(raw) {
+	parts := splitSelectParts(raw)
+	columnCount, embedCount := countSelectParts(parts)
+	query.Columns = make([]Column, 0, columnCount)
+	query.Embeds = make([]Embed, 0, embedCount)
+	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if part == "" || part == "*" {
 			continue
@@ -232,6 +236,21 @@ func parseSelect(raw string, query *Query) error {
 		query.Columns = append(query.Columns, column)
 	}
 	return nil
+}
+
+func countSelectParts(parts []string) (columns, embeds int) {
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" || part == "*" {
+			continue
+		}
+		if isEmbedPart(part) {
+			embeds++
+			continue
+		}
+		columns++
+	}
+	return columns, embeds
 }
 
 // splitSelectParts splits a select list on commas that are not inside
