@@ -31,6 +31,36 @@ func TestOrdinaryReadWithSelectFilterOrderAndPageOverMySQL(t *testing.T) {
 	}
 }
 
+// isdistinct operator uses MySQL <=> NULL-safe equality.
+func TestIsDistinctOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	response, body := get(t, service, "/items?select=id,name&name=isdistinct.beta&order=id.asc")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if want := `[{"id":1,"name":"alpha"}]`; string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+
+	notResponse, notBody := get(t, service, "/items?select=id,name&name=not.isdistinct.alpha&order=id.asc")
+	if notResponse.StatusCode != http.StatusOK {
+		t.Fatalf("not status = %d, want %d; body = %s", notResponse.StatusCode, http.StatusOK, notBody)
+	}
+	if want := `[{"id":1,"name":"alpha"}]`; string(notBody) != want+"\n" {
+		t.Fatalf("not body = %s, want %s", notBody, want)
+	}
+
+	nullResponse, nullBody := get(t, service, "/items?select=id,name&name=isdistinct.null&order=id.asc")
+	if nullResponse.StatusCode != http.StatusOK {
+		t.Fatalf("null status = %d, want %d; body = %s", nullResponse.StatusCode, http.StatusOK, nullBody)
+	}
+	if want := `[{"id":1,"name":"alpha"},{"id":2,"name":"beta"}]`; string(nullBody) != want+"\n" {
+		t.Fatalf("null body = %s, want %s", nullBody, want)
+	}
+}
+
+
 // read-002: Prefer count=exact returns the exact total over MySQL 8.
 func TestPreferCountExactOverMySQL(t *testing.T) {
 	headers := make(http.Header)

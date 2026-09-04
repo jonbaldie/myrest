@@ -35,6 +35,56 @@ func TestBuildSelectAppliesFilterOrderAndPage(t *testing.T) {
 	}
 }
 
+func TestBuildSelectAppliesIsDistinctFilter(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID:      schemacache.TableID{Database: "shop", Name: "items"},
+		Columns: []schemacache.Column{{Name: "id"}, {Name: "name"}},
+	}
+	parts, err := buildSelect(table, readquery.Query{
+		Columns: []readquery.Column{{Name: "id"}, {Name: "name"}},
+		Filters: []readquery.Filter{{Column: "name", Op: readquery.OpIsDistinct, Value: "alpha"}},
+	})
+	if err != nil {
+		t.Fatalf("buildSelect: %v", err)
+	}
+	want := "SELECT `id`, `name` FROM `shop`.`items` WHERE NOT (`name` <=> ?)"
+	if parts.statement != want {
+		t.Fatalf("statement = %q, want %q", parts.statement, want)
+	}
+	if len(parts.args) != 1 || parts.args[0] != "alpha" {
+		t.Fatalf("args = %#v", parts.args)
+	}
+
+	negatedParts, err := buildSelect(table, readquery.Query{
+		Columns: []readquery.Column{{Name: "id"}, {Name: "name"}},
+		Filters: []readquery.Filter{{Column: "name", Op: readquery.OpIsDistinct, Value: "alpha", Negated: true}},
+	})
+	if err != nil {
+		t.Fatalf("buildSelect negated: %v", err)
+	}
+	wantNegated := "SELECT `id`, `name` FROM `shop`.`items` WHERE `name` <=> ?"
+	if negatedParts.statement != wantNegated {
+		t.Fatalf("statement = %q, want %q", negatedParts.statement, wantNegated)
+	}
+
+	nullParts, err := buildSelect(table, readquery.Query{
+		Columns: []readquery.Column{{Name: "id"}, {Name: "name"}},
+		Filters: []readquery.Filter{{Column: "name", Op: readquery.OpIsDistinct, Value: "null"}},
+	})
+	if err != nil {
+		t.Fatalf("buildSelect null: %v", err)
+	}
+	if nullParts.statement != want {
+		t.Fatalf("statement = %q, want %q", nullParts.statement, want)
+	}
+	if len(nullParts.args) != 1 || nullParts.args[0] != nil {
+		t.Fatalf("null arg = %#v, want nil", nullParts.args)
+	}
+}
+
+
 func TestBuildSelectUsesLargeLimitWhenOnlyOffsetIsSet(t *testing.T) {
 	t.Parallel()
 
