@@ -90,12 +90,17 @@ func inSQL(column string, filter readquery.Filter) (string, []any, error) {
 }
 
 func distinctSQL(column string, filter readquery.Filter) (string, []any, error) {
-	sql := column + " IS DISTINCT FROM ?"
+	sql := "NOT (" + column + " <=> ?)"
 	if filter.Negated {
-		sql = column + " IS NOT DISTINCT FROM ?"
+		sql = column + " <=> ?"
 	}
-	return sql, []any{filter.Value}, nil
+	var arg any = filter.Value
+	if strings.EqualFold(filter.Value, "null") {
+		arg = nil
+	}
+	return sql, []any{arg}, nil
 }
+
 
 func comparisonOp(op readquery.Operator) string {
 	switch op {
