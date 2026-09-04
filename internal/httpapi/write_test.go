@@ -1061,6 +1061,44 @@ func TestPutUpsertByPrimaryKeyMergeDuplicates(t *testing.T) {
 	}
 }
 
+func TestPutUpsertByPrimaryKeyLargeInteger(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{upserted: true}
+	response, body := putJSON(
+		t,
+		serveWrite(t, &reader{}, sink).URL()+"/items?id=eq.1000000",
+		`{"id":1000000,"name":"alpha2"}`,
+		"resolution=merge-duplicates",
+	)
+
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
+	}
+	if sink.called != "upsert" {
+		t.Fatalf("writer called %q, want upsert", sink.called)
+	}
+}
+
+func TestPutUpsertByPrimaryKeyMismatchedNumber(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{}
+	response, body := putJSON(
+		t,
+		serveWrite(t, &reader{}, sink).URL()+"/items?id=eq.1000000",
+		`{"id":1000001,"name":"alpha2"}`,
+		"resolution=merge-duplicates",
+	)
+
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST105")
+	if sink.called != "" {
+		t.Fatalf("writer must not run for mismatched PK; called %q", sink.called)
+	}
+}
+
+
+
 // write-004: a PUT by primary key with resolution=ignore-duplicates succeeds.
 func TestPutUpsertByPrimaryKeyIgnoreDuplicates(t *testing.T) {
 	t.Parallel()
