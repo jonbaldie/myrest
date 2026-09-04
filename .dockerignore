@@ -1,0 +1,10 @@
+.git
+.worktrees
+.serena
+.agents
+.claude
+bin
+*.test
+coverage.out
+mutago-report.html
+report.json
