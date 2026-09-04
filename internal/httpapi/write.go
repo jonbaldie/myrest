@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/jonbaldie/myrest/internal/readquery"
@@ -443,13 +444,34 @@ func rowMatchesPrimaryKey(
 			writePutPrimaryKeyFailure(writer)
 			return false
 		}
-		if fmt.Sprint(got) != want {
+		if !primaryKeyValueMatches(got, want) {
 			writePutPrimaryKeyFailure(writer)
 			return false
 		}
 	}
 	return true
 }
+
+func primaryKeyValueMatches(got any, want string) bool {
+	if fmt.Sprint(got) == want {
+		return true
+	}
+	switch value := got.(type) {
+	case float64:
+		if strconv.FormatFloat(value, 'f', -1, 64) == want {
+			return true
+		}
+		if wantNum, err := strconv.ParseFloat(want, 64); err == nil {
+			return value == wantNum
+		}
+	case int64:
+		if strconv.FormatInt(value, 10) == want {
+			return true
+		}
+	}
+	return false
+}
+
 
 func writePutPrimaryKeyFailure(writer http.ResponseWriter) {
 	writeFailure(
