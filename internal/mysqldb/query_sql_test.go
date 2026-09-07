@@ -2,6 +2,7 @@ package mysqldb
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/jonbaldie/myrest/internal/readquery"
@@ -221,3 +222,30 @@ func TestBuildCountUsesTheSameFilters(t *testing.T) {
 		t.Fatalf("args = %#v", parts.args)
 	}
 }
+
+func TestBuildSelectEmptyGroupDoesNotEmitAlwaysTrue(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID:      schemacache.TableID{Database: "shop", Name: "items"},
+		Columns: []schemacache.Column{{Name: "id"}, {Name: "name"}},
+	}
+	parts, err := buildSelect(table, readquery.Query{
+		Columns: []readquery.Column{{Name: "id"}},
+		Groups: []readquery.Group{
+			{},
+			{Groups: []readquery.Group{{}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("buildSelect: %v", err)
+	}
+	if strings.Contains(parts.statement, "1=1") {
+		t.Fatalf("statement must not contain 1=1 for empty groups, got: %q", parts.statement)
+	}
+	want := "SELECT `id` FROM `shop`.`items`"
+	if parts.statement != want {
+		t.Fatalf("statement = %q, want %q", parts.statement, want)
+	}
+}
+
