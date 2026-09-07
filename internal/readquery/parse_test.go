@@ -189,3 +189,64 @@ func TestParseJSONPathSelectAndFilter(t *testing.T) {
 		t.Fatalf("filters = %#v", query.Filters)
 	}
 }
+
+func TestParseTopLevelNegatedLogicalGroups(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		key     string
+		raw     string
+		or      bool
+		filters int
+	}{
+		{name: "and", key: "not.and", raw: "(id.gte.1,id.lte.2)", or: false, filters: 2},
+		{name: "or", key: "not.or", raw: "(id.eq.1)", or: true, filters: 1},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			query, err := readquery.Parse(url.Values{test.key: []string{test.raw}}, nil)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if len(query.Groups) != 1 {
+				t.Fatalf("groups = %#v, want one group", query.Groups)
+			}
+			group := query.Groups[0]
+			if !group.Negated || group.Or != test.or || len(group.Filters) != test.filters {
+				t.Fatalf("group = %#v, want one negated group", group)
+			}
+		})
+	}
+}
+
+func TestParseRefusesEmptyLogicalGroups(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		key  string
+		raw  string
+	}{
+		{name: "empty or", key: "or", raw: "()"},
+		{name: "empty and", key: "and", raw: "()"},
+		{name: "empty not.or", key: "not.or", raw: "()"},
+		{name: "empty not.and", key: "not.and", raw: "()"},
+		{name: "nested empty group or(and())", key: "or", raw: "(and())"},
+		{name: "nested empty group and(not.or())", key: "and", raw: "(not.or())"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := readquery.Parse(url.Values{test.key: []string{test.raw}}, nil)
+			var failure readquery.ParseFailure
+			if err == nil || !errors.As(err, &failure) || failure.Gap {
+				t.Fatalf("query %s=%s err = %v, want non-gap ParseFailure", test.key, test.raw, err)
+			}
+		})
+	}
+}
+

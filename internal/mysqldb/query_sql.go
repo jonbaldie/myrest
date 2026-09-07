@@ -308,6 +308,9 @@ func buildWhere(table schemacache.Table, query readquery.Query) (string, []any, 
 		if err != nil {
 			return "", nil, err
 		}
+		if sql == "" {
+			continue
+		}
 		parts = append(parts, sql)
 		args = append(args, groupArgs...)
 	}
@@ -333,11 +336,14 @@ func groupSQL(table schemacache.Table, group readquery.Group) (string, []any, er
 		if err != nil {
 			return "", nil, err
 		}
+		if sql == "" {
+			continue
+		}
 		parts = append(parts, sql)
 		args = append(args, nestedArgs...)
 	}
 	if len(parts) == 0 {
-		return "(1=1)", nil, nil
+		return "", nil, nil
 	}
 	joiner := " AND "
 	if group.Or {

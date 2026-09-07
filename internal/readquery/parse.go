@@ -15,7 +15,9 @@ var reservedQueryKeys = map[string]bool{
 	"limit":   true,
 	"offset":  true,
 	"and":     true,
+	"not.and": true,
 	"or":      true,
+	"not.or":  true,
 	"columns": true,
 }
 
@@ -168,8 +170,22 @@ func parseLogicalGroups(values url.Values, query *Query) error {
 		}
 		query.Groups = append(query.Groups, group)
 	}
+	for _, raw := range values["not.or"] {
+		group, err := parseGroup("not."+raw, true)
+		if err != nil {
+			return err
+		}
+		query.Groups = append(query.Groups, group)
+	}
 	for _, raw := range values["and"] {
 		group, err := parseGroup(raw, false)
+		if err != nil {
+			return err
+		}
+		query.Groups = append(query.Groups, group)
+	}
+	for _, raw := range values["not.and"] {
+		group, err := parseGroup("not."+raw, false)
 		if err != nil {
 			return err
 		}

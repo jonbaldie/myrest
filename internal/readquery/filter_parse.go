@@ -154,13 +154,22 @@ func unquote(raw string) string {
 	return raw
 }
 
-func parseGroup(raw string, or bool) (Group, error) {
-	negated := false
-	body := raw
-	if strings.HasPrefix(body, "not.") {
-		negated = true
-		body = strings.TrimPrefix(body, "not.")
+func stripGroupNegation(raw string) (string, bool) {
+	if strings.HasPrefix(raw, "not.") {
+		return strings.TrimPrefix(raw, "not."), true
 	}
+	return raw, false
+}
+
+func requireNonEmptyGroup(group Group) error {
+	if len(group.Filters) == 0 && len(group.Groups) == 0 {
+		return ParseFailure{Message: "logical filter needs at least one condition"}
+	}
+	return nil
+}
+
+func parseGroup(raw string, or bool) (Group, error) {
+	body, negated := stripGroupNegation(raw)
 	if !strings.HasPrefix(body, "(") || !strings.HasSuffix(body, ")") {
 		return Group{}, ParseFailure{Message: "logical filter needs a list in parentheses"}
 	}
@@ -178,6 +187,9 @@ func parseGroup(raw string, or bool) (Group, error) {
 		if err := appendGroupPart(&group, part); err != nil {
 			return Group{}, err
 		}
+	}
+	if err := requireNonEmptyGroup(group); err != nil {
+		return Group{}, err
 	}
 	return group, nil
 }
