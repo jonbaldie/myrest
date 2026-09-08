@@ -63,6 +63,12 @@ func parseJSONPath(raw string) (*JSONPath, error) {
 	path := &JSONPath{}
 	rest := raw
 	for rest != "" {
+		if path.AsText {
+			return nil, ParseFailure{
+				Message: "->> can only be the final operator in a JSON path",
+				Gap:     true,
+			}
+		}
 		asText := false
 		switch {
 		case strings.HasPrefix(rest, "->>"):

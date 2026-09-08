@@ -85,7 +85,6 @@ func TestBuildSelectAppliesIsDistinctFilter(t *testing.T) {
 	}
 }
 
-
 func TestBuildSelectUsesLargeLimitWhenOnlyOffsetIsSet(t *testing.T) {
 	t.Parallel()
 
@@ -140,6 +139,84 @@ func TestBuildSelectAppliesJSONPathProjectionAndFilter(t *testing.T) {
 	}
 	if parts.columns[1] != "blood_type" {
 		t.Fatalf("output columns = %#v", parts.columns)
+	}
+}
+
+func TestBuildSelectAppliesChainedJSONPath(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID: schemacache.TableID{Database: "shop", Name: "items"},
+		Columns: []schemacache.Column{
+			{Name: "id"},
+			{Name: "meta", DataType: "json"},
+		},
+	}
+	parts, err := buildSelect(table, readquery.Query{
+		Columns: []readquery.Column{
+			{Name: "id"},
+			{Name: "meta", Path: &readquery.JSONPath{
+				Steps: []readquery.PathStep{
+					{Key: "phones"},
+					{IsIndex: true, Index: 0},
+					{Key: "number"},
+				},
+				AsText: true,
+			}},
+		},
+		Filters: []readquery.Filter{{
+			Column: "meta",
+			Path: &readquery.JSONPath{
+				Steps: []readquery.PathStep{
+					{Key: "phones"},
+					{IsIndex: true, Index: 0},
+					{Key: "number"},
+				},
+				AsText: true,
+			},
+			Op:    readquery.OpEq,
+			Value: "917-929-5745",
+		}},
+		Order: []readquery.Order{{
+			Column: "meta",
+			Path: &readquery.JSONPath{
+				Steps: []readquery.PathStep{
+					{Key: "phones"},
+					{IsIndex: true, Index: 0},
+					{Key: "number"},
+				},
+				AsText: true,
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("buildSelect: %v", err)
+	}
+	want := "SELECT `id`, `meta`->>'$.phones[0].number' FROM `shop`.`items` WHERE `meta`->>'$.phones[0].number' = ? ORDER BY `meta`->>'$.phones[0].number' ASC"
+	if parts.statement != want {
+		t.Fatalf("statement = %q, want %q", parts.statement, want)
+	}
+	if parts.columns[1] != "number" {
+		t.Fatalf("output columns = %#v", parts.columns)
+	}
+
+	partsAsJSON, err := buildSelect(table, readquery.Query{
+		Columns: []readquery.Column{
+			{Name: "meta", Path: &readquery.JSONPath{
+				Steps: []readquery.PathStep{
+					{Key: "phones"},
+					{IsIndex: true, Index: 0},
+				},
+				AsText: false,
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("buildSelect as JSON: %v", err)
+	}
+	wantAsJSON := "SELECT `meta`->'$.phones[0]' FROM `shop`.`items`"
+	if partsAsJSON.statement != wantAsJSON {
+		t.Fatalf("statement = %q, want %q", partsAsJSON.statement, wantAsJSON)
 	}
 }
 
@@ -248,4 +325,3 @@ func TestBuildSelectEmptyGroupDoesNotEmitAlwaysTrue(t *testing.T) {
 		t.Fatalf("statement = %q, want %q", parts.statement, want)
 	}
 }
-

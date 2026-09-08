@@ -45,6 +45,50 @@ func TestJSONPathInsideSubsetOverMySQL(t *testing.T) {
 	}
 }
 
+func TestChainedJSONPathOverMySQL(t *testing.T) {
+	server := serve(t, "myrest_fixture")
+
+	// 1. Chained JSON path selection in select.
+	path := "/profiles?select=id,meta->phones->0->>number&order=id.asc"
+	response, body := get(t, server, path)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want := `[{"id":1,"number":"917-929-5745"},{"id":2,"number":"512-446-4988"}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+
+	// 2. Filter on chained JSON path returns only matching rows.
+	filterPath := "/profiles?select=id,meta->phones->0->>number&" +
+		url.QueryEscape("meta->phones->0->>number") + "=eq.917-929-5745"
+	response, body = get(t, server, filterPath)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	wantFiltered := `[{"id":1,"number":"917-929-5745"}]`
+	if string(body) != wantFiltered+"\n" {
+		t.Fatalf("body = %s, want %s", body, wantFiltered)
+	}
+
+	// 3. Ordering on chained JSON path orders result rows correctly.
+	orderPath := "/profiles?select=id,meta->phones->0->>number&order=" +
+		url.QueryEscape("meta->phones->0->>number.desc")
+	response, body = get(t, server, orderPath)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	wantOrdered := `[{"id":1,"number":"917-929-5745"},{"id":2,"number":"512-446-4988"}]`
+	if string(body) != wantOrdered+"\n" {
+		t.Fatalf("body = %s, want %s", body, wantOrdered)
+	}
+
+	// 4. Intermediate ->> operator refuses with MYREST001.
+	invalidPath := "/profiles?select=" + url.QueryEscape("meta->>phones->0")
+	response, body = get(t, server, invalidPath)
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+}
+
 // read-006: Postgres-only JSON path form refuses over MySQL.
 func TestPostgresOnlyJSONPathOverMySQL(t *testing.T) {
 	path := "/profiles?select=" + url.QueryEscape("meta#>>{blood_type}")
