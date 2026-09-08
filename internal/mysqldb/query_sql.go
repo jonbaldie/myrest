@@ -60,16 +60,18 @@ func selectSQL(
 	return statement + pageSQL(query)
 }
 
-// groupBySQL lists non-aggregate select expressions when any aggregate is present.
-func groupBySQL(columns []resolvedColumn) string {
-	hasAggregate := false
+func hasAggregate(columns []resolvedColumn) bool {
 	for _, column := range columns {
 		if column.Aggregate {
-			hasAggregate = true
-			break
+			return true
 		}
 	}
-	if !hasAggregate {
+	return false
+}
+
+// groupBySQL lists non-aggregate select expressions when any aggregate is present.
+func groupBySQL(columns []resolvedColumn) string {
+	if !hasAggregate(columns) {
 		return ""
 	}
 	var groups []string
@@ -122,20 +124,54 @@ func pageSQL(query readquery.Query) string {
 	return suffix
 }
 
-func buildCount(table schemacache.Table, query readquery.Query) (sqlParts, error) {
-	where, args, err := buildWhere(table, query)
-	if err != nil {
-		return sqlParts{}, err
+func countSQL(table schemacache.Table, columns []resolvedColumn, where string) string {
+	if !hasAggregate(columns) {
+		statement := fmt.Sprintf(
+			"SELECT COUNT(*) FROM %s.%s",
+			quoteIdentifier(table.ID.Database),
+			quoteIdentifier(table.ID.Name),
+		)
+		if where != "" {
+			statement += " WHERE " + where
+		}
+		return statement
+	}
+	group := groupBySQL(columns)
+	if group == "" {
+		statement := fmt.Sprintf(
+			"SELECT COUNT(*) FROM (SELECT COUNT(*) FROM %s.%s",
+			quoteIdentifier(table.ID.Database),
+			quoteIdentifier(table.ID.Name),
+		)
+		if where != "" {
+			statement += " WHERE " + where
+		}
+		return statement + ") AS `_myrest_count`"
 	}
 	statement := fmt.Sprintf(
-		"SELECT COUNT(*) FROM %s.%s",
+		"SELECT COUNT(*) FROM (SELECT 1 FROM %s.%s",
 		quoteIdentifier(table.ID.Database),
 		quoteIdentifier(table.ID.Name),
 	)
 	if where != "" {
 		statement += " WHERE " + where
 	}
-	return sqlParts{statement: statement, args: args}, nil
+	return statement + " GROUP BY " + group + ") AS `_myrest_count`"
+}
+
+func buildCount(table schemacache.Table, query readquery.Query) (sqlParts, error) {
+	columns, err := resolveColumns(table, query)
+	if err != nil {
+		return sqlParts{}, err
+	}
+	where, args, err := buildWhere(table, query)
+	if err != nil {
+		return sqlParts{}, err
+	}
+	return sqlParts{
+		statement: countSQL(table, columns, where),
+		args:      args,
+	}, nil
 }
 
 type resolvedColumn struct {
