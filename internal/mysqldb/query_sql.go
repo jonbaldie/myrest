@@ -287,22 +287,27 @@ func isJSONDataType(dataType string) bool {
 }
 
 func jsonPathSQL(column string, path *readquery.JSONPath) string {
-	expr := quoteIdentifier(column)
-	for i, step := range path.Steps {
-		op := "->"
-		if path.AsText && i == len(path.Steps)-1 {
-			op = "->>"
-		}
-		expr += op + "'" + mysqlJSONPathLeg(step) + "'"
+	op := "->"
+	if path.AsText {
+		op = "->>"
 	}
-	return expr
+	return quoteIdentifier(column) + op + "'" + mysqlJSONPath(path) + "'"
 }
 
-func mysqlJSONPathLeg(step readquery.PathStep) string {
-	if step.IsIndex {
-		return "$[" + strconv.Itoa(step.Index) + "]"
+func mysqlJSONPath(path *readquery.JSONPath) string {
+	var b strings.Builder
+	b.WriteString("$")
+	for _, step := range path.Steps {
+		if step.IsIndex {
+			b.WriteString("[")
+			b.WriteString(strconv.Itoa(step.Index))
+			b.WriteString("]")
+		} else {
+			b.WriteString(".")
+			b.WriteString(step.Key)
+		}
 	}
-	return "$." + step.Key
+	return b.String()
 }
 
 func unknownColumn(name string) error {

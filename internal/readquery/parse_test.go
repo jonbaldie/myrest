@@ -162,7 +162,7 @@ func TestFullMatchOperatorsAreListed(t *testing.T) {
 
 func TestParseJSONPathRefusals(t *testing.T) {
 	t.Parallel()
-	cases := []string{`meta#>>{blood_type}`, `meta->"blood type"`, `meta->*`}
+	cases := []string{`meta#>>{blood_type}`, `meta->"blood type"`, `meta->*`, `meta->>phones->0`}
 	for _, selectPart := range cases {
 		_, err := readquery.Parse(url.Values{"select": []string{selectPart}}, nil)
 		var failure readquery.ParseFailure
@@ -187,6 +187,31 @@ func TestParseJSONPathSelectAndFilter(t *testing.T) {
 	}
 	if len(query.Filters) != 1 || query.Filters[0].Path == nil || query.Filters[0].Value != "A-" {
 		t.Fatalf("filters = %#v", query.Filters)
+	}
+}
+
+func TestParseChainedJSONPathSelectFilterAndOrder(t *testing.T) {
+	t.Parallel()
+	values := url.Values{
+		"select":                   []string{"id,meta->phones->0->>number"},
+		"meta->phones->0->>number": []string{"eq.917-929-5745"},
+		"order":                    []string{"meta->phones->0->>number.desc"},
+	}
+	query, err := readquery.Parse(values, nil)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(query.Columns) != 2 || query.Columns[1].Path == nil || !query.Columns[1].Path.AsText {
+		t.Fatalf("columns = %#v", query.Columns)
+	}
+	if len(query.Columns[1].Path.Steps) != 3 {
+		t.Fatalf("steps = %#v, want 3 steps", query.Columns[1].Path.Steps)
+	}
+	if len(query.Filters) != 1 || query.Filters[0].Path == nil || query.Filters[0].Value != "917-929-5745" {
+		t.Fatalf("filters = %#v", query.Filters)
+	}
+	if len(query.Order) != 1 || query.Order[0].Path == nil || !query.Order[0].Desc {
+		t.Fatalf("order = %#v", query.Order)
 	}
 }
 
@@ -249,4 +274,3 @@ func TestParseRefusesEmptyLogicalGroups(t *testing.T) {
 		})
 	}
 }
-
