@@ -134,3 +134,52 @@ func TestComputedRelationshipEmbedRefuses(t *testing.T) {
 		t.Fatalf("message = %q, want a computed relationship refusal", failure.Message)
 	}
 }
+
+func TestEmbedNegatedLogicalGroups(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	t.Run("not.or", func(t *testing.T) {
+		response, body := get(
+			t,
+			service,
+			"/items?select=id,orders(id)&id=eq.1&orders.not.or=(id.eq.1)&orders.order=id.asc",
+		)
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+		}
+		want := `[{"id":1,"orders":[{"id":2}]}]`
+		if string(body) != want+"\n" {
+			t.Fatalf("body = %s, want %s", body, want)
+		}
+	})
+
+	t.Run("not.and", func(t *testing.T) {
+		response, body := get(
+			t,
+			service,
+			"/items?select=id,orders(id)&id=eq.1&orders.not.and=(id.gte.1,id.lte.2)&orders.order=id.asc",
+		)
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+		}
+		want := `[{"id":1,"orders":[]}]`
+		if string(body) != want+"\n" {
+			t.Fatalf("body = %s, want %s", body, want)
+		}
+	})
+
+	t.Run("aliased not.or", func(t *testing.T) {
+		response, body := get(
+			t,
+			service,
+			"/items?select=id,my_orders:orders(id)&id=eq.1&my_orders.not.or=(id.eq.1)&my_orders.order=id.asc",
+		)
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+		}
+		want := `[{"id":1,"my_orders":[{"id":2}]}]`
+		if string(body) != want+"\n" {
+			t.Fatalf("body = %s, want %s", body, want)
+		}
+	})
+}
