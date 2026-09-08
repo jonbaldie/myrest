@@ -1,6 +1,7 @@
 package readquery_test
 
 import (
+	"errors"
 	"net/url"
 	"testing"
 
@@ -66,5 +67,103 @@ func TestParseEmbedHintAliasAndNestedFilterOrderLimit(t *testing.T) {
 	}
 	if len(query.Filters) != 0 {
 		t.Fatalf("top-level filters = %#v, want none", query.Filters)
+	}
+}
+
+func TestParseEmbedNegatedLogicalGroups(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		selectQ string
+		key     string
+		raw     string
+		or      bool
+		filters int
+	}{
+		{name: "not.or", selectQ: "id,orders(id)", key: "orders.not.or", raw: "(id.eq.1)", or: true, filters: 1},
+		{name: "not.and", selectQ: "id,orders(id)", key: "orders.not.and", raw: "(id.gte.1,id.lte.2)", or: false, filters: 2},
+		{name: "aliased not.or", selectQ: "id,my_orders:orders(id)", key: "my_orders.not.or", raw: "(id.eq.1)", or: true, filters: 1},
+		{name: "aliased not.and", selectQ: "id,my_orders:orders(id)", key: "my_orders.not.and", raw: "(id.eq.1)", or: false, filters: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			values := url.Values{
+				"select": []string{tc.selectQ},
+				tc.key:   []string{tc.raw},
+			}
+			query, err := readquery.Parse(values, nil)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if len(query.Embeds) != 1 {
+				t.Fatalf("embeds = %#v, want one embed", query.Embeds)
+			}
+			embed := query.Embeds[0]
+			if len(embed.Groups) != 1 {
+				t.Fatalf("embed.Groups = %#v, want one group", embed.Groups)
+			}
+			group := embed.Groups[0]
+			if !group.Negated || group.Or != tc.or || len(group.Filters) != tc.filters {
+				t.Fatalf("group = %#v, want negated group (or=%v, filters=%d)", group, tc.or, tc.filters)
+			}
+		})
+	}
+}
+
+func TestParseEmbedMultipleLogicalGroups(t *testing.T) {
+	t.Parallel()
+
+	values := url.Values{
+		"select":         []string{"id,orders(id)"},
+		"orders.not.or":  []string{"(id.eq.1)"},
+		"orders.not.and": []string{"(id.eq.2)"},
+	}
+	query, err := readquery.Parse(values, nil)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(query.Embeds) != 1 {
+		t.Fatalf("embeds = %#v, want one embed", query.Embeds)
+	}
+	embed := query.Embeds[0]
+	if len(embed.Groups) != 2 {
+		t.Fatalf("embed.Groups = %#v, want 2 groups", embed.Groups)
+	}
+	if embed.Groups[0].Negated != true || embed.Groups[0].Or != false {
+		t.Fatalf("first group = %#v, want negated and", embed.Groups[0])
+	}
+	if embed.Groups[1].Negated != true || embed.Groups[1].Or != true {
+		t.Fatalf("second group = %#v, want negated or", embed.Groups[1])
+	}
+}
+
+func TestParseEmbedRefusesEmptyLogicalGroups(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		key  string
+		raw  string
+	}{
+		{name: "empty not.or", key: "orders.not.or", raw: "()"},
+		{name: "empty not.and", key: "orders.not.and", raw: "()"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			values := url.Values{
+				"select": []string{"id,orders(id)"},
+				tc.key:   []string{tc.raw},
+			}
+			_, err := readquery.Parse(values, nil)
+			var failure readquery.ParseFailure
+			if err == nil || !errors.As(err, &failure) || failure.Gap {
+				t.Fatalf("query %s=%s err = %v, want non-gap ParseFailure", tc.key, tc.raw, err)
+			}
+		})
 	}
 }

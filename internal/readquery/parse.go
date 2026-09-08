@@ -98,7 +98,7 @@ func attachEmbedParam(query *Query, key string, values []string) error {
 		return attachEmbedOrder(embed, values)
 	case "limit", "offset":
 		return attachEmbedPage(embed, rest, values)
-	case "and", "or":
+	case "and", "or", "not.and", "not.or":
 		return attachEmbedGroups(embed, rest, values)
 	default:
 		return attachEmbedFilters(embed, rest, values)
