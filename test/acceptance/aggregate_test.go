@@ -137,3 +137,93 @@ func TestAggregateInToManySpreadRefusesOverMySQL(t *testing.T) {
 		t.Fatalf("details = %#v", failure.Details)
 	}
 }
+
+// read-014: Prefer count=exact reports grouped result count instead of table row count.
+func TestPreferCountExactWithAggregateOverMySQL(t *testing.T) {
+	service := serveWithAggregates(t, "myrest_fixture")
+
+	headers := make(http.Header)
+	headers.Set("Prefer", "count=exact")
+
+	response, body := apitest.Do(
+		t,
+		http.MethodGet,
+		service.URL()+"/orders?select=count(),item_id&order=item_id.asc",
+		headers,
+	)
+	if got := response.Header.Get("Content-Range"); got != "0-1/2" {
+		t.Fatalf("Content-Range = %q, want 0-1/2", got)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if want := `[{"count":2,"item_id":1},{"count":1,"item_id":2}]`; string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+
+	response, body = apitest.Do(
+		t,
+		http.MethodGet,
+		service.URL()+"/items?select=count()",
+		headers,
+	)
+	if got := response.Header.Get("Content-Range"); got != "0-0/1" {
+		t.Fatalf("Content-Range = %q, want 0-0/1", got)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if want := `[{"count":2}]`; string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+
+	// Pagination with limit/offset on aggregate query
+	response, body = apitest.Do(
+		t,
+		http.MethodGet,
+		service.URL()+"/orders?select=count(),item_id&order=item_id.asc&limit=1&offset=0",
+		headers,
+	)
+	if got := response.Header.Get("Content-Range"); got != "0-0/2" {
+		t.Fatalf("Content-Range = %q, want 0-0/2", got)
+	}
+	if response.StatusCode != http.StatusPartialContent {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusPartialContent, body)
+	}
+	if want := `[{"count":2,"item_id":1}]`; string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+
+	response, body = apitest.Do(
+		t,
+		http.MethodGet,
+		service.URL()+"/orders?select=count(),item_id&order=item_id.asc&limit=1&offset=1",
+		headers,
+	)
+	if got := response.Header.Get("Content-Range"); got != "1-1/2" {
+		t.Fatalf("Content-Range = %q, want 1-1/2", got)
+	}
+	if response.StatusCode != http.StatusPartialContent {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusPartialContent, body)
+	}
+	if want := `[{"count":1,"item_id":2}]`; string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+
+	// Filtering on aggregate query
+	response, body = apitest.Do(
+		t,
+		http.MethodGet,
+		service.URL()+"/orders?select=count(),item_id&item_id=eq.1",
+		headers,
+	)
+	if got := response.Header.Get("Content-Range"); got != "0-0/1" {
+		t.Fatalf("Content-Range = %q, want 0-0/1", got)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if want := `[{"count":2,"item_id":1}]`; string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
