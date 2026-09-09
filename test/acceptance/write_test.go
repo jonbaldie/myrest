@@ -41,6 +41,33 @@ func TestPostInsertsSingleAndBulkOverMySQL(t *testing.T) {
 	}
 }
 
+// POST of an empty JSON object must refuse as PGRST102 Empty body, like PATCH
+// and PUT. See issue #121.
+func TestPostEmptyJSONObjectRefusesOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	cases := []struct {
+		name    string
+		body    string
+		message string
+	}{
+		{name: "empty object", body: `{}`, message: "Empty body"},
+		{name: "array of empty object", body: `[{}]`, message: "Empty body"},
+		{name: "null", body: `null`, message: "Empty body"},
+		{name: "empty bytes", body: "", message: "Empty body"},
+		{name: "empty array", body: `[]`, message: "Empty JSON array"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			response, body := apitest.PostJSON(t, service.URL()+"/items", tc.body)
+			failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST102")
+			if failure.Message != tc.message {
+				t.Fatalf("message = %q, want %q", failure.Message, tc.message)
+			}
+		})
+	}
+}
+
 // write-002: a PATCH with a filter updates only the matching rows.
 func TestPatchUpdatesMatchingRowsOverMySQL(t *testing.T) {
 	service := serve(t, "myrest_fixture")

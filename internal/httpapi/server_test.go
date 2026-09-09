@@ -248,9 +248,9 @@ func TestResourceAdmissionKeepsTheHTTPContractAcrossRoutes(t *testing.T) {
 	go func() { _ = service.Serve() }()
 	t.Cleanup(func() { _ = service.Close() })
 
-	post := func(path string) (*http.Response, []byte) {
+	post := func(path, payload string) (*http.Response, []byte) {
 		t.Helper()
-		request, err := http.NewRequest(http.MethodPost, service.URL()+path, strings.NewReader(`{}`))
+		request, err := http.NewRequest(http.MethodPost, service.URL()+path, strings.NewReader(payload))
 		if err != nil {
 			t.Fatalf("new POST %s: %v", path, err)
 		}
@@ -275,7 +275,7 @@ func TestResourceAdmissionKeepsTheHTTPContractAcrossRoutes(t *testing.T) {
 		t.Fatalf("read = (%q, %v), want (myrest_anon, %v)", source.role, source.table.ID, items)
 	}
 
-	response, body = post("/items")
+	response, body = post("/items", `{"id":1}`)
 	if response.StatusCode != http.StatusCreated {
 		t.Fatalf("POST status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
 	}
@@ -283,7 +283,7 @@ func TestResourceAdmissionKeepsTheHTTPContractAcrossRoutes(t *testing.T) {
 		t.Fatalf("write = (%q, %v), want (myrest_anon, %v)", sink.role, sink.table.ID, items)
 	}
 
-	response, body = post("/rpc/item_count")
+	response, body = post("/rpc/item_count", `{}`)
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("RPC status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
 	}
@@ -306,9 +306,9 @@ func TestResourceAdmissionKeepsTheHTTPContractAcrossRoutes(t *testing.T) {
 
 	response, body = get(t, service, "/hidden")
 	_ = apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
-	response, body = post("/hidden")
+	response, body = post("/hidden", `{"id":1}`)
 	_ = apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
-	response, body = post("/rpc/private_count")
+	response, body = post("/rpc/private_count", `{}`)
 	_ = apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST202")
 	response, body = apitest.Do(t, http.MethodOptions, service.URL()+"/hidden", nil)
 	_ = apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
