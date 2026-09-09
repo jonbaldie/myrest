@@ -108,6 +108,91 @@ func TestExpiredJWTGivesPGRST303(t *testing.T) {
 	}
 }
 
+func TestEmptyAudienceArrayGivesPGRST303(t *testing.T) {
+	t.Parallel()
+
+	settings := jwtSettings()
+	settings.JWT.Aud = "myrest-clients"
+	source := &reader{}
+	headers := bearer(t, gojwt.MapClaims{
+		"role": "myrest_user",
+		"aud":  []any{},
+	})
+	response, body := apitest.Do(t, http.MethodGet, serve(t, source, settings).URL()+"/items", headers)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusUnauthorized, "PGRST303")
+	if failure.Message != "JWT not in audience" {
+		t.Fatalf("message = %q, want JWT not in audience", failure.Message)
+	}
+	if source.role != "" {
+		t.Fatalf("read as role %q, want no role activated", source.role)
+	}
+}
+
+func TestMatchingAudienceArrayReadsAsClaimRole(t *testing.T) {
+	t.Parallel()
+
+	settings := jwtSettings()
+	settings.JWT.Aud = "myrest-clients"
+	source := &reader{read: []rows.Row{
+		{Columns: []string{"payload"}, Values: []any{"ok"}},
+	}}
+	headers := bearer(t, gojwt.MapClaims{
+		"role": "myrest_user",
+		"aud":  []any{"myrest-clients", "other"},
+	})
+	response, body := apitest.Do(t, http.MethodGet, serve(t, source, settings).URL()+"/items", headers)
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if source.role != "myrest_user" {
+		t.Fatalf("read as role %q, want myrest_user", source.role)
+	}
+}
+
+func TestAudienceMismatchGivesPGRST303(t *testing.T) {
+	t.Parallel()
+
+	settings := jwtSettings()
+	settings.JWT.Aud = "myrest-clients"
+	source := &reader{}
+	headers := bearer(t, gojwt.MapClaims{
+		"role": "myrest_user",
+		"aud":  "other",
+	})
+	response, body := apitest.Do(t, http.MethodGet, serve(t, source, settings).URL()+"/items", headers)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusUnauthorized, "PGRST303")
+	if failure.Message != "JWT not in audience" {
+		t.Fatalf("message = %q, want JWT not in audience", failure.Message)
+	}
+	if source.role != "" {
+		t.Fatalf("read as role %q, want no role activated", source.role)
+	}
+}
+
+func TestAudienceWrongTypeGivesPGRST303(t *testing.T) {
+	t.Parallel()
+
+	settings := jwtSettings()
+	settings.JWT.Aud = "myrest-clients"
+	source := &reader{}
+	headers := bearer(t, gojwt.MapClaims{
+		"role": "myrest_user",
+		"aud":  42,
+	})
+	response, body := apitest.Do(t, http.MethodGet, serve(t, source, settings).URL()+"/items", headers)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusUnauthorized, "PGRST303")
+	if want := "The JWT 'aud' claim must be a string or an array of strings"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+	if source.role != "" {
+		t.Fatalf("read as role %q, want no role activated", source.role)
+	}
+}
+
 // auth-007: a non-Bearer credential scheme is refused.
 func TestNonBearerCredentialsAreRefused(t *testing.T) {
 	t.Parallel()

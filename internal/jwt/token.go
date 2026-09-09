@@ -228,13 +228,20 @@ func audienceMatches(raw any, want string) (matched, typed bool) {
 	switch value := raw.(type) {
 	case string:
 		return value == want, true
-	case []any:
-		if len(value) == 0 {
-			return true, true
+	case []string:
+		for _, text := range value {
+			if text == want {
+				return true, true
+			}
 		}
+		return false, true
+	case []any:
 		for _, one := range value {
 			text, ok := one.(string)
-			if ok && text == want {
+			if !ok {
+				return false, false
+			}
+			if text == want {
 				return true, true
 			}
 		}

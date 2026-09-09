@@ -140,6 +140,221 @@ func TestAudienceMismatchIsClaimsFailure(t *testing.T) {
 	}
 }
 
+func TestEmptyAudienceArrayIsClaimsFailure(t *testing.T) {
+	t.Parallel()
+
+	verifier, err := jwt.New(jwt.Options{Secret: secret, Aud: "myrest-clients"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	token := sign(t, gojwt.MapClaims{
+		"role": "myrest_user",
+		"aud":  []any{},
+	}, []byte(secret))
+
+	_, err = verifier.Role(token)
+	if !errors.Is(err, jwt.ErrClaimsFailed) {
+		t.Fatalf("error = %v, want ErrClaimsFailed", err)
+	}
+	var failure jwt.ClaimsFailure
+	if !errors.As(err, &failure) {
+		t.Fatalf("error is not ClaimsFailure: %v", err)
+	}
+	if want := "JWT not in audience"; failure.Message != want {
+		t.Fatalf("failure message = %q, want %q", failure.Message, want)
+	}
+}
+
+func TestAudienceArrayMatches(t *testing.T) {
+	t.Parallel()
+
+	verifier, err := jwt.New(jwt.Options{Secret: secret, Aud: "myrest-clients"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	token := sign(t, gojwt.MapClaims{
+		"role": "myrest_user",
+		"aud":  []any{"myrest-clients", "other"},
+	}, []byte(secret))
+
+	role, err := verifier.Role(token)
+	if err != nil {
+		t.Fatalf("Role: %v", err)
+	}
+	if role != "myrest_user" {
+		t.Fatalf("role = %q, want myrest_user", role)
+	}
+}
+
+func TestAudienceStringSliceMatches(t *testing.T) {
+	t.Parallel()
+
+	verifier, err := jwt.New(jwt.Options{Secret: secret, Aud: "myrest-clients"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	token := sign(t, gojwt.MapClaims{
+		"role": "myrest_user",
+		"aud":  []string{"myrest-clients", "other"},
+	}, []byte(secret))
+
+	role, err := verifier.Role(token)
+	if err != nil {
+		t.Fatalf("Role: %v", err)
+	}
+	if role != "myrest_user" {
+		t.Fatalf("role = %q, want myrest_user", role)
+	}
+}
+
+func TestAudienceStringSliceMismatch(t *testing.T) {
+	t.Parallel()
+
+	verifier, err := jwt.New(jwt.Options{Secret: secret, Aud: "myrest-clients"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	token := sign(t, gojwt.MapClaims{
+		"role": "myrest_user",
+		"aud":  []string{"other"},
+	}, []byte(secret))
+
+	_, err = verifier.Role(token)
+	if !errors.Is(err, jwt.ErrClaimsFailed) {
+		t.Fatalf("error = %v, want ErrClaimsFailed", err)
+	}
+}
+
+func TestAudienceEmptyStringSliceIsClaimsFailure(t *testing.T) {
+	t.Parallel()
+
+	verifier, err := jwt.New(jwt.Options{Secret: secret, Aud: "myrest-clients"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	token := sign(t, gojwt.MapClaims{
+		"role": "myrest_user",
+		"aud":  []string{},
+	}, []byte(secret))
+
+	_, err = verifier.Role(token)
+	if !errors.Is(err, jwt.ErrClaimsFailed) {
+		t.Fatalf("error = %v, want ErrClaimsFailed", err)
+	}
+}
+
+func TestAudienceSliceWithNonStringIsClaimsFailure(t *testing.T) {
+	t.Parallel()
+
+	verifier, err := jwt.New(jwt.Options{Secret: secret, Aud: "myrest-clients"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	token := sign(t, gojwt.MapClaims{
+		"role": "myrest_user",
+		"aud":  []any{42},
+	}, []byte(secret))
+
+	_, err = verifier.Role(token)
+	if !errors.Is(err, jwt.ErrClaimsFailed) {
+		t.Fatalf("error = %v, want ErrClaimsFailed", err)
+	}
+	var failure jwt.ClaimsFailure
+	if !errors.As(err, &failure) {
+		t.Fatalf("error is not ClaimsFailure: %v", err)
+	}
+	if want := "The JWT 'aud' claim must be a string or an array of strings"; failure.Message != want {
+		t.Fatalf("failure message = %q, want %q", failure.Message, want)
+	}
+}
+
+func TestAudienceStringMatches(t *testing.T) {
+	t.Parallel()
+
+	verifier, err := jwt.New(jwt.Options{Secret: secret, Aud: "myrest-clients"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	token := sign(t, gojwt.MapClaims{
+		"role": "myrest_user",
+		"aud":  "myrest-clients",
+	}, []byte(secret))
+
+	role, err := verifier.Role(token)
+	if err != nil {
+		t.Fatalf("Role: %v", err)
+	}
+	if role != "myrest_user" {
+		t.Fatalf("role = %q, want myrest_user", role)
+	}
+}
+
+func TestAudienceMissingIsAllowed(t *testing.T) {
+	t.Parallel()
+
+	verifier, err := jwt.New(jwt.Options{Secret: secret, Aud: "myrest-clients"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	token := sign(t, gojwt.MapClaims{
+		"role": "myrest_user",
+	}, []byte(secret))
+
+	role, err := verifier.Role(token)
+	if err != nil {
+		t.Fatalf("Role: %v", err)
+	}
+	if role != "myrest_user" {
+		t.Fatalf("role = %q, want myrest_user", role)
+	}
+}
+
+func TestAudienceWrongTypeIsClaimsFailure(t *testing.T) {
+	t.Parallel()
+
+	verifier, err := jwt.New(jwt.Options{Secret: secret, Aud: "myrest-clients"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	token := sign(t, gojwt.MapClaims{
+		"role": "myrest_user",
+		"aud":  42,
+	}, []byte(secret))
+
+	_, err = verifier.Role(token)
+	if !errors.Is(err, jwt.ErrClaimsFailed) {
+		t.Fatalf("error = %v, want ErrClaimsFailed", err)
+	}
+	var failure jwt.ClaimsFailure
+	if !errors.As(err, &failure) {
+		t.Fatalf("error is not ClaimsFailure: %v", err)
+	}
+	if want := "The JWT 'aud' claim must be a string or an array of strings"; failure.Message != want {
+		t.Fatalf("failure message = %q, want %q", failure.Message, want)
+	}
+}
+
+func TestAudienceIgnoredWhenUnconfigured(t *testing.T) {
+	t.Parallel()
+
+	verifier, err := jwt.New(jwt.Options{Secret: secret})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	token := sign(t, gojwt.MapClaims{
+		"role": "myrest_user",
+		"aud":  "any-aud",
+	}, []byte(secret))
+
+	role, err := verifier.Role(token)
+	if err != nil {
+		t.Fatalf("Role: %v", err)
+	}
+	if role != "myrest_user" {
+		t.Fatalf("role = %q, want myrest_user", role)
+	}
+}
+
 func TestMissingRoleClaimIsNoRole(t *testing.T) {
 	t.Parallel()
 
