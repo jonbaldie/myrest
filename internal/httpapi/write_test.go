@@ -412,6 +412,119 @@ func TestPreferAllRowsAllowsUnboundedDelete(t *testing.T) {
 	}
 }
 
+// write-011: a valued all-rows token is not the all-rows flag. Only the bare
+// form unlocks an unbounded write; all-rows=false is ignored (refusing the
+// unbounded PATCH/DELETE with PGRST100) and is invalid under handling=strict.
+func TestPreferAllRowsValuedDoesNotUnlockUnbounded(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{}
+	service := serveWrite(t, &reader{}, sink)
+
+	request, err := http.NewRequest(
+		http.MethodPatch,
+		service.URL()+"/items",
+		strings.NewReader(`{"name":"nope"}`),
+	)
+	if err != nil {
+		t.Fatalf("new PATCH: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "all-rows=false")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST100")
+	if sink.called != "" {
+		t.Fatalf("writer must not run for all-rows=false PATCH; called %q", sink.called)
+	}
+
+	response, body = apitest.Do(t, http.MethodDelete, service.URL()+"/items", func() http.Header {
+		headers := http.Header{}
+		headers.Set("Prefer", "all-rows=false")
+		return headers
+	}())
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST100")
+	if sink.called != "" {
+		t.Fatalf("writer must not run for all-rows=false DELETE; called %q", sink.called)
+	}
+}
+
+// write-011: all-rows=false is invalid under handling=strict.
+func TestPreferAllRowsValuedStrictInvalid(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{}
+	headers := http.Header{}
+	headers.Set("Prefer", "handling=strict, all-rows=false")
+	headers.Set("Content-Type", "application/json")
+	request, err := http.NewRequest(
+		http.MethodDelete,
+		serveWrite(t, &reader{}, sink).URL()+"/items",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new DELETE: %v", err)
+	}
+	request.Header = headers
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("DELETE: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	envelope := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST122")
+	if envelope.Details == nil {
+		t.Fatalf("details = %#v", envelope.Details)
+	}
+	if sink.called != "" {
+		t.Fatalf("writer must not run; called %q", sink.called)
+	}
+}
+
+// write-011: a valued all-rows token still lets a filtered PATCH through.
+func TestPreferAllRowsValuedFilteredPatchUnaffected(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{updated: 1}
+	headers := http.Header{}
+	headers.Set("Prefer", "all-rows=false")
+	headers.Set("Content-Type", "application/json")
+	request, err := http.NewRequest(
+		http.MethodPatch,
+		serveWrite(t, &reader{}, sink).URL()+"/items?name=eq.beta",
+		strings.NewReader(`{"name":"gamma"}`),
+	)
+	if err != nil {
+		t.Fatalf("new PATCH: %v", err)
+	}
+	request.Header = headers
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusNoContent, body)
+	}
+	if sink.called != "update" {
+		t.Fatalf("writer called %q, want update", sink.called)
+	}
+}
+
 // Grant denial wins over the unbounded-write gate.
 func TestWriteWithoutGrantBeatsUnboundedGate(t *testing.T) {
 	t.Parallel()

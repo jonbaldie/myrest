@@ -96,6 +96,13 @@ func collectPreferTokens(headers []string) preferTokens {
 
 func collectKnownToken(tokens *preferTokens, name, value string, hasValue bool, raw string) {
 	if name == "all-rows" {
+		// Only the bare flag unlocks an all-rows write. A valued form
+		// (all-rows=false, all-rows=true, all-rows=) is not the flag, so it
+		// never sets the option and is invalid under handling=strict.
+		if hasValue {
+			tokens.invalid = append(tokens.invalid, raw)
+			return
+		}
 		tokens.allRows = true
 		return
 	}
