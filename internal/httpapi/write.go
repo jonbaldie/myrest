@@ -208,6 +208,9 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request) {
 	if !ok {
 		return
 	}
+	if _, ok := s.buildWriteOptions(writer, role, asked, prefer, primaryKey, writeKindPut); !ok {
+		return
+	}
 
 	inserted, err := s.writer.Upsert(
 		request.Context(),
@@ -252,6 +255,7 @@ const (
 	writeKindInsert writeKind = iota
 	writeKindPatch
 	writeKindDelete
+	writeKindPut
 )
 
 // buildWriteOptions checks representation honesty and builds database options.
@@ -299,6 +303,8 @@ func (s *Service) canReturnRepresentation(kind writeKind, primaryKey []string) b
 		return len(primaryKey) > 0
 	case writeKindDelete:
 		return true
+	case writeKindPut:
+		return false
 	default:
 		return false
 	}
