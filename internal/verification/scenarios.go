@@ -65,6 +65,7 @@ func embedAndWriteScenarios() ScenarioIndex {
 		{ID: "embed-002", Area: "embed", Label: FullMatch, Outcome: Success},
 		{ID: "embed-003", Area: "embed", Label: NotSupported, Outcome: Refuse},
 		{ID: "embed-004", Area: "embed", Label: NotSupported, Outcome: Refuse},
+		{ID: "embed-005", Area: "embed", Label: FullMatch, Outcome: Success},
 		{ID: "write-001", Area: "write", Label: FullMatch, Outcome: Success},
 		{ID: "write-002", Area: "write", Label: FullMatch, Outcome: Success},
 		{ID: "write-003", Area: "write", Label: FullMatch, Outcome: Success},

@@ -13,6 +13,8 @@ declared join table for many-to-many.
 | One-to-many | `/items?select=id,orders(id)` | array |
 | Many-to-many | `/items?select=id,tags(name)` | array through join table |
 | Disambiguation | `/deliveries?select=id,addresses!deliveries_from(label)` | one chosen FK |
+| Self-referential FK | `/employees?select=id,manager:employees!employees_manager(name)` | object or `null` |
+| Self-referential FK, other direction | `/employees?select=id,reports:employees!manager_id(name)` | array |
 
 Nested filter, order, and page use the embed key as a prefix:
 
@@ -32,6 +34,18 @@ Nested filter, order, and page use the embed key as a prefix:
 myrest never invents a relationship. A view chain with no declared foreign key
 is not supported. A computed relationship is not supported.
 
+## Self-referential foreign keys
+
+One declared foreign key from a table to itself holds two relationships: the
+declared many-to-one path (child to parent) and the inverse one-to-many path
+(parent to children). A bare embed of the table's own name cannot pick one and
+refuses with `PGRST201`. A hint picks a direction:
+
+| Hint | Example | Path |
+| --- | --- | --- |
+| Constraint name | `employees!employees_manager` | many-to-one (the manager) |
+| Foreign-key column | `employees!manager_id` | one-to-many (the direct reports) |
+
 Aggregate plus embed is owned by the Read area. See [Aggregates](aggregates.md).
 
 ## Full match rows
@@ -39,6 +53,7 @@ Aggregate plus embed is owned by the Read area. See [Aggregates](aggregates.md).
 | Item | Parity label | Scenarios |
 | --- | --- | --- |
 | Nested select over a declared foreign key | full match | embed-001 |
+| Nested select over a self-referential foreign key | full match | embed-005 |
 | Nested filter, order, and page | full match | embed-002 |
 
 ## Gap list rows

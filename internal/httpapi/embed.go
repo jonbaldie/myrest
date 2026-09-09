@@ -137,10 +137,21 @@ func ambiguousDetails(failure schemacache.RelationshipAmbiguous) []map[string]st
 func ambiguousHint(failure schemacache.RelationshipAmbiguous) string {
 	options := make([]string, 0, len(failure.Options))
 	for _, option := range failure.Options {
-		options = append(options, failure.Target+"!"+option.Name)
+		options = append(options, failure.Target+"!"+optionHint(failure.Origin, option))
 	}
 	return "Try changing '" + failure.Target + "' to one of the following: '" +
 		strings.Join(options, "', '") + "'. Find the desired relationship in the 'details' key."
+}
+
+// optionHint gives the hint that selects one option. On a self-relationship
+// the two directions share the constraint name, so the one-to-many option
+// suggests the key column that selects it instead.
+func optionHint(origin schemacache.TableID, option schemacache.Relationship) string {
+	if option.Cardinality == schemacache.OneToMany && option.Target == origin &&
+		len(option.TargetColumns) == 1 {
+		return option.TargetColumns[0]
+	}
+	return option.Name
 }
 
 func cardinalityName(cardinality schemacache.Cardinality) string {

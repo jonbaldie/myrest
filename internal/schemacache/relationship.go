@@ -99,21 +99,17 @@ func (c *Cache) relationshipsUnlocked(origin, target TableID) []Relationship {
 	var found []Relationship
 	for _, fk := range c.foreignKeys {
 		if fk.Table == origin && fk.ReferencedTable == target {
-			found = append(found, relationshipFromFK(fk, originHoldsFK(origin, target, fk)))
+			found = append(found, relationshipFromFK(fk, ManyToOne))
 		}
+		// For a self-referential foreign key both branches fire: the same
+		// constraint yields the declared many-to-one path and the inverse
+		// one-to-many path.
 		if fk.Table == target && fk.ReferencedTable == origin {
-			found = append(found, relationshipFromFK(fk, originHoldsFK(origin, target, fk)))
+			found = append(found, relationshipFromFK(fk, OneToMany))
 		}
 	}
 	found = append(found, c.manyToManyUnlocked(origin, target)...)
 	return found
-}
-
-func originHoldsFK(origin, _ TableID, fk ForeignKeyFact) Cardinality {
-	if fk.Table == origin {
-		return ManyToOne
-	}
-	return OneToMany
 }
 
 func relationshipFromFK(fk ForeignKeyFact, cardinality Cardinality) Relationship {
@@ -221,12 +217,38 @@ func columnsSubset(have, all []string) bool {
 func filterByHint(candidates []Relationship, hint string) []Relationship {
 	var matched []Relationship
 	for _, rel := range candidates {
-		if rel.Name == hint || columnsContain(rel.OriginColumns, hint) || columnsContain(rel.TargetColumns, hint) ||
-			columnsContain(rel.JoinOriginColumns, hint) || columnsContain(rel.JoinTargetColumns, hint) {
+		if selfRelationship(rel) {
+			if selfHintMatches(rel, hint) {
+				matched = append(matched, rel)
+			}
+			continue
+		}
+		if hintMatches(rel, hint) {
 			matched = append(matched, rel)
 		}
 	}
 	return matched
+}
+
+// selfRelationship is one declared foreign key from a table to itself.
+func selfRelationship(rel Relationship) bool {
+	return rel.Origin == rel.Target
+}
+
+// selfHintMatches picks a direction on a self-relationship: one declared
+// foreign key yields two paths that share the constraint name and its
+// columns, so the constraint-name hint selects the declared many-to-one path
+// and the key-column hint selects the one-to-many path the column belongs to.
+func selfHintMatches(rel Relationship, hint string) bool {
+	if rel.Cardinality == ManyToOne {
+		return rel.Name == hint
+	}
+	return columnsContain(rel.TargetColumns, hint)
+}
+
+func hintMatches(rel Relationship, hint string) bool {
+	return rel.Name == hint || columnsContain(rel.OriginColumns, hint) || columnsContain(rel.TargetColumns, hint) ||
+		columnsContain(rel.JoinOriginColumns, hint) || columnsContain(rel.JoinTargetColumns, hint)
 }
 
 func columnsContain(columns []string, name string) bool {

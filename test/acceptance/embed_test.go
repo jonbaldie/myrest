@@ -144,6 +144,63 @@ func TestEmbedDisambiguationSelectsOneRelationship(t *testing.T) {
 	}
 }
 
+// embed-005: one self-referential foreign key nests the manager with the
+// constraint-name hint and the direct reports with the key-column hint.
+func TestEmbedSelfReferentialForeignKey(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	// The bare employees-to-employees embed cannot pick a direction.
+	response, body := get(t, service, "/employees?select=id,employees(id)")
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusMultipleChoices, "PGRST201")
+	if !strings.Contains(failure.Message, "more than one relationship") {
+		t.Fatalf("message = %q", failure.Message)
+	}
+
+	// The constraint-name hint nests the manager row (many-to-one).
+	response, body = get(
+		t,
+		service,
+		"/employees?select=id,manager:employees!employees_manager(name)&id=eq.2",
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want := `[{"id":2,"manager":{"name":"ada"}}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+
+	// The key-column hint nests the reporting rows (one-to-many).
+	response, body = get(
+		t,
+		service,
+		"/employees?select=id,reports:employees!manager_id(name)&id=eq.1&reports.order=id.asc",
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want = `[{"id":1,"reports":[{"name":"bob"},{"name":"carl"}]}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+// embed-005: the one-to-many self embed stays an array even when one row reports.
+func TestEmbedSelfReferentialForeignKeySingleChild(t *testing.T) {
+	response, body := get(
+		t,
+		serve(t, "myrest_fixture"),
+		"/employees?select=id,reports:employees!manager_id(name)&id=eq.2&reports.order=id.asc",
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want := `[{"id":2,"reports":[{"name":"dee"}]}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
 // embed-001: nested embed over declared FKs succeeds.
 func TestNestedEmbedOverDeclaredForeignKeys(t *testing.T) {
 	response, body := get(
