@@ -113,6 +113,9 @@ func (s *Service) writeReadFailure(
 		writeUnsupportedFeature(writer, gap.Message)
 		return
 	}
+	if writeInvalidJSON(writer, err) {
+		return
+	}
 	s.log.Printf("myrest: read %s.%s as %s: %v", asked.Database, asked.Name, role, err)
 	writeDatabaseFailure(writer, err)
 }

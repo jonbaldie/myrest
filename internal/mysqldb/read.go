@@ -1,6 +1,7 @@
 package mysqldb
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -124,23 +125,45 @@ func scanValues(result *sql.Rows, count int) ([]any, error) {
 		if i < len(types) {
 			columnType = types[i]
 		}
-		scanned[i] = jsonValue(value, columnType)
+		converted, err := jsonValue(value, columnTypeName(columnType))
+		if err != nil {
+			return nil, err
+		}
+		scanned[i] = converted
 	}
 	return scanned, nil
+}
+
+func columnTypeName(columnType *sql.ColumnType) string {
+	if columnType == nil {
+		return ""
+	}
+	return columnType.DatabaseTypeName()
 }
 
 // jsonValue turns a MySQL driver value into a JSON-ready value. Text and blob
 // columns arrive as bytes (JSON would otherwise write base64). Decimal and
 // floating types from aggregates also arrive as bytes and become JSON numbers.
-func jsonValue(value any, columnType *sql.ColumnType) any {
+// JSON columns and JSON extracts arrive as bytes and stay JSON values.
+func jsonValue(value any, typeName string) (any, error) {
 	text, isBytes := value.([]byte)
 	if !isBytes {
-		return value
+		return value, nil
 	}
-	if columnType != nil && isNumericDBType(columnType.DatabaseTypeName()) {
-		return numericJSON(text)
+	if isNumericDBType(typeName) {
+		return numericJSON(text), nil
 	}
-	return string(text)
+	if isJSONDataType(typeName) {
+		return jsonColumnValue(text)
+	}
+	return string(text), nil
+}
+
+func jsonColumnValue(text []byte) (any, error) {
+	if !json.Valid(text) {
+		return nil, rows.InvalidJSON{}
+	}
+	return json.RawMessage(bytes.Clone(text)), nil
 }
 
 func isNumericDBType(name string) bool {
