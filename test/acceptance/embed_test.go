@@ -231,3 +231,58 @@ func TestEmbedNegatedLogicalGroups(t *testing.T) {
 		}
 	})
 }
+
+// embed-001 / issue 126: a many-to-one embed over a composite foreign key
+// nests the parent row and matches on every key column.
+func TestEmbedManyToOneOverCompositeForeignKey(t *testing.T) {
+	response, body := get(
+		t,
+		serve(t, "myrest_fixture"),
+		"/stock_moves?select=qty,stock_lines(label)&order=id.asc",
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want := `[{"qty":5,"stock_lines":{"label":"one-aa"}},` +
+		`{"qty":6,"stock_lines":{"label":"one-aa"}},` +
+		`{"qty":7,"stock_lines":{"label":"one-bb"}},` +
+		`{"qty":8,"stock_lines":{"label":"two-aa"}}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+// embed-001 / issue 126: a one-to-many embed over a composite foreign key
+// nests only the children that match every key column.
+func TestEmbedOneToManyOverCompositeForeignKey(t *testing.T) {
+	response, body := get(
+		t,
+		serve(t, "myrest_fixture"),
+		"/stock_lines?select=label,stock_moves(qty)&order=tenant_id.asc,sku.asc&stock_moves.order=qty.asc",
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want := `[{"label":"one-aa","stock_moves":[{"qty":5},{"qty":6}]},` +
+		`{"label":"one-bb","stock_moves":[{"qty":7}]},` +
+		`{"label":"two-aa","stock_moves":[{"qty":8}]}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+// embed-002 / issue 126: a hint naming the composite constraint picks it.
+func TestEmbedCompositeForeignKeyHintByConstraintName(t *testing.T) {
+	response, body := get(
+		t,
+		serve(t, "myrest_fixture"),
+		"/stock_moves?select=qty,stock_lines!stock_moves_line(label)&qty=eq.7",
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want := `[{"qty":7,"stock_lines":{"label":"one-bb"}}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}

@@ -324,15 +324,16 @@ func (s *Service) loadManyToMany(
 	embed plannedEmbed,
 	parentKeys [][]any,
 ) ([]rows.Row, map[string][]string, error) {
-	joinTable, ok := s.cache.Resource(role, embed.relationship.JoinTable)
-	if !ok {
+	joinTable, found := s.cache.Resource(role, embed.relationship.JoinTable)
+	if !found {
 		return nil, nil, schemacache.RelationshipMissing{
 			Origin: embed.relationship.Origin,
 			Target: embed.ask.Resource,
 		}
 	}
-	if len(embed.relationship.JoinOriginColumns) != 1 {
-		return nil, nil, fmt.Errorf("composite many-to-many foreign-key columns are not available yet")
+	joinFilters, joinGroups, ok := keyCondition(embed.relationship.JoinOriginColumns, parentKeys)
+	if !ok {
+		return nil, nil, nil
 	}
 	joinQuery := readquery.Query{
 		SelectAll: true,
@@ -340,11 +341,8 @@ func (s *Service) loadManyToMany(
 			append([]string{}, embed.relationship.JoinOriginColumns...),
 			embed.relationship.JoinTargetColumns...,
 		)),
-		Filters: []readquery.Filter{{
-			Column: embed.relationship.JoinOriginColumns[0],
-			Op:     readquery.OpIn,
-			Values: stringifyKeys(parentKeys),
-		}},
+		Filters: joinFilters,
+		Groups:  joinGroups,
 	}
 	joinRead, err := s.reader.Read(ctx, role, joinTable, joinQuery)
 	if err != nil {
@@ -404,24 +402,18 @@ func (s *Service) readByKeys(
 	keyColumns []string,
 	keys [][]any,
 ) ([]rows.Row, error) {
-	if len(keys) == 0 {
+	keyFilters, keyGroups, ok := keyCondition(keyColumns, keys)
+	if !ok {
 		return nil, nil
-	}
-	if len(keyColumns) != 1 {
-		return nil, fmt.Errorf("composite embed foreign-key columns are not available yet")
 	}
 	// Limit and offset apply per parent row after grouping, not to the batch.
 	query := readquery.Query{
 		Columns:   embed.ask.Columns,
 		SelectAll: len(embed.ask.Columns) == 0,
-		Filters: append([]readquery.Filter{{
-			Column: keyColumns[0],
-			Op:     readquery.OpIn,
-			Values: stringifyKeys(keys),
-		}}, embed.ask.Filters...),
-		Groups: embed.ask.Groups,
-		Order:  embed.ask.Order,
-		Embeds: embedAsks(embed.children),
+		Filters:   append(keyFilters, embed.ask.Filters...),
+		Groups:    append(keyGroups, embed.ask.Groups...),
+		Order:     embed.ask.Order,
+		Embeds:    embedAsks(embed.children),
 	}
 	childPlan := embed.children
 	query, injected := withJoinColumns(embed.target, query, childPlan)
@@ -607,6 +599,41 @@ func rowKey(row rows.Row, columns []string) string {
 		key.WriteString(part)
 	}
 	return key.String()
+}
+
+// keyCondition limits a read to the given key tuples. A single key column uses
+// one IN list; a composite key uses an OR of AND groups, one group per tuple,
+// so every key column of the foreign key takes part in the match. It reports
+// false when no key columns are named, because no condition can hold the read
+// down to the related rows.
+func keyCondition(columns []string, keys [][]any) ([]readquery.Filter, []readquery.Group, bool) {
+	switch {
+	case len(columns) == 0 || len(keys) == 0:
+		return nil, nil, false
+	case len(columns) == 1:
+		return []readquery.Filter{{
+			Column: columns[0],
+			Op:     readquery.OpIn,
+			Values: stringifyKeys(keys),
+		}}, nil, true
+	}
+	tuples := make([]readquery.Group, 0, len(keys))
+	for _, key := range keys {
+		tuples = append(tuples, readquery.Group{Filters: tupleFilters(columns, key)})
+	}
+	return nil, []readquery.Group{{Or: true, Groups: tuples}}, true
+}
+
+func tupleFilters(columns []string, key []any) []readquery.Filter {
+	filters := make([]readquery.Filter, 0, len(columns))
+	for i, column := range columns {
+		filters = append(filters, readquery.Filter{
+			Column: column,
+			Op:     readquery.OpEq,
+			Value:  stringifyValue(key[i]),
+		})
+	}
+	return filters
 }
 
 func stringifyKeys(keys [][]any) []string {

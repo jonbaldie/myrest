@@ -65,6 +65,30 @@ CREATE TABLE item_tags (
 
 INSERT INTO item_tags (item_id, tag_id) VALUES (1, 1), (1, 2), (2, 1);
 
+-- Composite foreign key: the child refers to both key columns of the parent.
+CREATE TABLE stock_lines (
+  tenant_id BIGINT UNSIGNED NOT NULL,
+  sku VARCHAR(32) NOT NULL,
+  label VARCHAR(255) NOT NULL,
+  PRIMARY KEY (tenant_id, sku)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT INTO stock_lines (tenant_id, sku, label) VALUES
+  (1, 'aa', 'one-aa'), (1, 'bb', 'one-bb'), (2, 'aa', 'two-aa');
+
+CREATE TABLE stock_moves (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  tenant_id BIGINT UNSIGNED NOT NULL,
+  sku VARCHAR(32) NOT NULL,
+  qty BIGINT NOT NULL,
+  PRIMARY KEY (id),
+  CONSTRAINT stock_moves_line FOREIGN KEY (tenant_id, sku)
+    REFERENCES stock_lines (tenant_id, sku)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT INTO stock_moves (tenant_id, sku, qty) VALUES
+  (1, 'aa', 5), (1, 'aa', 6), (1, 'bb', 7), (2, 'aa', 8);
+
 CREATE TABLE addresses (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   label VARCHAR(255) NOT NULL,
@@ -207,6 +231,8 @@ GRANT SELECT, INSERT, UPDATE ON myrest_fixture.profiles TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.orders TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.tags TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.item_tags TO 'myrest_anon';
+GRANT SELECT ON myrest_fixture.stock_lines TO 'myrest_anon';
+GRANT SELECT ON myrest_fixture.stock_moves TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.addresses TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.deliveries TO 'myrest_anon';
 GRANT INSERT ON myrest_fixture.items TO 'myrest_anon';

@@ -275,3 +275,27 @@ func TestAttachGroupedEmbedsEmptyChildren(t *testing.T) {
 		t.Fatalf("empty orders = %#v", got[0].Values[1])
 	}
 }
+
+func TestKeyConditionShapesSingleAndCompositeKeys(t *testing.T) {
+	t.Parallel()
+
+	keys := [][]any{{int64(7), int64(3)}, {int64(8), int64(3)}}
+	filters, groups, ok := keyCondition([]string{"tenant_id"}, [][]any{{int64(7)}})
+	if !ok || len(filters) != 1 || filters[0].Op != readquery.OpIn || groups != nil {
+		t.Fatalf("single key = %#v %#v %v", filters, groups, ok)
+	}
+	filters, groups, ok = keyCondition([]string{"tenant_id", "id"}, keys)
+	if !ok || filters != nil || len(groups) != 1 || !groups[0].Or || len(groups[0].Groups) != 2 {
+		t.Fatalf("composite key = %#v %#v %v", filters, groups, ok)
+	}
+	tuple := groups[0].Groups[0].Filters
+	if len(tuple) != 2 || tuple[0].Value != "7" || tuple[1].Value != "3" {
+		t.Fatalf("tuple = %#v", tuple)
+	}
+	if _, _, ok = keyCondition(nil, keys); ok {
+		t.Fatal("no key columns must report no condition")
+	}
+	if _, _, ok = keyCondition([]string{"id"}, nil); ok {
+		t.Fatal("no keys must report no condition")
+	}
+}
