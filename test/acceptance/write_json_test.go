@@ -123,18 +123,9 @@ func TestNestedJSONObjectOnNonJSONColumnRefuses(t *testing.T) {
 	service := serve(t, "myrest_fixture")
 
 	response, body := writeJSON(t, http.MethodPost, service.URL()+"/loose_notes", `{"body":{"a":1}}`)
-	if response.StatusCode < 400 || response.StatusCode >= 500 {
-		t.Fatalf("status = %d, want a 4xx client error; body = %s", response.StatusCode, body)
-	}
-	if contentType := response.Header.Get("Content-Type"); contentType != "application/json" {
-		t.Fatalf("Content-Type = %q, want application/json", contentType)
-	}
-	var envelope apitest.Envelope
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		t.Fatalf("decode the body %s: %v", body, err)
-	}
-	if envelope.Code == "MYREST002" {
-		t.Fatalf("code = MYREST002, want a client-error code; body = %s", body)
+	envelope := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if envelope.Message != "Cannot write a JSON object into column body: the column does not hold JSON" {
+		t.Fatalf("message = %q, want the column refusal", envelope.Message)
 	}
 }
 
