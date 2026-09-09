@@ -567,8 +567,8 @@ func readInsertRows(writer http.ResponseWriter, request *http.Request) ([]map[st
 	}
 
 	trimmed := bytes.TrimSpace(body)
+	var rows []map[string]any
 	if trimmed[0] == '[' {
-		var rows []map[string]any
 		if err := json.Unmarshal(body, &rows); err != nil {
 			writeFailure(writer, http.StatusBadRequest, codeBadBody, "Could not parse the JSON body")
 			return nil, false
@@ -577,19 +577,28 @@ func readInsertRows(writer http.ResponseWriter, request *http.Request) ([]map[st
 			writeFailure(writer, http.StatusBadRequest, codeBadBody, "Empty JSON array")
 			return nil, false
 		}
-		return rows, true
+	} else {
+		var row map[string]any
+		if err := json.Unmarshal(body, &row); err != nil {
+			writeFailure(writer, http.StatusBadRequest, codeBadBody, "Could not parse the JSON body")
+			return nil, false
+		}
+		rows = []map[string]any{row}
 	}
-
-	var row map[string]any
-	if err := json.Unmarshal(body, &row); err != nil {
-		writeFailure(writer, http.StatusBadRequest, codeBadBody, "Could not parse the JSON body")
-		return nil, false
-	}
-	if row == nil {
+	if !hasInsertColumns(rows) {
 		writeFailure(writer, http.StatusBadRequest, codeBadBody, "Empty body")
 		return nil, false
 	}
-	return []map[string]any{row}, true
+	return rows, true
+}
+
+func hasInsertColumns(rows []map[string]any) bool {
+	for _, row := range rows {
+		if len(row) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func readPatchObject(writer http.ResponseWriter, request *http.Request) (map[string]any, bool) {
