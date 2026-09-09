@@ -70,6 +70,63 @@ func TestParseWritePreferTxValues(t *testing.T) {
 	}
 }
 
+// Only the bare all-rows flag sets the option. A valued form (all-rows=false,
+// all-rows=true, all-rows=) never sets it and is invalid under handling=strict.
+func TestParseWritePreferAllRowsFlagOnly(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		header   string
+		wantFlag bool
+		wantErr  bool
+	}{
+		{
+			name:     "bare flag sets the option",
+			header:   "handling=strict, all-rows",
+			wantFlag: true,
+		},
+		{
+			name:    "valued form is not the flag",
+			header:  "handling=strict, all-rows=false",
+			wantErr: true,
+		},
+		{
+			name:    "valued true is not the flag either",
+			header:  "handling=strict, all-rows=true",
+			wantErr: true,
+		},
+		{
+			name:    "valued empty is not the flag",
+			header:  "handling=strict, all-rows=",
+			wantErr: true,
+		},
+		{
+			name:     "bare flag among other tokens",
+			header:   "return=representation, all-rows, missing=default",
+			wantFlag: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			prefer, err := parseWritePrefer([]string{tc.header}, config.TxEndCommit)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected invalid prefer error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseWritePrefer: %v", err)
+			}
+			if prefer.AllRows != tc.wantFlag {
+				t.Fatalf("AllRows = %v, want %v", prefer.AllRows, tc.wantFlag)
+			}
+		})
+	}
+}
+
 func TestSetTxPreferenceApplied(t *testing.T) {
 	t.Parallel()
 
