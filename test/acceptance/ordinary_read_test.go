@@ -60,7 +60,6 @@ func TestIsDistinctOverMySQL(t *testing.T) {
 	}
 }
 
-
 // read-002: Prefer count=exact returns the exact total over MySQL 8.
 func TestPreferCountExactOverMySQL(t *testing.T) {
 	headers := make(http.Header)
@@ -147,4 +146,42 @@ func TestDBMaxRowsBoundsRowsOverMySQL(t *testing.T) {
 func TestOrdinaryReadWithoutSelectGrantOverMySQL(t *testing.T) {
 	response, body := get(t, serve(t, "myrest_fixture"), "/secrets?select=payload&limit=1")
 	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
+}
+
+// An unknown is filter value is a query parse failure: 400 PGRST100,
+// rejected before any SQL is built. Issue #130.
+func TestUnknownIsFilterValueIsAParseFailureOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	for _, path := range []string{"/items?id=is.bogus", "/items?id=not.is.bogus"} {
+		response, body := get(t, service, path)
+		apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST100")
+	}
+}
+
+// The documented is filter values keep their answers over MySQL 8, and case
+// handling matches the other operators: a value is matched as written.
+func TestIsFilterValuesOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	cases := []struct {
+		filter string
+		rows   string
+	}{
+		{"manager_id=is.null", `[{"id":1,"name":"ada"}]`},
+		{"manager_id=is.not_null", `[{"id":2,"name":"bob"},{"id":3,"name":"carl"},{"id":4,"name":"dee"}]`},
+		{"manager_id=not.is.not_null", `[{"id":1,"name":"ada"}]`},
+		{"manager_id=is.true", `[{"id":2,"name":"bob"},{"id":3,"name":"carl"},{"id":4,"name":"dee"}]`},
+		{"id=is.false", `[]`},
+		{"manager_id=is.unknown", `[{"id":1,"name":"ada"}]`},
+	}
+	for _, c := range cases {
+		response, body := get(t, service, "/employees?select=id,name&"+c.filter+"&order=id.asc")
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("%s: status = %d, want %d; body = %s", c.filter, response.StatusCode, http.StatusOK, body)
+		}
+		if want := c.rows + "\n"; string(body) != want {
+			t.Fatalf("%s: body = %s, want %s", c.filter, body, want)
+		}
+	}
 }

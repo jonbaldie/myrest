@@ -2,6 +2,7 @@ package readquery
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -33,8 +34,22 @@ func parseFilter(column, raw string) (Filter, error) {
 		filter.Values = values
 		return filter, nil
 	}
+	if op == OpIs && !isIsValue(value) {
+		return Filter{}, ParseFailure{
+			Message: "is operator value must be null, not_null, true, false, or unknown",
+		}
+	}
 	filter.Value = value
 	return filter, nil
+}
+
+// isValues lists the values an is filter takes, as ordinary-read.md claims them.
+var isValues = []string{"null", "not_null", "true", "false", "unknown"}
+
+// isIsValue matches the value as written: is values, like operators, are
+// case-sensitive.
+func isIsValue(value string) bool {
+	return slices.Contains(isValues, value)
 }
 
 func classifyOperator(opText string) (Operator, error) {

@@ -26,8 +26,7 @@ func filterSQL(table schemacache.Table, filter readquery.Filter) (string, []any,
 	case readquery.OpIn:
 		return inSQL(column, filter)
 	case readquery.OpIs:
-		sql, err := isSQL(column, filter.Value, filter.Negated)
-		return sql, nil, err
+		return isSQL(column, filter.Value, filter.Negated), nil, nil
 	case readquery.OpIsDistinct:
 		return distinctSQL(column, filter)
 	default:
@@ -101,7 +100,6 @@ func distinctSQL(column string, filter readquery.Filter) (string, []any, error) 
 	return sql, []any{arg}, nil
 }
 
-
 func comparisonOp(op readquery.Operator) string {
 	switch op {
 	case readquery.OpEq:
@@ -121,16 +119,14 @@ func comparisonOp(op readquery.Operator) string {
 	}
 }
 
-func isSQL(column, value string, negated bool) (string, error) {
-	kind := strings.ToLower(value)
-	positive, ok := isPredicates[kind]
-	if !ok {
-		return "", fmt.Errorf("is filter value %q is not supported", value)
-	}
+// isSQL builds the NULL or boolean predicate of an is filter. The parse layer
+// accepts only documented is values, so the lookup cannot miss.
+func isSQL(column, value string, negated bool) string {
+	predicate := isPredicates[value]
 	if negated {
-		return column + " " + positive.negated, nil
+		return column + " " + predicate.negated
 	}
-	return column + " " + positive.plain, nil
+	return column + " " + predicate.plain
 }
 
 type isPredicate struct {
@@ -141,7 +137,6 @@ type isPredicate struct {
 var isPredicates = map[string]isPredicate{
 	"null":     {plain: "IS NULL", negated: "IS NOT NULL"},
 	"not_null": {plain: "IS NOT NULL", negated: "IS NULL"},
-	"notnull":  {plain: "IS NOT NULL", negated: "IS NULL"},
 	"true":     {plain: "IS TRUE", negated: "IS NOT TRUE"},
 	"false":    {plain: "IS FALSE", negated: "IS NOT FALSE"},
 	"unknown":  {plain: "IS UNKNOWN", negated: "IS NOT UNKNOWN"},

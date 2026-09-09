@@ -310,3 +310,41 @@ func TestParseStarPartWithColumnKeepsExplicitSelect(t *testing.T) {
 		t.Fatalf("columns = %#v, want name", query.Columns)
 	}
 }
+
+// An is filter takes one documented value; anything else is a parse failure
+// at the parse layer, before any SQL is built. Issue #130.
+func TestParseRejectsUnknownIsValue(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		key  string
+		raw  string
+	}{
+		{name: "unknown value", key: "id", raw: "is.bogus"},
+		{name: "unknown negated value", key: "id", raw: "not.is.bogus"},
+		{name: "uppercase value", key: "id", raw: "is.NULL"},
+		{name: "unknown value in a group", key: "or", raw: "(id.is.bogus)"},
+	}
+	for _, test := range cases {
+		_, err := readquery.Parse(url.Values{test.key: []string{test.raw}}, nil)
+		var failure readquery.ParseFailure
+		if err == nil || !errors.As(err, &failure) || failure.Gap {
+			t.Fatalf("query %s=%s err = %v, want a non-gap ParseFailure", test.key, test.raw, err)
+		}
+	}
+}
+
+func TestParseAcceptsDocumentedIsValues(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{"null", "not_null", "true", "false", "unknown"} {
+		query, err := readquery.Parse(url.Values{"id": {"is." + value}}, nil)
+		if err != nil {
+			t.Fatalf("Parse is.%s: %v", value, err)
+		}
+		if len(query.Filters) != 1 || query.Filters[0].Op != readquery.OpIs || query.Filters[0].Value != value {
+			t.Fatalf("is.%s: filters = %#v", value, query.Filters)
+		}
+	}
+}
