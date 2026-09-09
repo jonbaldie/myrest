@@ -41,6 +41,33 @@ func TestDataSourceNameKeepsURIQueryValues(t *testing.T) {
 	}
 }
 
+// A literal IPv6 host that carries no port gets the default port once, not a
+// second pair of brackets.
+func TestDataSourceNameAddsTheMySQLPortToABracketedIPv6Host(t *testing.T) {
+	t.Parallel()
+
+	name, err := dataSourceName("mysql://authenticator:secret@[::1]/")
+	if err != nil {
+		t.Fatalf("dataSourceName: %v", err)
+	}
+	if want := "authenticator:secret@tcp([::1]:3306)/?parseTime=true"; name != want {
+		t.Fatalf("name = %q, want %q", name, want)
+	}
+}
+
+// A literal IPv6 host that already carries a port stays as it is.
+func TestDataSourceNameKeepsThePortOfABracketedIPv6Host(t *testing.T) {
+	t.Parallel()
+
+	name, err := dataSourceName("mysql://authenticator:secret@[::1]:3307/")
+	if err != nil {
+		t.Fatalf("dataSourceName: %v", err)
+	}
+	if want := "authenticator:secret@tcp([::1]:3307)/?parseTime=true"; name != want {
+		t.Fatalf("name = %q, want %q", name, want)
+	}
+}
+
 // The operator, not myrest, owns a parameter the db-uri already carries.
 func TestDataSourceNameKeepsTheParseTimeOfTheOperator(t *testing.T) {
 	t.Parallel()

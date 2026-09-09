@@ -55,5 +55,7 @@ func hostWithPort(host string) string {
 	if _, _, err := net.SplitHostPort(host); err == nil {
 		return host
 	}
-	return net.JoinHostPort(host, defaultPort)
+	// url keeps a literal IPv6 address bracketed, but JoinHostPort adds the
+	// brackets itself. Handing it the bare address keeps one wrap, not two.
+	return net.JoinHostPort(strings.TrimSuffix(strings.TrimPrefix(host, "["), "]"), defaultPort)
 }
