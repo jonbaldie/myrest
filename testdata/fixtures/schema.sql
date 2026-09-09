@@ -109,6 +109,19 @@ CREATE TABLE deliveries (
 
 INSERT INTO deliveries (from_address_id, to_address_id) VALUES (1, 2);
 
+-- One self-referential foreign key: employees report to employees. Embeds
+-- need a hint to pick a direction: the constraint name nests the manager
+-- (many-to-one), the key column nests the direct reports (one-to-many).
+CREATE TABLE employees (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL,
+  manager_id BIGINT UNSIGNED NULL,
+  PRIMARY KEY (id),
+  CONSTRAINT employees_manager FOREIGN KEY (manager_id) REFERENCES employees (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT INTO employees (name, manager_id) VALUES ('ada', NULL), ('bob', 1), ('carl', 1), ('dee', 2);
+
 CREATE FUNCTION item_count() RETURNS BIGINT
   DETERMINISTIC
   READS SQL DATA
@@ -235,6 +248,7 @@ GRANT SELECT ON myrest_fixture.stock_lines TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.stock_moves TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.addresses TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.deliveries TO 'myrest_anon';
+GRANT SELECT ON myrest_fixture.employees TO 'myrest_anon';
 GRANT INSERT ON myrest_fixture.items TO 'myrest_anon';
 GRANT SELECT, INSERT, UPDATE, DELETE ON myrest_fixture.colors TO 'myrest_anon';
 GRANT SELECT, INSERT, UPDATE, DELETE ON myrest_fixture.loose_notes TO 'myrest_anon';

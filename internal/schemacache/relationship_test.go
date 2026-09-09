@@ -112,6 +112,124 @@ func TestResolveEmbedManyToManyAndDisambiguation(t *testing.T) {
 	}
 }
 
+func TestResolveEmbedSelfReferentialForeignKey(t *testing.T) {
+	t.Parallel()
+
+	// One declared self-referential foreign key:
+	// employees.manager_id -> employees.id.
+	employees := schemacache.TableID{Database: "shop", Name: "employees"}
+	cache := schemacache.Build(schemacache.Catalog{
+		Tables: []schemacache.TableID{employees},
+		Columns: []schemacache.ColumnFact{
+			{Table: employees, Name: "id"},
+			{Table: employees, Name: "manager_id"},
+		},
+		Keys: []schemacache.KeyFact{
+			{Table: employees, Name: "PRIMARY", Kind: "PRIMARY", Columns: []string{"id"}},
+		},
+		ForeignKeys: []schemacache.ForeignKeyFact{{
+			Name: "employees_manager", Table: employees, Columns: []string{"manager_id"},
+			ReferencedTable: employees, ReferencedColumns: []string{"id"},
+		}},
+		Selects: []schemacache.SelectFact{
+			{Role: "anon", Table: employees},
+		},
+	})
+
+	// A single self-FK yields two distinct directions, but a bare
+	// employees-to-employees embed still cannot pick one.
+	_, err := cache.ResolveEmbed("anon", employees, "employees", "")
+	var ambiguous schemacache.RelationshipAmbiguous
+	if !errors.As(err, &ambiguous) || len(ambiguous.Options) != 2 {
+		t.Fatalf("unhinted self embed = %v", err)
+	}
+	directions := map[schemacache.Cardinality]bool{}
+	for _, option := range ambiguous.Options {
+		directions[option.Cardinality] = true
+	}
+	if !directions[schemacache.ManyToOne] || !directions[schemacache.OneToMany] {
+		t.Fatalf("unhinted self embed options = %#v", ambiguous.Options)
+	}
+
+	// A constraint-name hint selects the declared many-to-one direction.
+	parent, err := cache.ResolveEmbed("anon", employees, "employees", "employees_manager")
+	if err != nil {
+		t.Fatalf("constraint-name hint: %v", err)
+	}
+	if parent.Cardinality != schemacache.ManyToOne {
+		t.Fatalf("constraint-name hint = %#v, want many-to-one", parent)
+	}
+
+	// A key-column hint selects the one-to-many direction the column belongs to.
+	children, err := cache.ResolveEmbed("anon", employees, "employees", "manager_id")
+	if err != nil {
+		t.Fatalf("key-column hint: %v", err)
+	}
+	if children.Cardinality != schemacache.OneToMany ||
+		children.Name != "employees_manager" ||
+		len(children.OriginColumns) != 1 || children.OriginColumns[0] != "id" ||
+		len(children.TargetColumns) != 1 || children.TargetColumns[0] != "manager_id" {
+		t.Fatalf("key-column hint = %#v, want one-to-many", children)
+	}
+}
+
+func TestResolveEmbedSelfReferentialForeignKeyColumnHint(t *testing.T) {
+	t.Parallel()
+
+	// Two distinct self-referential foreign keys on one table.
+	employees := schemacache.TableID{Database: "shop", Name: "employees"}
+	cache := schemacache.Build(schemacache.Catalog{
+		Tables: []schemacache.TableID{employees},
+		Columns: []schemacache.ColumnFact{
+			{Table: employees, Name: "id"},
+			{Table: employees, Name: "manager_id"},
+			{Table: employees, Name: "mentor_id"},
+		},
+		Keys: []schemacache.KeyFact{
+			{Table: employees, Name: "PRIMARY", Kind: "PRIMARY", Columns: []string{"id"}},
+		},
+		ForeignKeys: []schemacache.ForeignKeyFact{
+			{Name: "employees_manager", Table: employees, Columns: []string{"manager_id"}, ReferencedTable: employees, ReferencedColumns: []string{"id"}},
+			{Name: "employees_mentor", Table: employees, Columns: []string{"mentor_id"}, ReferencedTable: employees, ReferencedColumns: []string{"id"}},
+		},
+		Selects: []schemacache.SelectFact{
+			{Role: "anon", Table: employees},
+		},
+	})
+
+	// Two genuinely distinct self-FKs stay ambiguous without a hint.
+	_, err := cache.ResolveEmbed("anon", employees, "employees", "")
+	var ambiguous schemacache.RelationshipAmbiguous
+	if !errors.As(err, &ambiguous) || len(ambiguous.Options) != 4 {
+		t.Fatalf("unhinted two-self-FK embed = %v", err)
+	}
+
+	// A constraint-name hint picks the declared direction of that FK alone.
+	byName, err := cache.ResolveEmbed("anon", employees, "employees", "employees_mentor")
+	if err != nil {
+		t.Fatalf("constraint-name hint: %v", err)
+	}
+	if byName.Cardinality != schemacache.ManyToOne {
+		t.Fatalf("constraint-name hint = %#v, want many-to-one", byName)
+	}
+
+	// A key-column hint picks the one-to-many direction of that FK alone.
+	byColumn, err := cache.ResolveEmbed("anon", employees, "employees", "mentor_id")
+	if err != nil {
+		t.Fatalf("key-column hint: %v", err)
+	}
+	if byColumn.Cardinality != schemacache.OneToMany {
+		t.Fatalf("key-column hint = %#v, want one-to-many", byColumn)
+	}
+
+	// A bad hint finds no relationship.
+	_, err = cache.ResolveEmbed("anon", employees, "employees", "no_such_hint")
+	var missing schemacache.RelationshipMissing
+	if !errors.As(err, &missing) {
+		t.Fatalf("bad hint = %v", err)
+	}
+}
+
 func TestResolveEmbedHintByColumnAndJoinTableWithoutPK(t *testing.T) {
 	t.Parallel()
 

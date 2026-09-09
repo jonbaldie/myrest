@@ -87,6 +87,7 @@ cross-area smoke set. Capability-area chapters stay the source of truth for
 | `embed-002` | embed | full match | success |
 | `embed-003` | embed | not supported | refuse |
 | `embed-004` | embed | not supported | refuse |
+| `embed-005` | embed | full match | success |
 | `write-001` | write | full match | success |
 | `write-002` | write | full match | success |
 | `write-003` | write | full match | success |
