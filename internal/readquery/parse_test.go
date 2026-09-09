@@ -274,3 +274,39 @@ func TestParseRefusesEmptyLogicalGroups(t *testing.T) {
 		})
 	}
 }
+
+func TestParseStarPartWithEmbedRecordsSelectAll(t *testing.T) {
+	t.Parallel()
+
+	query, err := readquery.Parse(url.Values{"select": []string{"*,orders(id)"}}, nil)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if !query.SelectAll {
+		t.Fatalf("SelectAll = false, want true for a standalone * part")
+	}
+	if len(query.Columns) != 0 {
+		t.Fatalf("columns = %#v, want none", query.Columns)
+	}
+	if len(query.Embeds) != 1 {
+		t.Fatalf("embeds = %#v, want one", query.Embeds)
+	}
+	if query.Embeds[0].Resource != "orders" {
+		t.Fatalf("embed resource = %q, want orders", query.Embeds[0].Resource)
+	}
+}
+
+func TestParseStarPartWithColumnKeepsExplicitSelect(t *testing.T) {
+	t.Parallel()
+
+	query, err := readquery.Parse(url.Values{"select": []string{"*,name"}}, nil)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if query.SelectAll {
+		t.Fatalf("SelectAll = true, want false when an explicit column part coexists with *")
+	}
+	if len(query.Columns) != 1 || query.Columns[0].Name != "name" {
+		t.Fatalf("columns = %#v, want name", query.Columns)
+	}
+}

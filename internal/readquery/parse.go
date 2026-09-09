@@ -36,9 +36,6 @@ func (e ParseFailure) Error() string { return e.Message }
 func Parse(values url.Values, prefer []string) (Query, error) {
 	var query Query
 	rawSelect := values.Get("select")
-	if rawSelect == "" || rawSelect == "*" {
-		query.SelectAll = true
-	}
 	if err := parseSelect(rawSelect, &query); err != nil {
 		return Query{}, err
 	}
@@ -225,7 +222,9 @@ func parsePreferCount(prefer []string, query *Query) error {
 }
 
 func parseSelect(raw string, query *Query) error {
+	// An empty select and a whole * value expand to every column.
 	if raw == "" || raw == "*" {
+		query.SelectAll = true
 		return nil
 	}
 	parts := splitSelectParts(raw)
@@ -251,7 +250,23 @@ func parseSelect(raw string, query *Query) error {
 		}
 		query.Columns = append(query.Columns, column)
 	}
+	recordSelectAll(parts, query)
 	return nil
+}
+
+// recordSelectAll records select-all for a standalone * part. It expands to
+// every column of the resource and may sit beside embed parts, so it is not
+// the whole select value.
+func recordSelectAll(parts []string, query *Query) {
+	if len(query.Columns) != 0 {
+		return
+	}
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "*" {
+			query.SelectAll = true
+			return
+		}
+	}
 }
 
 func countSelectParts(parts []string) (columns, embeds int) {

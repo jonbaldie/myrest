@@ -40,6 +40,54 @@ func TestEmbedOneToManyOverDeclaredForeignKey(t *testing.T) {
 	}
 }
 
+// embed-001: a standalone * part keeps every parent column with the embed.
+func TestEmbedStarPartKeepsParentColumns(t *testing.T) {
+	response, body := get(
+		t,
+		serve(t, "myrest_fixture"),
+		"/items?select=*,orders(id)&id=eq.1&orders.order=id.asc",
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want := `[{"id":1,"name":"alpha","name_len":5,"orders":[{"id":1},{"id":2}]}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+// embed-001: an embed-only select keeps the embed and no parent columns.
+func TestEmbedOnlySelectKeepsEmbedOnly(t *testing.T) {
+	response, body := get(
+		t,
+		serve(t, "myrest_fixture"),
+		"/items?select=orders(id)&id=eq.1&orders.order=id.asc",
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want := `[{"orders":[{"id":1},{"id":2}]}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+// embed-001: a nested * select expands every column at both levels.
+func TestEmbedNestedStarSelects(t *testing.T) {
+	response, body := get(
+		t,
+		serve(t, "myrest_fixture"),
+		"/items?select=id,orders(*,items(*))&id=eq.1&orders.order=id.asc",
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want := `[{"id":1,"orders":[{"id":1,"item_id":1,"items":{"id":1,"name":"alpha","name_len":5}},{"id":2,"item_id":1,"items":{"id":1,"name":"alpha","name_len":5}}]}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
 // embed-002: nested filter, order, and limit succeed.
 func TestEmbedNestedFilterOrderAndLimit(t *testing.T) {
 	response, body := get(

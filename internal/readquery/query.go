@@ -28,7 +28,8 @@ type Query struct {
 	Offset uint64
 	// ExactCount asks for the total matching row count.
 	ExactCount bool
-	// SelectAll is true when the client omitted select or used *.
+	// SelectAll is true when the client omitted select, used *, or used a
+	// standalone * part beside embed parts.
 	SelectAll bool
 	// MaxRows is the hard row cap from db-max-rows. Nil means no hard cap.
 	MaxRows *uint64
