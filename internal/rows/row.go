@@ -14,6 +14,13 @@ type Row struct {
 	Values  []any
 }
 
+// InvalidJSON says a JSON column or JSON extract holds bytes that are not JSON.
+type InvalidJSON struct{}
+
+func (InvalidJSON) Error() string {
+	return "JSON column holds invalid JSON"
+}
+
 // MarshalJSON writes a JSON object that keeps the column order of the
 // resource. A Go map cannot do that: it writes its keys in name order.
 func (r Row) MarshalJSON() ([]byte, error) {

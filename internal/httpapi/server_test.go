@@ -404,6 +404,17 @@ func TestFailingReadGivesTheErrorEnvelope(t *testing.T) {
 	apitest.AssertEnvelope(t, response, body, http.StatusInternalServerError, "MYREST002")
 }
 
+func TestInvalidJSONReadGivesTheErrorEnvelope(t *testing.T) {
+	t.Parallel()
+
+	source := &reader{failure: rows.InvalidJSON{}}
+	response, body := get(t, serve(t, source, settings()), "/items")
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST002")
+	if failure.Message != "JSON column holds invalid JSON" {
+		t.Fatalf("message = %q, want JSON column holds invalid JSON", failure.Message)
+	}
+}
+
 // err-004: MySQL access errors have the published SQLSTATE status and the
 // error envelope. MYREST002 is a myrest gap code because a MySQL error cannot
 // honestly claim a PostgreSQL SQLSTATE.

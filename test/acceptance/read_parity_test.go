@@ -1,6 +1,7 @@
 package acceptance_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
@@ -29,6 +30,50 @@ func TestILikeInsideTextCaseSubsetOverMySQL(t *testing.T) {
 func TestIMatchOutsideTextCaseSubsetOverMySQL(t *testing.T) {
 	response, body := get(t, serve(t, "myrest_fixture"), "/items?name=imatch.alpha")
 	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+}
+
+func TestJSONColumnReadsAsJSONValueOverMySQL(t *testing.T) {
+	response, body := get(t, serve(t, "myrest_fixture"), "/profiles?select=id,meta&id=eq.1")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	meta := jsonField(t, body, "meta")
+	object, ok := meta.(map[string]any)
+	if !ok {
+		t.Fatalf("meta = %#v, want a JSON object; body = %s", meta, body)
+	}
+	if object["blood_type"] != "A-" {
+		t.Fatalf("blood_type = %#v, want A-", object["blood_type"])
+	}
+}
+
+func TestJSONExtractReadsAsJSONValueOverMySQL(t *testing.T) {
+	path := "/profiles?select=id,meta->phones&id=eq.1"
+	response, body := get(t, serve(t, "myrest_fixture"), path)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	phones := jsonField(t, body, "phones")
+	if _, ok := phones.([]any); !ok {
+		t.Fatalf("phones = %#v, want a JSON array; body = %s", phones, body)
+	}
+}
+
+func jsonField(t *testing.T, body []byte, name string) any {
+	t.Helper()
+
+	var rows []map[string]any
+	if err := json.Unmarshal(body, &rows); err != nil {
+		t.Fatalf("decode body %s: %v", body, err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1; body = %s", len(rows), body)
+	}
+	value, ok := rows[0][name]
+	if !ok {
+		t.Fatalf("body %s holds no %s", body, name)
+	}
+	return value
 }
 
 // read-005: JSON path read and filter inside the MySQL subset.

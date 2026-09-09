@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/jonbaldie/myrest/internal/rows"
 )
 
 // The error codes of the PostgREST envelope and the myrest gap family.
@@ -60,12 +61,24 @@ func writeFailureExtra(writer http.ResponseWriter, status int, code, message str
 // writeDatabaseFailure answers a database error without disclosing database
 // account data. The status comes from the published MySQL SQLSTATE table.
 func writeDatabaseFailure(writer http.ResponseWriter, err error) {
+	if writeInvalidJSON(writer, err) {
+		return
+	}
 	writeFailure(
 		writer,
 		mysqlErrorStatus(err),
 		codeMySQLDatabaseFailure,
 		"The database did not answer the request",
 	)
+}
+
+func writeInvalidJSON(writer http.ResponseWriter, err error) bool {
+	var invalid rows.InvalidJSON
+	if !errors.As(err, &invalid) {
+		return false
+	}
+	writeFailure(writer, http.StatusBadRequest, codeMySQLDatabaseFailure, invalid.Error())
+	return true
 }
 
 // writeUnsupportedFeature answers a documented PostgreSQL semantic gap.
