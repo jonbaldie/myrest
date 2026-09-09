@@ -195,6 +195,12 @@ func writeScalarRPC(
 		})
 		return
 	}
+	if request.Method == http.MethodHead {
+		// Keep the GET headers, but write no payload: HEAD has no body.
+		writer.Header().Set("Content-Type", mediaJSON)
+		writer.WriteHeader(http.StatusOK)
+		return
+	}
 	writeJSON(writer, http.StatusOK, result)
 }
 

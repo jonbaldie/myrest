@@ -474,3 +474,29 @@ func serveRPCWithReader(t *testing.T, source httpapi.Caller, sourceReader httpap
 	})
 	return service
 }
+
+// HEAD on a scalar routine returns the GET headers and no body.
+func TestHeadRPCScalarRoutineReturnsNoBody(t *testing.T) {
+	t.Parallel()
+
+	source := &caller{body: int64(3)}
+	response, body := apitest.Do(
+		t,
+		http.MethodHead,
+		serveRPC(t, source).URL()+"/rpc/add_them?a=1&b=2",
+		nil,
+	)
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	if contentType := response.Header.Get("Content-Type"); contentType != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", contentType)
+	}
+	if len(body) != 0 {
+		t.Fatalf("HEAD body = %q, want empty", body)
+	}
+	if length := response.Header.Get("Content-Length"); length != "" && length != "0" {
+		t.Fatalf("Content-Length = %q, want no payload bytes", length)
+	}
+}
