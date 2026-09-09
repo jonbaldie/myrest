@@ -472,7 +472,6 @@ func primaryKeyValueMatches(got any, want string) bool {
 	return false
 }
 
-
 func writePutPrimaryKeyFailure(writer http.ResponseWriter) {
 	writeFailure(
 		writer,
@@ -762,7 +761,7 @@ func (s *Service) writeRepresentationResponse(
 		s.writeReadFailure(writer, table.ID, role, err)
 		return
 	}
-		writeRows(writer, status, repr, shaped, csvHeaderNames(outcome.Query, shaped))
+	writeRows(writer, status, repr, shaped, csvHeaderNames(outcome.Query, shaped))
 }
 
 func writeEmptyWriteResponse(writer http.ResponseWriter, outcome writeOutcome, headersOnly bool) {
@@ -800,6 +799,8 @@ func locationValue(value any) string {
 		return url.QueryEscape(typed)
 	case []byte:
 		return url.QueryEscape(string(typed))
+	case float64:
+		return url.QueryEscape(strconv.FormatFloat(typed, 'f', -1, 64))
 	default:
 		return url.QueryEscape(fmt.Sprint(typed))
 	}

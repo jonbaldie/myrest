@@ -645,6 +645,55 @@ func TestPreferReturnHeadersOnly(t *testing.T) {
 	}
 }
 
+func TestPreferReturnHeadersOnlyJSONIntegerKeys(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		key  any
+		want string
+	}{
+		{"large json integer", float64(1000000), "/items?id=eq.1000000"},
+		{"small json integer", float64(123), "/items?id=eq.123"},
+		{"fractional json number", float64(1.5), "/items?id=eq.1.5"},
+		{"auto-increment int64", int64(9), "/items?id=eq.9"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			sink := &writer{
+				resultKeys: []map[string]any{{"id": tc.key}},
+			}
+			request, err := http.NewRequest(
+				http.MethodPost,
+				serveWrite(t, &reader{}, sink).URL()+"/items",
+				strings.NewReader(`{"id":1000000,"name":"x"}`),
+			)
+			if err != nil {
+				t.Fatalf("new POST: %v", err)
+			}
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Prefer", "return=headers-only")
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				t.Fatalf("POST: %v", err)
+			}
+			t.Cleanup(func() { _ = response.Body.Close() })
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			if response.StatusCode != http.StatusCreated {
+				t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
+			}
+			if got := response.Header.Get("Location"); got != tc.want {
+				t.Fatalf("Location = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // write-008 / smoke-003: Prefer return=representation returns the affected rows.
 func TestPreferReturnRepresentation(t *testing.T) {
 	t.Parallel()
@@ -1096,8 +1145,6 @@ func TestPutUpsertByPrimaryKeyMismatchedNumber(t *testing.T) {
 		t.Fatalf("writer must not run for mismatched PK; called %q", sink.called)
 	}
 }
-
-
 
 // write-004: a PUT by primary key with resolution=ignore-duplicates succeeds.
 func TestPutUpsertByPrimaryKeyIgnoreDuplicates(t *testing.T) {

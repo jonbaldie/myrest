@@ -322,3 +322,26 @@ func TestBuildInsertKeepsScalarBindings(t *testing.T) {
 		t.Fatalf("null arg = %#v, want nil", parts.args[3])
 	}
 }
+
+func TestKeyFilterValueFormatsJSONNumbers(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		value any
+		want  string
+	}{
+		{"large json integer", float64(1000000), "1000000"},
+		{"small json integer", float64(123), "123"},
+		{"fractional json number", float64(1.5), "1.5"},
+		{"auto-increment int64", int64(9), "9"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := keyFilterValue(tc.value); got != tc.want {
+				t.Fatalf("keyFilterValue(%#v) = %q, want %q", tc.value, got, tc.want)
+			}
+		})
+	}
+}
