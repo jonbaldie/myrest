@@ -84,6 +84,7 @@ refuses:
 
 - `POST` or `PATCH` with `return=representation` on a table with no primary key
 - `return=representation` when the active role has no `SELECT` on the table
+- `PUT` with `return=representation`
 
 The body never invents column values. If myrest cannot re-read the affected
 rows from MySQL, it refuses instead of guessing.

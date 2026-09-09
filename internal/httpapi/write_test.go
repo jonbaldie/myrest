@@ -1270,6 +1270,48 @@ func TestPutWithoutGrantIsDenied(t *testing.T) {
 	}
 }
 
+// write-009: PUT is outside the honest representation subset, so
+// return=representation refuses before any upsert.
+func TestPutPreferReturnRepresentationRefuses(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{upserted: true}
+	response, body := putJSON(
+		t,
+		serveWrite(t, &reader{}, sink).URL()+"/items?id=eq.1",
+		`{"id":1,"name":"x"}`,
+		"return=representation",
+	)
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if sink.called != "" {
+		t.Fatalf("writer must not run; called %q", sink.called)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "" {
+		t.Fatalf("Preference-Applied = %q, want empty", got)
+	}
+}
+
+func TestPutPreferReturnMinimalStillUpserts(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{upserted: true}
+	response, body := putJSON(
+		t,
+		serveWrite(t, &reader{}, sink).URL()+"/items?id=eq.1",
+		`{"id":1,"name":"x"}`,
+		"return=minimal",
+	)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
+	}
+	if len(body) != 0 {
+		t.Fatalf("body = %s, want empty", body)
+	}
+	if sink.called != "upsert" {
+		t.Fatalf("writer called %q, want upsert", sink.called)
+	}
+}
+
 // An updated row under merge-duplicates answers 204 with the minimal default.
 func TestPutMergeUpdateAnswersNoContent(t *testing.T) {
 	t.Parallel()

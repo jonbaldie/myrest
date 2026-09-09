@@ -647,6 +647,41 @@ func TestPreferReturnRepresentationWithoutPrimaryKeyRefusesOverMySQL(t *testing.
 	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
 }
 
+func TestPutPreferReturnRepresentationRefusesOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	_, before := get(t, service, "/items?select=id,name&id=eq.1")
+
+	request, err := http.NewRequest(
+		http.MethodPut,
+		service.URL()+"/items?id=eq.1",
+		strings.NewReader(`{"id":1,"name":"x"}`),
+	)
+	if err != nil {
+		t.Fatalf("new PUT: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("PUT: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	if got := response.Header.Get("Preference-Applied"); got != "" {
+		t.Fatalf("Preference-Applied = %q, want empty", got)
+	}
+
+	_, after := get(t, service, "/items?select=id,name&id=eq.1")
+	if string(after) != string(before) {
+		t.Fatalf("row changed: before %s after %s", before, after)
+	}
+}
+
 // write-010: missing=default, max-affected, and handling preferences.
 func TestPreferMissingMaxAffectedAndHandlingOverMySQL(t *testing.T) {
 	service := serve(t, "myrest_fixture")
