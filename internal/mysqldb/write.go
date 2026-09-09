@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jonbaldie/myrest/internal/httpapi"
@@ -512,7 +513,7 @@ func selectByKeys(
 	}
 	values := make([]string, len(keys))
 	for i, key := range keys {
-		values[i] = fmt.Sprint(key[primaryKey[0]])
+		values[i] = keyFilterValue(key[primaryKey[0]])
 	}
 	query := readquery.Query{
 		SelectAll: true,
@@ -523,6 +524,15 @@ func selectByKeys(
 		}},
 	}
 	return selectMatching(ctx, tx, table, query)
+}
+
+func keyFilterValue(value any) string {
+	switch typed := value.(type) {
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	default:
+		return fmt.Sprint(typed)
+	}
 }
 
 func selectByMultiKeys(
