@@ -1,6 +1,7 @@
 package mysqldb
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/jonbaldie/myrest/internal/httpapi"
@@ -165,5 +166,159 @@ func TestBuildUpsertIgnoreSQL(t *testing.T) {
 	want := "INSERT IGNORE INTO `shop`.`items` (`id`, `name`) VALUES (?,?)"
 	if parts.statement != want {
 		t.Fatalf("statement = %q, want %q", parts.statement, want)
+	}
+}
+
+// A nested JSON object or array payload binds as a JSON document string on a
+// JSON column, so the driver can encode it. See issue #119.
+func TestBuildInsertBindsNestedJSONOnJSONColumn(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID: schemacache.TableID{Database: "shop", Name: "profiles"},
+		Columns: []schemacache.Column{
+			{Name: "id"},
+			{Name: "meta", DataType: "JSON"},
+		},
+	}
+	parts, err := buildInsert(table, []string{"meta"}, []map[string]any{
+		{"meta": map[string]any{"blood_type": "A-", "count": float64(1)}},
+		{"meta": []any{"first", "second"}},
+	}, false)
+	if err != nil {
+		t.Fatalf("buildInsert: %v", err)
+	}
+	if len(parts.args) != 2 {
+		t.Fatalf("args = %#v, want two JSON documents", parts.args)
+	}
+	if parts.args[0] != `{"blood_type":"A-","count":1}` {
+		t.Fatalf("object arg = %#v, want the JSON document", parts.args[0])
+	}
+	if parts.args[1] != `["first","second"]` {
+		t.Fatalf("array arg = %#v, want the JSON document", parts.args[1])
+	}
+}
+
+// A nested JSON payload for a column that does not hold JSON refuses before
+// MySQL sees the statement. See issue #119.
+func TestBuildInsertRefusesNestedJSONOnNonJSONColumn(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID: schemacache.TableID{Database: "shop", Name: "items"},
+		Columns: []schemacache.Column{
+			{Name: "name"},
+		},
+	}
+	_, err := buildInsert(table, []string{"name"}, []map[string]any{
+		{"name": map[string]any{"a": float64(1)}},
+	}, false)
+	var gap readquery.UnsupportedFeature
+	if !errors.As(err, &gap) {
+		t.Fatalf("buildInsert: %v, want UnsupportedFeature", err)
+	}
+	if gap.Message != "Cannot write a JSON object into column name: the column does not hold JSON" {
+		t.Fatalf("message = %q, want the object refusal", gap.Message)
+	}
+
+	_, err = buildInsert(table, []string{"name"}, []map[string]any{
+		{"name": []any{"a"}},
+	}, false)
+	if !errors.As(err, &gap) {
+		t.Fatalf("buildInsert array: %v, want UnsupportedFeature", err)
+	}
+	if gap.Message != "Cannot write a JSON array into column name: the column does not hold JSON" {
+		t.Fatalf("message = %q, want the array refusal", gap.Message)
+	}
+}
+
+// A nested JSON payload in an update binds as a JSON document string on a JSON
+// column and refuses on any other column. See issue #119.
+func TestBuildUpdateNestedJSON(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID: schemacache.TableID{Database: "shop", Name: "profiles"},
+		Columns: []schemacache.Column{
+			{Name: "id"},
+			{Name: "meta", DataType: "JSON"},
+			{Name: "name"},
+		},
+	}
+	parts, err := buildUpdate(
+		table,
+		map[string]any{"meta": map[string]any{"tag": "Alpha"}},
+		readquery.Query{Filters: []readquery.Filter{{
+			Column: "id", Op: readquery.OpEq, Value: "1",
+		}}},
+	)
+	if err != nil {
+		t.Fatalf("buildUpdate: %v", err)
+	}
+	if parts.args[0] != `{"tag":"Alpha"}` {
+		t.Fatalf("args = %#v, want the JSON document first", parts.args)
+	}
+
+	_, err = buildUpdate(
+		table,
+		map[string]any{"name": []any{"a"}},
+		readquery.Query{},
+	)
+	var gap readquery.UnsupportedFeature
+	if !errors.As(err, &gap) {
+		t.Fatalf("buildUpdate: %v, want UnsupportedFeature", err)
+	}
+}
+
+// A nested JSON payload in an upsert body binds as a JSON document string.
+// See issue #119.
+func TestBuildUpsertBindsNestedJSONOnJSONColumn(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID: schemacache.TableID{Database: "shop", Name: "profiles"},
+		Columns: []schemacache.Column{
+			{Name: "id"},
+			{Name: "meta", DataType: "JSON"},
+		},
+	}
+	parts, err := buildUpsert(
+		table,
+		map[string]any{"id": 2, "meta": map[string]any{"tag": "Beta"}},
+		[]string{"id"},
+		httpapi.UpsertMergeDuplicates,
+	)
+	if err != nil {
+		t.Fatalf("buildUpsert: %v", err)
+	}
+	if len(parts.args) != 2 || parts.args[0] != 2 || parts.args[1] != `{"tag":"Beta"}` {
+		t.Fatalf("args = %#v, want the JSON document last", parts.args)
+	}
+}
+
+// A nested JSON payload never takes the SQL DEFAULT path, and scalar, string,
+// and null values bind as the body sent them. See issue #119.
+func TestBuildInsertKeepsScalarBindings(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID: schemacache.TableID{Database: "shop", Name: "profiles"},
+		Columns: []schemacache.Column{
+			{Name: "id"},
+			{Name: "meta", DataType: "JSON"},
+		},
+	}
+	parts, err := buildInsert(table, []string{"id", "meta"}, []map[string]any{
+		{"id": 1, "meta": "plain"},
+		{"id": 2, "meta": nil},
+	}, true)
+	if err != nil {
+		t.Fatalf("buildInsert: %v", err)
+	}
+	if parts.args[0] != 1 || parts.args[1] != "plain" || parts.args[2] != 2 {
+		t.Fatalf("args = %#v, want the scalar bindings", parts.args)
+	}
+	if _, held := parts.args[3].(map[string]any); held || parts.args[3] != nil {
+		t.Fatalf("null arg = %#v, want nil", parts.args[3])
 	}
 }

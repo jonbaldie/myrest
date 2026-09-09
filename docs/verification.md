@@ -99,6 +99,8 @@ cross-area smoke set. Capability-area chapters stay the source of truth for
 | `write-010` | write | full match | success |
 | `write-011` | write | full match | success |
 | `write-012` | write | not supported | refuse |
+| `write-013` | write | partial match | success |
+| `write-014` | write | partial match | refuse |
 | `rpc-001` | rpc | full match | success |
 | `rpc-002` | rpc | full match | success |
 | `rpc-003` | rpc | partial match | success |
@@ -210,4 +212,5 @@ re-derive; `go test ./internal/verification` fails when this table drifts.
 | transactions.md | Transaction-scoped request GUCs / `request.jwt.claims` | not supported | auth-006 |
 | write.md | Prefer `return=representation` honesty limit | partial match | write-008, write-009, smoke-003 |
 | write.md | Embed after write without a cache relationship | not supported | write-012 |
+| write.md | Nested JSON in the write body on JSON and non-JSON columns | partial match | write-013, write-014 |
 <!-- gap-list:end -->

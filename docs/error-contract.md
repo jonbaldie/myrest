@@ -76,6 +76,8 @@ as not updatable (`IS_UPDATABLE ≠ YES`) uses the same gap code with message
 
 `Prefer: return=representation` on a write shape where myrest cannot return
 affected rows honestly also uses `MYREST001`. See [Ordinary write](write.md).
+A nested JSON object or array for a write column that does not hold JSON uses
+the same gap code. See [Ordinary write](write.md).
 Prefer `timezone` uses the same gap code. See
 [Media types and the remaining Prefer values](media-types-and-prefer.md).
 

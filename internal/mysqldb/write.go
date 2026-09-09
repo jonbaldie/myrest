@@ -3,6 +3,7 @@ package mysqldb
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -246,6 +247,37 @@ func checkMaxAffected(affected int64, max *int64) error {
 	return writequery.MaxAffectedExceeded{Affected: affected, Max: *max}
 }
 
+// writeValue binds one write body value for one column. A nested JSON object
+// or array payload is a map or a slice of the decoded body, and the driver
+// cannot encode those types. On a column that holds JSON the payload
+// serializes to a JSON document string that MySQL stores as JSON. On any
+// other column the write refuses before MySQL sees the statement. Scalar,
+// string, and null values bind as the body sent them.
+func writeValue(column schemacache.Column, name string, value any) (any, error) {
+	switch value.(type) {
+	case map[string]any, []any:
+	default:
+		return value, nil
+	}
+	if !isJSONDataType(column.DataType) {
+		kind := "object"
+		if _, held := value.([]any); held {
+			kind = "array"
+		}
+		return nil, readquery.UnsupportedFeature{
+			Message: fmt.Sprintf(
+				"Cannot write a JSON %s into column %s: the column does not hold JSON",
+				kind, name,
+			),
+		}
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	return string(raw), nil
+}
+
 func insertColumns(table schemacache.Table, bodyRows []map[string]any) ([]string, error) {
 	seen := make(map[string]bool)
 	var columns []string
@@ -294,7 +326,12 @@ func buildInsert(
 				continue
 			}
 			placeholders[j] = "?"
-			args = append(args, row[name])
+			column, _ := tableColumn(table, name)
+			arg, err := writeValue(column, name, row[name])
+			if err != nil {
+				return sqlParts{}, err
+			}
+			args = append(args, arg)
 		}
 		values[i] = "(" + strings.Join(placeholders, ", ") + ")"
 	}
@@ -333,7 +370,11 @@ func buildUpdate(table schemacache.Table, patch map[string]any, query readquery.
 			}
 		}
 		sets = append(sets, quoteIdentifier(name)+" = ?")
-		args = append(args, patch[name])
+		arg, err := writeValue(column, name, patch[name])
+		if err != nil {
+			return sqlParts{}, err
+		}
+		args = append(args, arg)
 	}
 	where, whereArgs, err := buildWhere(table, query)
 	if err != nil {
@@ -626,7 +667,12 @@ func buildUpsert(
 	args := make([]any, 0, len(columns))
 	for i, name := range columns {
 		quoted[i] = quoteIdentifier(name)
-		args = append(args, row[name])
+		column, _ := tableColumn(table, name)
+		arg, err := writeValue(column, name, row[name])
+		if err != nil {
+			return sqlParts{}, err
+		}
+		args = append(args, arg)
 	}
 	placeholders := strings.TrimRight(strings.Repeat("?,", len(columns)), ",")
 	target := fmt.Sprintf(

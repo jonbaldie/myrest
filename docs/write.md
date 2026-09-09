@@ -130,6 +130,19 @@ Clients unlock an all-rows write with either:
 spec. Stock PostgREST v14.16 has no Prefer for this unlock; myrest names it so
 the gate stays honest on MySQL.
 
+## JSON values in the write body
+
+A write body holds JSON column values as JSON. When the target column holds
+JSON (`DATA_TYPE = json` in the schema cache), a nested JSON object or array
+in a `POST`, `PATCH`, or `PUT` body stores as that JSON, and the ordinary
+write success answers. Read-back of the stored value follows the JSON value
+shapes of the read surface; see [Read parity boundaries](read-parity-boundaries.md).
+
+Scalar, string, and null values bind as the body sent them. A nested JSON
+object or array for a column that does not hold JSON refuses with status 400
+and `MYREST001`. myrest does not send that write to MySQL. The parity target
+surfaces the same refusal as a PostgreSQL datatype error.
+
 ## Filters
 
 `PATCH` and `DELETE` use the same filter surface as ordinary read. See
@@ -155,3 +168,4 @@ the gate stays honest on MySQL.
 | --- | --- | --- |
 | Prefer `return=representation` honesty limit | partial match | write-008, write-009, smoke-003 |
 | Embed after write without a cache relationship | not supported | write-012 |
+| Nested JSON in the write body on JSON and non-JSON columns | partial match | write-013, write-014 |
