@@ -203,7 +203,7 @@ GRANT 'web-anon' TO 'authenticator'@'%';
 SET DEFAULT ROLE NONE TO 'authenticator'@'%';
 
 GRANT SELECT ON myrest_fixture.items TO 'myrest_anon';
-GRANT SELECT ON myrest_fixture.profiles TO 'myrest_anon';
+GRANT SELECT, INSERT, UPDATE ON myrest_fixture.profiles TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.orders TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.tags TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.item_tags TO 'myrest_anon';
