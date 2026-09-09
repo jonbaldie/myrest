@@ -217,12 +217,18 @@ func TestBuildInsertRefusesNestedJSONOnNonJSONColumn(t *testing.T) {
 	if !errors.As(err, &gap) {
 		t.Fatalf("buildInsert: %v, want UnsupportedFeature", err)
 	}
+	if gap.Message != "Cannot write a JSON object into column name: the column does not hold JSON" {
+		t.Fatalf("message = %q, want the object refusal", gap.Message)
+	}
 
 	_, err = buildInsert(table, []string{"name"}, []map[string]any{
 		{"name": []any{"a"}},
 	}, false)
 	if !errors.As(err, &gap) {
 		t.Fatalf("buildInsert array: %v, want UnsupportedFeature", err)
+	}
+	if gap.Message != "Cannot write a JSON array into column name: the column does not hold JSON" {
+		t.Fatalf("message = %q, want the array refusal", gap.Message)
 	}
 }
 
