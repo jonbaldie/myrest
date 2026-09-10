@@ -559,7 +559,11 @@ func unboundedWrite(query readquery.Query) bool {
 }
 
 func parseMutateQuery(request *http.Request) (readquery.Query, error) {
-	return readquery.Parse(request.URL.Query(), nil)
+	values, err := requestQuery(request)
+	if err != nil {
+		return readquery.Query{}, err
+	}
+	return readquery.Parse(values, nil)
 }
 
 func readInsertRows(writer http.ResponseWriter, request *http.Request) ([]map[string]any, bool) {

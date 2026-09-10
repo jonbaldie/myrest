@@ -176,6 +176,75 @@ func TestOrdinaryReadThroughViewSucceeds(t *testing.T) {
 	}
 }
 
+// A malformed percent escape in a GET or HEAD query pair is a query parse
+// failure: 400 PGRST100, and the reader does not run. Issue #144.
+func TestMalformedPercentEscapeInReadQueryRefuses(t *testing.T) {
+	t.Parallel()
+
+	source := &reader{read: []rows.Row{
+		{Columns: []string{"id", "name"}, Values: []any{int64(1), "alpha"}},
+		{Columns: []string{"id", "name"}, Values: []any{int64(2), "beta"}},
+	}}
+	service := serve(t, source, settings())
+	url := service.URL() + "/items?name=eq.a%b"
+
+	response, body := apitest.Do(t, http.MethodGet, url, nil)
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST100")
+
+	response, body = apitest.Do(t, http.MethodHead, url, nil)
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("HEAD status = %d, want %d; body = %s", response.StatusCode, http.StatusBadRequest, body)
+	}
+	if source.table.ID.Name != "" {
+		t.Fatalf("reader must not run for a malformed query; table = %#v", source.table.ID)
+	}
+}
+
+// A malformed percent escape inside a logical filter is rejected the same way.
+func TestMalformedPercentEscapeInLogicalFilterRefuses(t *testing.T) {
+	t.Parallel()
+
+	source := &reader{read: []rows.Row{
+		{Columns: []string{"id", "name"}, Values: []any{int64(1), "alpha"}},
+	}}
+	response, body := get(t, serve(t, source, settings()), "/items?or=(name.eq.a%b)")
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST100")
+	if source.table.ID.Name != "" {
+		t.Fatalf("reader must not run for a malformed logical filter; table = %#v", source.table.ID)
+	}
+}
+
+// Valid percent encodings and a repeated query key keep their current answers.
+func TestValidPercentEncodingsInReadQueryKeepCurrentBehavior(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		query string
+		value string
+		count int
+	}{
+		{query: "name=eq.a%25b", value: "a%b", count: 1},
+		{query: "name=eq.a%20b", value: "a b", count: 1},
+		{query: "name=eq.%C3%A9", value: "é", count: 1},
+		{query: "name=eq.alpha&name=eq.beta", value: "alpha", count: 2},
+	}
+	for _, c := range cases {
+		source := &reader{read: []rows.Row{
+			{Columns: []string{"id"}, Values: []any{int64(1)}},
+		}}
+		response, body := get(t, serve(t, source, settings()), "/items?"+c.query)
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("query %s status = %d, want %d; body = %s", c.query, response.StatusCode, http.StatusOK, body)
+		}
+		if len(source.query.Filters) != c.count {
+			t.Fatalf("query %s filters = %#v, want %d", c.query, source.query.Filters, c.count)
+		}
+		if source.query.Filters[0].Value != c.value {
+			t.Fatalf("query %s value = %q, want %q", c.query, source.query.Filters[0].Value, c.value)
+		}
+	}
+}
+
 // A view the active role cannot select from is not a usable resource.
 func TestViewWithoutSelectIsNotAUsableResource(t *testing.T) {
 	t.Parallel()

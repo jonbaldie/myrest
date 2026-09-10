@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/jonbaldie/myrest/internal/config"
@@ -120,8 +121,16 @@ func (s *Service) writeReadFailure(
 	writeDatabaseFailure(writer, err)
 }
 
+func requestQuery(request *http.Request) (url.Values, error) {
+	return url.ParseQuery(request.URL.RawQuery)
+}
+
 func parseReadQuery(request *http.Request, maxRows config.RowLimit) (readquery.Query, error) {
-	query, err := readquery.Parse(request.URL.Query(), request.Header.Values("Prefer"))
+	values, err := requestQuery(request)
+	if err != nil {
+		return readquery.Query{}, err
+	}
+	query, err := readquery.Parse(values, request.Header.Values("Prefer"))
 	if err != nil {
 		return readquery.Query{}, err
 	}
