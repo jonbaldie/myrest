@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/readquery"
@@ -27,7 +28,12 @@ const (
 	codeParseFailure = "PGRST100"
 	// codeNoColumn is the parity-target code for a missing column.
 	codeNoColumn = "PGRST204"
+	// codeInvalidRange is the parity-target code for an unsatisfiable Range.
+	codeInvalidRange = "PGRST103"
 )
+
+// msgInvalidRange is the parity-target message for an unsatisfiable Range.
+const msgInvalidRange = "Requested range not satisfiable"
 
 // readTable answers GET and HEAD /<table>: it finds the resource of the active
 // database role in the schema cache, and reads under the ordinary-read query.
@@ -138,7 +144,59 @@ func parseReadQuery(request *http.Request, maxRows config.RowLimit) (readquery.Q
 		rows := uint64(maxRows.Rows)
 		query.MaxRows = &rows
 	}
+	if err := applyRequestRange(request, &query); err != nil {
+		return readquery.Query{}, err
+	}
 	return query, nil
+}
+
+// applyRequestRange bounds the query with the Range request header. The
+// header bounds GET reads only: other methods ignore it (RFC 9110), so a
+// HEAD read keeps the whole window. A header outside the range grammar of
+// the parity target is ignored.
+func applyRequestRange(request *http.Request, query *readquery.Query) error {
+	if request.Method != http.MethodGet {
+		return nil
+	}
+	first, last, ok := parseRangeHeader(request.Header.Get(headerRange))
+	if !ok {
+		return nil
+	}
+	return readquery.ApplyRange(query, first, last)
+}
+
+// headerRange is the Range request header of the parity target.
+const headerRange = "Range"
+
+// parseRangeHeader reads first-last with both ends inclusive and the last
+// end optional. It answers false when the value does not match the range
+// grammar of the parity target, so the caller can ignore it.
+func parseRangeHeader(raw string) (uint64, *uint64, bool) {
+	firstText, lastText, found := strings.Cut(raw, "-")
+	if !found || firstText == "" || !allDigits(firstText) || !allDigits(lastText) {
+		return 0, nil, false
+	}
+	first, err := strconv.ParseUint(firstText, 10, 64)
+	if err != nil {
+		return 0, nil, false
+	}
+	if lastText == "" {
+		return first, nil, true
+	}
+	last, err := strconv.ParseUint(lastText, 10, 64)
+	if err != nil {
+		return 0, nil, false
+	}
+	return first, &last, true
+}
+
+func allDigits(text string) bool {
+	for _, r := range text {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func writeQueryFailure(writer http.ResponseWriter, err error) {
@@ -149,6 +207,22 @@ func writeQueryFailure(writer http.ResponseWriter, err error) {
 			return
 		}
 		writeFailure(writer, http.StatusBadRequest, codeParseFailure, parse.Message)
+		return
+	}
+	var unsatisfiable readquery.RangeFailure
+	if errors.As(err, &unsatisfiable) {
+		details := "Limit should be greater than or equal to zero."
+		if unsatisfiable.LowerGTUpper {
+			details = "The lower boundary must be lower than or equal to the upper boundary in the Range header."
+		}
+		writeFailureExtra(
+			writer,
+			http.StatusRequestedRangeNotSatisfiable,
+			codeInvalidRange,
+			msgInvalidRange,
+			details,
+			nil,
+		)
 		return
 	}
 	writeFailure(writer, http.StatusBadRequest, codeParseFailure, err.Error())
