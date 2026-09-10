@@ -356,6 +356,46 @@ func TestDeleteRemovesByFilter(t *testing.T) {
 	}
 }
 
+// A malformed percent escape in a PATCH or DELETE query is a query parse
+// failure: 400 PGRST100, and the writer does not run. Issue #144.
+func TestMalformedPercentEscapeInWriteQueryRefuses(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{updated: 3, deleted: 3}
+	service := serveWrite(t, &reader{}, sink)
+
+	request, err := http.NewRequest(
+		http.MethodPatch,
+		service.URL()+"/items?id=gte.1&name=eq.red%zz",
+		strings.NewReader(`{"name":"nope"}`),
+	)
+	if err != nil {
+		t.Fatalf("new PATCH: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST100")
+
+	response, body = apitest.Do(
+		t,
+		http.MethodDelete,
+		service.URL()+"/items?id=gte.1&name=eq.red%zz",
+		nil,
+	)
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST100")
+	if sink.called != "" {
+		t.Fatalf("writer must not run for a malformed query; called %q", sink.called)
+	}
+}
+
 // write-005: a PATCH or DELETE with no filter and no Prefer: all-rows refuses.
 func TestUnboundedPatchAndDeleteRefuse(t *testing.T) {
 	t.Parallel()

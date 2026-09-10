@@ -75,7 +75,12 @@ func (s *Service) getRoutine(writer http.ResponseWriter, request *http.Request) 
 		)
 		return
 	}
-	args, readValues := splitRPCQuery(routine, request.URL.Query())
+	values, err := requestQuery(request)
+	if err != nil {
+		writeQueryFailure(writer, err)
+		return
+	}
+	args, readValues := splitRPCQuery(routine, values)
 	query, err := readquery.Parse(readValues, request.Header.Values("Prefer"))
 	if err != nil {
 		writeQueryFailure(writer, err)
