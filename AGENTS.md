@@ -1,5 +1,7 @@
 Only reply in ASD-STE100 Simplified Technical English.
 
+For mutation tests, set `GOMAXPROCS=1` and pass `--workers=1` to `mutago` to keep the host responsive.
+
 ## Agent skills
 
 ### Issue tracker
