@@ -1,6 +1,7 @@
 package readquery_test
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/jonbaldie/myrest/internal/readquery"
@@ -49,5 +50,27 @@ func TestHasRowSetFeatures(t *testing.T) {
 		Embeds: []readquery.Embed{{Resource: "orders"}},
 	}) {
 		t.Fatal("embed must demand a row set")
+	}
+}
+
+// A parsed quoted value filters a row set by its literal, not by the quote
+// characters. Issue #145.
+func TestShapeFiltersARowSetWithAQuotedValue(t *testing.T) {
+	t.Parallel()
+
+	query, err := readquery.Parse(url.Values{"name": {`eq."alpha,beta"`}}, nil)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	set := []rows.Row{
+		{Columns: []string{"id", "name"}, Values: []any{int64(1), "alpha,beta"}},
+		{Columns: []string{"id", "name"}, Values: []any{int64(2), "alpha"}},
+	}
+	result, err := readquery.Shape(set, query)
+	if err != nil {
+		t.Fatalf("Shape: %v", err)
+	}
+	if len(result.Rows) != 1 || result.Rows[0].Values[1] != "alpha,beta" {
+		t.Fatalf("rows = %#v, want the alpha,beta row", result.Rows)
 	}
 }

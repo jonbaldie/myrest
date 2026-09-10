@@ -26,21 +26,68 @@ func parseFilter(column, raw string) (Filter, error) {
 		return Filter{}, err
 	}
 	filter := Filter{Column: name, Path: path, Op: op, Negated: negated}
-	if op == OpIn {
+	if err := parseFilterValue(&filter, value); err != nil {
+		return Filter{}, err
+	}
+	return filter, nil
+}
+
+// parseFilterValue fills the filter's value or values. The in operator
+// parses a list; is keeps its documented value set as written; every other
+// operator decodes a double-quoted value to its literal. Issue #145.
+func parseFilterValue(filter *Filter, value string) error {
+	switch filter.Op {
+	case OpIn:
 		values, err := parseInList(value)
 		if err != nil {
-			return Filter{}, err
+			return err
 		}
 		filter.Values = values
-		return filter, nil
-	}
-	if op == OpIs && !isIsValue(value) {
-		return Filter{}, ParseFailure{
-			Message: "is operator value must be null, not_null, true, false, or unknown",
+	case OpIs:
+		if !isIsValue(value) {
+			return ParseFailure{
+				Message: "is operator value must be null, not_null, true, false, or unknown",
+			}
 		}
+		filter.Value = value
+	default:
+		literal, err := dequoteScalarValue(value)
+		if err != nil {
+			return err
+		}
+		filter.Value = literal
 	}
-	filter.Value = value
-	return filter, nil
+	return nil
+}
+
+// dequoteScalarValue decodes a double-quoted scalar filter value to its
+// literal, the same way the in-list parser decodes a quoted element: a
+// doubled quote inside the value is an escaped quote. An unquoted value
+// passes through as written. A quoted value must close and hold nothing
+// else, so a client never compares against quote characters by accident.
+// Issue #145.
+func dequoteScalarValue(value string) (string, error) {
+	if !strings.HasPrefix(value, `"`) {
+		return value, nil
+	}
+	var literal strings.Builder
+	body := value[1:]
+	for {
+		end := strings.IndexByte(body, '"')
+		if end < 0 {
+			return "", ParseFailure{Message: "quoted filter value needs a closing double quote"}
+		}
+		if end == len(body)-1 {
+			literal.WriteString(body[:end])
+			return literal.String(), nil
+		}
+		if body[end+1] == '"' {
+			literal.WriteString(body[:end] + `"`)
+			body = body[end+2:]
+			continue
+		}
+		return "", ParseFailure{Message: "quoted filter value has text after the closing double quote"}
+	}
 }
 
 // isValues lists the values an is filter takes, as ordinary-read.md claims them.
