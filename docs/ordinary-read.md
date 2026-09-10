@@ -34,9 +34,25 @@ Also full match on this path:
 - column `select` (with optional `alias:column`)
 - `order=column.asc|desc`
 - `limit` / `offset` pagination and `Content-Range`
+- `Range` request header pagination with `Range-Unit: items`
 - `HEAD` with the same read intent and no body
 - `Prefer: count=exact` with an exact total in `Content-Range`
 - `db-max-rows` as a hard row cap
+
+## The Range request header
+
+A read answers an inclusive item window given in the request headers. `Range:
+3-7` with `Range-Unit: items` reads the same page as `?offset=3&limit=5`, and
+gives the same rows, status, and `Content-Range`. An open-ended `Range: 5-`
+skips the first five matching rows and does not cap the page. A missing
+`Range-Unit` means `items`.
+
+`limit` or `offset` in the query string owns the page: myrest keeps the query
+string page and ignores the `Range` header for that request.
+
+A `Range` header that myrest cannot use refuses as `PGRST100` and reads no
+rows: a range that is not `start-end` or `start-`, a range whose end is less
+than its start, and a range unit other than `items`.
 
 A method stays available only when the active **database role** holds the
 matching grant. Exposure of a **resource** does not imply every method; a
