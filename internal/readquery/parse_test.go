@@ -3,6 +3,7 @@ package readquery_test
 import (
 	"errors"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/jonbaldie/myrest/internal/readquery"
@@ -346,5 +347,146 @@ func TestParseAcceptsDocumentedIsValues(t *testing.T) {
 		if len(query.Filters) != 1 || query.Filters[0].Op != readquery.OpIs || query.Filters[0].Value != value {
 			t.Fatalf("is.%s: filters = %#v", value, query.Filters)
 		}
+	}
+}
+
+// A double-quoted scalar filter value decodes to its literal, the same way
+// in.(...) values do. Issue #145.
+func TestParseQuotedScalarFilterValue(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		raw   string
+		value string
+	}{
+		{name: "quoted value decodes", raw: `eq."alpha"`, value: "alpha"},
+		{name: "quoted value keeps the unquoted form", raw: "eq.alpha", value: "alpha"},
+		{name: "quoted comma is value data", raw: `eq."a,b"`, value: "a,b"},
+		{name: "quoted reserved characters are value data", raw: `eq."a.b(c)"`, value: "a.b(c)"},
+		{name: "doubled quote is an escaped quote", raw: `eq."say ""hi"""`, value: `say "hi"`},
+		{name: "empty quoted value", raw: `eq.""`, value: ""},
+		{name: "neq", raw: `neq."a,b"`, value: "a,b"},
+		{name: "gt", raw: `gt."a,b"`, value: "a,b"},
+		{name: "gte", raw: `gte."a,b"`, value: "a,b"},
+		{name: "lt", raw: `lt."a,b"`, value: "a,b"},
+		{name: "lte", raw: `lte."a,b"`, value: "a,b"},
+		{name: "like", raw: `like."a*b"`, value: "a*b"},
+		{name: "ilike", raw: `ilike."a,b"`, value: "a,b"},
+		{name: "isdistinct", raw: `isdistinct."a,b"`, value: "a,b"},
+		{name: "negated", raw: `not.eq."a,b"`, value: "a,b"},
+		{name: "json path filter", raw: `eq."a,b"`, value: "a,b"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			key := "name"
+			if test.name == "json path filter" {
+				key = "meta->>tag"
+			}
+			query, err := readquery.Parse(url.Values{key: []string{test.raw}}, nil)
+			if err != nil {
+				t.Fatalf("Parse %s: %v", test.raw, err)
+			}
+			if len(query.Filters) != 1 {
+				t.Fatalf("filters = %#v", query.Filters)
+			}
+			if got := query.Filters[0].Value; got != test.value {
+				t.Fatalf("value = %q, want %q", got, test.value)
+			}
+		})
+	}
+}
+
+func TestParseQuotedScalarValueInLogicalGroup(t *testing.T) {
+	t.Parallel()
+
+	query, err := readquery.Parse(url.Values{"or": []string{`(name.eq."a,b",name.eq.beta)`}}, nil)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(query.Groups) != 1 || len(query.Groups[0].Filters) != 2 {
+		t.Fatalf("groups = %#v", query.Groups)
+	}
+	if got := query.Groups[0].Filters[0].Value; got != "a,b" {
+		t.Fatalf("first filter value = %q, want a,b", got)
+	}
+}
+
+func TestParseQuotedScalarValueOnEmbedFilter(t *testing.T) {
+	t.Parallel()
+
+	query, err := readquery.Parse(url.Values{
+		"select":    []string{"*,orders(id)"},
+		"orders.id": []string{`eq."a,b"`},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(query.Embeds) != 1 || len(query.Embeds[0].Filters) != 1 {
+		t.Fatalf("embeds = %#v", query.Embeds)
+	}
+	if got := query.Embeds[0].Filters[0].Value; got != "a,b" {
+		t.Fatalf("embed filter value = %q, want a,b", got)
+	}
+}
+
+// A quoted value inside an in list keeps the existing list-splitting rules.
+func TestParseInListKeepsQuotedElementRules(t *testing.T) {
+	t.Parallel()
+
+	query, err := readquery.Parse(url.Values{"name": []string{`in.("a,b",alpha)`}}, nil)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(query.Filters) != 1 || len(query.Filters[0].Values) != 2 {
+		t.Fatalf("filters = %#v", query.Filters)
+	}
+	if query.Filters[0].Values[0] != "a,b" || query.Filters[0].Values[1] != "alpha" {
+		t.Fatalf("values = %#v", query.Filters[0].Values)
+	}
+}
+
+// A malformed quoted scalar value is a parse failure, not a literal value
+// with quote characters. Issue #145.
+func TestParseRejectsMalformedQuotedScalarValue(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		raw  string
+	}{
+		{name: "unterminated quote", raw: `eq."a,b`},
+		{name: "trailing text after closing quote", raw: `eq."a"b`},
+		{name: "lone quote", raw: `eq."`},
+		{name: "unterminated in a group", raw: `(name.eq."a,b)`},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			key := "name"
+			if strings.HasPrefix(test.raw, "(") {
+				key = "or"
+			}
+			_, err := readquery.Parse(url.Values{key: []string{test.raw}}, nil)
+			var failure readquery.ParseFailure
+			if err == nil || !errors.As(err, &failure) || failure.Gap {
+				t.Fatalf("query name=%s err = %v, want a non-gap ParseFailure", test.raw, err)
+			}
+		})
+	}
+}
+
+// The is operator keeps its documented value set; a quoted value does not
+// become an is value.
+func TestParseIsOperatorKeepsLiteralValidation(t *testing.T) {
+	t.Parallel()
+
+	_, err := readquery.Parse(url.Values{"id": []string{`is."null"`}}, nil)
+	var failure readquery.ParseFailure
+	if err == nil || !errors.As(err, &failure) || failure.Gap {
+		t.Fatalf("err = %v, want a non-gap ParseFailure", err)
 	}
 }

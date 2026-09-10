@@ -20,6 +20,13 @@ This ticket claims these filter operators as **full match**:
 | `is` | `null`, `not_null`, `true`, `false`, or `unknown` |
 | `isdistinct` | `IS DISTINCT FROM` |
 
+A filter value wrapped in double quotes is one literal for every scalar
+operator: `name=eq."a,b"` matches the value `a,b`, the way the `in` list
+decodes a quoted element. A doubled quote inside the value is an escaped
+quote, so `name=eq."say ""hi"""` matches `say "hi"`. A quoted value that
+does not close, or that carries text after its closing quote, refuses as
+`PGRST100`.
+
 Also full match on this path:
 
 - `not.` before an operator

@@ -205,6 +205,15 @@ CREATE TABLE secrets (
 
 INSERT INTO secrets (payload) VALUES ('top-secret');
 
+-- Double-quoted filter value fixtures (issue #145).
+CREATE TABLE quoted_values (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  value VARCHAR(255) NOT NULL,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT INTO quoted_values (value) VALUES ('alpha'), ('a,b'), ('say "hi"');
+
 -- Write preference fixtures: DEFAULT column and a table with no primary key.
 CREATE TABLE colors (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -240,6 +249,7 @@ GRANT 'web-anon' TO 'authenticator'@'%';
 SET DEFAULT ROLE NONE TO 'authenticator'@'%';
 
 GRANT SELECT ON myrest_fixture.items TO 'myrest_anon';
+GRANT SELECT ON myrest_fixture.quoted_values TO 'myrest_anon';
 GRANT SELECT, INSERT, UPDATE ON myrest_fixture.profiles TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.orders TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.tags TO 'myrest_anon';
