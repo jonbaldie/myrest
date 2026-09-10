@@ -185,3 +185,34 @@ func TestIsFilterValuesOverMySQL(t *testing.T) {
 		}
 	}
 }
+
+// A Range window gives the same answer as the same limit/offset window, and
+// an unsatisfiable window is refused at the seam: issue #146.
+func TestRangeHeaderEqualsLimitOffsetOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	headers := make(http.Header)
+	headers.Set("Range", "0-0")
+	rangeResponse, rangeBody := apitest.Do(t, http.MethodGet, service.URL()+"/items?select=id,name&order=id.asc", headers)
+	pageResponse, pageBody := get(t, service, "/items?select=id,name&order=id.asc&limit=1&offset=0")
+
+	if rangeResponse.StatusCode != pageResponse.StatusCode {
+		t.Fatalf("range status = %d, page status = %d", rangeResponse.StatusCode, pageResponse.StatusCode)
+	}
+	if string(rangeBody) != string(pageBody) {
+		t.Fatalf("range body = %s, page body = %s", rangeBody, pageBody)
+	}
+	if got, want := rangeResponse.Header.Get("Content-Range"), pageResponse.Header.Get("Content-Range"); got != want {
+		t.Fatalf("range Content-Range = %q, page Content-Range = %q", got, want)
+	}
+	if want := `[{"id":1,"name":"alpha"}]`; string(rangeBody) != want+"\n" {
+		t.Fatalf("body = %s, want %s", rangeBody, want)
+	}
+	if got := rangeResponse.Header.Get("Content-Range"); got != "0-0/*" {
+		t.Fatalf("Content-Range = %q, want 0-0/*", got)
+	}
+
+	headers.Set("Range", "5-3")
+	response, body := apitest.Do(t, http.MethodGet, service.URL()+"/items", headers)
+	apitest.AssertEnvelope(t, response, body, http.StatusRequestedRangeNotSatisfiable, "PGRST103")
+}

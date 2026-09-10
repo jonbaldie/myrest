@@ -25,6 +25,7 @@ cache. JWT failures use the PostgREST JWT group:
 | `PGRST105` | 400 | `PUT` is not a single-row primary-key upsert (filters, body key match, or missing primary key). |
 | `PGRST102` | 400 | Write body is not valid JSON for the method. |
 | `PGRST100` | 400 | Query or Prefer value cannot be parsed (including an unknown `resolution` value, and the unbounded write gate). |
+| `PGRST103` | 416 | The `Range` request header names a window the query cannot satisfy. `details` names the broken bound. |
 | `PGRST122` | 400 | `Prefer: handling=strict` saw an invalid or unknown preference token. |
 | `PGRST124` | 400 | `Prefer: max-affected` under `handling=strict` and the write would change too many rows. |
 | `PGRST107` | 415 | `Accept` names no media type myrest claims for that response. |

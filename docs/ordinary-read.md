@@ -34,6 +34,11 @@ Also full match on this path:
 - column `select` (with optional `alias:column`)
 - `order=column.asc|desc`
 - `limit` / `offset` pagination and `Content-Range`
+- the `Range` request header as the same window: `first-last` with both ends
+  inclusive and `last` optional, `GET` only, and no `Range-Unit` request
+  header needed beside it. Bounds that cross, or a window that misses the
+  end of a `limit`, refuse with `PGRST103`. A header outside this grammar is
+  ignored, and `limit=0` keeps its meaning and bypasses the window.
 - `HEAD` with the same read intent and no body
 - `Prefer: count=exact` with an exact total in `Content-Range`
 - `db-max-rows` as a hard row cap
