@@ -185,3 +185,42 @@ func TestIsFilterValuesOverMySQL(t *testing.T) {
 		}
 	}
 }
+
+// read-001: a Range header window reads the same page as the equivalent limit
+// and offset query over MySQL 8.
+func TestRangeHeaderMatchesLimitAndOffsetOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	headers := make(http.Header)
+	headers.Set("Range-Unit", "items")
+	headers.Set("Range", "1-2")
+	ranged, rangedBody := apitest.Do(
+		t, http.MethodGet, service.URL()+"/items?select=id,name&order=id.asc", headers,
+	)
+	paged, pagedBody := get(t, service, "/items?select=id,name&order=id.asc&offset=1&limit=2")
+
+	if ranged.StatusCode != paged.StatusCode {
+		t.Fatalf("status = %d, want %d; body = %s", ranged.StatusCode, paged.StatusCode, rangedBody)
+	}
+	if string(rangedBody) != string(pagedBody) {
+		t.Fatalf("range body = %s, want %s", rangedBody, pagedBody)
+	}
+	if ranged.Header.Get("Content-Range") != paged.Header.Get("Content-Range") {
+		t.Fatalf(
+			"Content-Range = %q, want %q",
+			ranged.Header.Get("Content-Range"), paged.Header.Get("Content-Range"),
+		)
+	}
+}
+
+// A reversed Range header refuses as PGRST100 over MySQL 8.
+func TestReversedRangeHeaderRefusesOverMySQL(t *testing.T) {
+	headers := make(http.Header)
+	headers.Set("Range-Unit", "items")
+	headers.Set("Range", "7-3")
+	response, body := apitest.Do(
+		t, http.MethodGet, serve(t, "myrest_fixture").URL()+"/items?select=id", headers,
+	)
+
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST100")
+}

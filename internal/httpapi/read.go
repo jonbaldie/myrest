@@ -134,6 +134,9 @@ func parseReadQuery(request *http.Request, maxRows config.RowLimit) (readquery.Q
 	if err != nil {
 		return readquery.Query{}, err
 	}
+	if err := applyItemRange(request, &query); err != nil {
+		return readquery.Query{}, err
+	}
 	if maxRows.Capped {
 		rows := uint64(maxRows.Rows)
 		query.MaxRows = &rows

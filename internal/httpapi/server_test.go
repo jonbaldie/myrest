@@ -35,9 +35,11 @@ type reader struct {
 	failure error
 	// stoppable records whether the read carried a context a request can stop.
 	stoppable bool
-	role      schemacache.Role
-	table     schemacache.Table
-	query     readquery.Query
+	// calls counts the reads the service ran.
+	calls int
+	role  schemacache.Role
+	table schemacache.Table
+	query readquery.Query
 }
 
 func (r *reader) Read(
@@ -47,6 +49,7 @@ func (r *reader) Read(
 	query readquery.Query,
 ) (readquery.Result, error) {
 	r.stoppable = ctx != nil && ctx.Done() != nil
+	r.calls++
 	r.role, r.table, r.query = role, table, query
 	if r.failure != nil {
 		return readquery.Result{}, r.failure
