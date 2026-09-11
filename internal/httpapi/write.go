@@ -96,6 +96,10 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 
+	if !applyInsertResolution(writer, request, &prefer, &options) {
+		return
+	}
+
 	bodyRows, ok := readInsertRows(writer, request)
 	if !ok {
 		return
@@ -111,6 +115,37 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 		Prefer: prefer, Method: http.MethodPost, TableName: asked.Name,
 		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan,
 	})
+}
+
+// applyInsertResolution sets the POST duplicate-key mode from Prefer
+// resolution. With no resolution a POST stays a plain INSERT.
+func applyInsertResolution(
+	writer http.ResponseWriter,
+	request *http.Request,
+	prefer *writePrefer,
+	options *writequery.Options,
+) bool {
+	value, held := preferValue(request, "resolution")
+	if !held || value == "" {
+		return true
+	}
+	resolution, ok := parseUpsertResolution(writer, request)
+	if !ok {
+		return false
+	}
+	if resolution == UpsertIgnoreDuplicates && options.ReturnRepresentation {
+		writeUnsupportedFeature(
+			writer,
+			"Prefer return=representation cannot tell inserted rows from ignored rows honestly",
+		)
+		return false
+	}
+	options.OnDuplicate = writequery.DuplicateMerges
+	if resolution == UpsertIgnoreDuplicates {
+		options.OnDuplicate = writequery.DuplicateIgnored
+	}
+	prefer.applied = append(prefer.applied, "resolution="+strings.ToLower(value))
+	return true
 }
 
 // patchTable answers PATCH /<table> with the ordinary-read filter surface.

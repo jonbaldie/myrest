@@ -121,6 +121,10 @@ func insertRows(
 	if err != nil {
 		return writequery.Result{}, err
 	}
+	parts, err = onDuplicateInsert(parts, columns, options)
+	if err != nil {
+		return writequery.Result{}, err
+	}
 	if !options.ReturnRepresentation && !options.ReturnKeys {
 		return execTxWrite(ctx, tx, parts, nil)
 	}
@@ -143,7 +147,7 @@ func finishInsert(
 	if err != nil {
 		return writequery.Result{}, err
 	}
-	keys, err := insertedKeys(table, bodyRows, options.PrimaryKey, execResult)
+	keys, err := insertedKeys(table, bodyRows, options, execResult)
 	if err != nil {
 		return writequery.Result{}, err
 	}
@@ -348,6 +352,33 @@ func buildInsert(
 	}, nil
 }
 
+// onDuplicateInsert turns a plain INSERT into the Prefer resolution form.
+// merge-duplicates uses INSERT ... AS new ON DUPLICATE KEY UPDATE for the
+// non-key columns. ignore-duplicates uses INSERT IGNORE.
+func onDuplicateInsert(parts sqlParts, columns []string, options writequery.Options) (sqlParts, error) {
+	switch options.OnDuplicate {
+	case writequery.DuplicateFails:
+		return parts, nil
+	case writequery.DuplicateIgnored:
+		parts.statement = "INSERT IGNORE" + strings.TrimPrefix(parts.statement, "INSERT")
+		return parts, nil
+	case writequery.DuplicateMerges:
+		if len(options.PrimaryKey) == 0 {
+			return sqlParts{}, readquery.UnsupportedFeature{
+				Message: "Prefer resolution=merge-duplicates needs a primary key",
+			}
+		}
+		parts.statement += fmt.Sprintf(
+			" AS %s ON DUPLICATE KEY UPDATE %s",
+			quoteIdentifier("new"),
+			upsertUpdateSets(columns, options.PrimaryKey),
+		)
+		return parts, nil
+	default:
+		return sqlParts{}, fmt.Errorf("unknown insert duplicate mode %v", options.OnDuplicate)
+	}
+}
+
 func buildUpdate(table schemacache.Table, patch map[string]any, query readquery.Query) (sqlParts, error) {
 	if len(patch) == 0 {
 		return sqlParts{}, fmt.Errorf("update needs at least one column")
@@ -413,16 +444,19 @@ func buildDelete(table schemacache.Table, query readquery.Query) (sqlParts, erro
 func insertedKeys(
 	table schemacache.Table,
 	bodyRows []map[string]any,
-	primaryKey []string,
+	options writequery.Options,
 	execResult sql.Result,
 ) ([]map[string]any, error) {
+	primaryKey := options.PrimaryKey
 	if len(primaryKey) == 0 {
 		return nil, nil
 	}
 	if keysFromPayload, ok := keysFromBody(bodyRows, primaryKey); ok {
 		return keysFromPayload, nil
 	}
-	if len(primaryKey) == 1 {
+	// LastInsertId does not map to body rows once a duplicate key can merge
+	// or skip a row.
+	if len(primaryKey) == 1 && options.OnDuplicate == writequery.DuplicateFails {
 		column, ok := tableColumn(table, primaryKey[0])
 		if ok && column.AutoIncrement {
 			first, err := execResult.LastInsertId()

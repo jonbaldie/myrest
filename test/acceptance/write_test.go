@@ -244,6 +244,78 @@ func TestPutUpsertByPrimaryKeyOverMySQL(t *testing.T) {
 	}
 }
 
+// A POST with Prefer resolution upserts on a duplicate key. See issue #152.
+func TestPostPreferResolutionUpsertsOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	postPrefer := func(t *testing.T, prefer, payload string) (*http.Response, []byte) {
+		t.Helper()
+		request, err := http.NewRequest(http.MethodPost, service.URL()+"/items", strings.NewReader(payload))
+		if err != nil {
+			t.Fatalf("new POST: %v", err)
+		}
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Prefer", prefer)
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatalf("POST: %v", err)
+		}
+		t.Cleanup(func() { _ = response.Body.Close() })
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		return response, body
+	}
+
+	response, body := apitest.PostJSON(t, service.URL()+"/items", `{"id":152,"name":"post-original"}`)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("seed POST status = %d; body = %s", response.StatusCode, body)
+	}
+
+	// merge-duplicates updates the existing row and inserts the new one.
+	response, body = postPrefer(
+		t, "resolution=merge-duplicates",
+		`[{"id":152,"name":"post-merged"},{"id":153,"name":"post-new"}]`,
+	)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("merge POST status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "resolution=merge-duplicates" {
+		t.Fatalf("merge Preference-Applied = %q", got)
+	}
+	_, body = get(t, service, "/items?select=id,name&id=in.(152,153)&order=id.asc")
+	if want := `[{"id":152,"name":"post-merged"},{"id":153,"name":"post-new"}]`; string(body) != want+"\n" {
+		t.Fatalf("after merge body = %s, want %s", body, want)
+	}
+
+	// ignore-duplicates leaves the existing row alone and inserts the new one.
+	response, body = postPrefer(
+		t, "resolution=ignore-duplicates",
+		`[{"id":152,"name":"should-not-win"},{"id":154,"name":"post-ignored-new"}]`,
+	)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("ignore POST status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "resolution=ignore-duplicates" {
+		t.Fatalf("ignore Preference-Applied = %q", got)
+	}
+	_, body = get(t, service, "/items?select=id,name&id=in.(152,154)&order=id.asc")
+	if want := `[{"id":152,"name":"post-merged"},{"id":154,"name":"post-ignored-new"}]`; string(body) != want+"\n" {
+		t.Fatalf("after ignore body = %s, want %s", body, want)
+	}
+
+	// ignore-duplicates cannot return representation honestly.
+	response, body = postPrefer(
+		t, "resolution=ignore-duplicates, return=representation", `{"id":152,"name":"nope"}`,
+	)
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+
+	// Any other resolution value is refused.
+	response, body = postPrefer(t, "resolution=bogus", `{"id":155,"name":"nope"}`)
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST100")
+}
+
 // A PUT that does not target the primary key refuses stably.
 func TestPutWithoutPrimaryKeyTargetRefusesOverMySQL(t *testing.T) {
 	service := serve(t, "myrest_fixture")

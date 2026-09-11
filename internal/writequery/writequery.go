@@ -19,7 +19,21 @@ type Options struct {
 	MaxAffected *int64
 	// PreferTx is Prefer: tx=commit|rollback when the client sent it.
 	PreferTx string
+	// OnDuplicate is what an insert does on a duplicate key (Prefer resolution).
+	OnDuplicate OnDuplicate
 }
+
+// OnDuplicate selects insert behaviour on a duplicate key.
+type OnDuplicate int
+
+const (
+	// DuplicateFails is a plain INSERT: a duplicate key is an error.
+	DuplicateFails OnDuplicate = iota
+	// DuplicateMerges is Prefer: resolution=merge-duplicates.
+	DuplicateMerges
+	// DuplicateIgnored is Prefer: resolution=ignore-duplicates.
+	DuplicateIgnored
+)
 
 // Result is what a write produced for the HTTP response.
 type Result struct {

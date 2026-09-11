@@ -759,6 +759,79 @@ func TestPreferReturnMinimalPost(t *testing.T) {
 	}
 }
 
+// A POST passes Prefer resolution to the writer. See issue #152.
+func TestPostPreferResolutionIsPassedToWriter(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		prefer  string
+		status  int
+		code    string
+		mode    writequery.OnDuplicate
+		applied string
+	}{
+		{name: "absent", prefer: "", status: http.StatusCreated, mode: writequery.DuplicateFails},
+		{
+			name: "merge", prefer: "resolution=merge-duplicates", status: http.StatusCreated,
+			mode: writequery.DuplicateMerges, applied: "resolution=merge-duplicates",
+		},
+		{
+			name: "ignore", prefer: "resolution=Ignore-Duplicates", status: http.StatusCreated,
+			mode: writequery.DuplicateIgnored, applied: "resolution=ignore-duplicates",
+		},
+		{name: "bogus", prefer: "resolution=bogus", status: http.StatusBadRequest, code: "PGRST100"},
+		{
+			name: "ignore with representation", prefer: "resolution=ignore-duplicates, return=representation",
+			status: http.StatusBadRequest, code: "MYREST001",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			sink := &writer{}
+			request, err := http.NewRequest(
+				http.MethodPost,
+				serveWrite(t, &reader{}, sink).URL()+"/items",
+				strings.NewReader(`{"id":1,"name":"gamma"}`),
+			)
+			if err != nil {
+				t.Fatalf("new POST: %v", err)
+			}
+			request.Header.Set("Content-Type", "application/json")
+			if tc.prefer != "" {
+				request.Header.Set("Prefer", tc.prefer)
+			}
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				t.Fatalf("POST: %v", err)
+			}
+			t.Cleanup(func() { _ = response.Body.Close() })
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			if tc.code != "" {
+				apitest.AssertEnvelope(t, response, body, tc.status, tc.code)
+				if sink.called != "" {
+					t.Fatalf("writer called %q, want no write", sink.called)
+				}
+				return
+			}
+			if response.StatusCode != tc.status {
+				t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, tc.status, body)
+			}
+			if sink.options.OnDuplicate != tc.mode {
+				t.Fatalf("OnDuplicate = %v, want %v", sink.options.OnDuplicate, tc.mode)
+			}
+			if got := response.Header.Get("Preference-Applied"); got != tc.applied {
+				t.Fatalf("Preference-Applied = %q, want %q", got, tc.applied)
+			}
+		})
+	}
+}
+
 func TestPreferTxIsPassedToWriter(t *testing.T) {
 	t.Parallel()
 
