@@ -7,6 +7,7 @@ import (
 	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/schemacache"
+	"github.com/jonbaldie/myrest/internal/writequery"
 )
 
 func TestBuildInsertSQL(t *testing.T) {
@@ -32,6 +33,53 @@ func TestBuildInsertSQL(t *testing.T) {
 	}
 	if len(parts.args) != 2 || parts.args[0] != "gamma" || parts.args[1] != "delta" {
 		t.Fatalf("args = %#v", parts.args)
+	}
+}
+
+func TestOnDuplicateInsertSQL(t *testing.T) {
+	t.Parallel()
+
+	plain := sqlParts{statement: "INSERT INTO `shop`.`items` (`id`, `name`) VALUES (?, ?)"}
+	cases := []struct {
+		name string
+		mode writequery.OnDuplicate
+		want string
+	}{
+		{name: "fails", mode: writequery.DuplicateFails, want: plain.statement},
+		{
+			name: "ignored",
+			mode: writequery.DuplicateIgnored,
+			want: "INSERT IGNORE INTO `shop`.`items` (`id`, `name`) VALUES (?, ?)",
+		},
+		{
+			name: "merges",
+			mode: writequery.DuplicateMerges,
+			want: "INSERT INTO `shop`.`items` (`id`, `name`) VALUES (?, ?)" +
+				" AS `new` ON DUPLICATE KEY UPDATE `name` = `new`.`name`",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			parts, err := onDuplicateInsert(plain, []string{"id", "name"}, writequery.Options{
+				PrimaryKey:  []string{"id"},
+				OnDuplicate: tc.mode,
+			})
+			if err != nil {
+				t.Fatalf("onDuplicateInsert: %v", err)
+			}
+			if parts.statement != tc.want {
+				t.Fatalf("statement = %q, want %q", parts.statement, tc.want)
+			}
+		})
+	}
+
+	_, err := onDuplicateInsert(plain, []string{"id", "name"}, writequery.Options{
+		OnDuplicate: writequery.DuplicateMerges,
+	})
+	var gap readquery.UnsupportedFeature
+	if !errors.As(err, &gap) {
+		t.Fatalf("merge without primary key err = %v, want UnsupportedFeature", err)
 	}
 }
 

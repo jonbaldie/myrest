@@ -52,6 +52,12 @@ those rules is refused with `PGRST105`.
 
 Any other `resolution` value is refused with `PGRST100`.
 
+`POST` honours the same `resolution` values for one row or a JSON array.
+With no `resolution`, `POST` is a plain `INSERT` and a duplicate key fails.
+The response sets `Preference-Applied: resolution=<value>`. `merge-duplicates`
+needs a table `PRIMARY KEY`. `ignore-duplicates` with `return=representation`
+is refused with `MYREST001`, because MySQL does not tell which rows it ignored.
+
 MySQL fires `ON DUPLICATE KEY` / `INSERT IGNORE` on any unique key conflict,
 not only the primary key. The client contract still requires primary-key
 filters, as the parity target does. Operators should treat secondary unique
