@@ -90,6 +90,10 @@ func (s *Service) getRoutine(writer http.ResponseWriter, request *http.Request) 
 		rows := uint64(s.settings.DB.MaxRows.Rows)
 		query.MaxRows = &rows
 	}
+	if err := applyRequestRange(request, &query); err != nil {
+		writeQueryFailure(writer, err)
+		return
+	}
 	s.invokeRoutine(writer, request, role, asked, routine, args, query)
 }
 
