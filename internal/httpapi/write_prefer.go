@@ -63,13 +63,13 @@ type preferTokens struct {
 	invalid       []string
 }
 
-func parseWritePrefer(headers []string, txEnd config.TxEnd) (writePrefer, error) {
+func parseWritePrefer(headers []string, txEnd config.TxEnd, kind writeKind) (writePrefer, error) {
 	tokens := collectPreferTokens(headers)
 	prefer, invalid := applyPreferTokens(tokens)
 	if prefer.Strict && len(invalid) > 0 {
 		return writePrefer{}, invalidPreferError{tokens: invalid}
 	}
-	prefer.applied = preferenceApplied(prefer, tokens, txEnd)
+	prefer.applied = preferenceApplied(prefer, tokens, txEnd, kind)
 	return prefer, nil
 }
 
@@ -204,7 +204,7 @@ func applyMaxAffected(prefer *writePrefer, tokens preferTokens) []string {
 	return nil
 }
 
-func preferenceApplied(prefer writePrefer, tokens preferTokens, txEnd config.TxEnd) []string {
+func preferenceApplied(prefer writePrefer, tokens preferTokens, txEnd config.TxEnd, kind writeKind) []string {
 	var applied []string
 	if prefer.Strict {
 		applied = append(applied, "handling=strict")
@@ -215,7 +215,9 @@ func preferenceApplied(prefer writePrefer, tokens preferTokens, txEnd config.TxE
 	if prefer.MissingDefault {
 		applied = append(applied, "missing=default")
 	}
-	if prefer.Strict && prefer.MaxAffected != nil {
+	// max-affected is an update and delete preference. Inserts and upserts
+	// write normally, so they must not echo the limit as applied.
+	if prefer.Strict && prefer.MaxAffected != nil && honoursMaxAffected(kind) {
 		applied = append(
 			applied,
 			"max-affected="+strconv.FormatInt(*prefer.MaxAffected, 10),

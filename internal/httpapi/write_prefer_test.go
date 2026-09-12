@@ -49,7 +49,7 @@ func TestParseWritePreferTxValues(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			prefer, err := parseWritePrefer([]string{tc.header}, tc.txEnd)
+			prefer, err := parseWritePrefer([]string{tc.header}, tc.txEnd, writeKindPatch)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected invalid prefer error")
@@ -110,7 +110,7 @@ func TestParseWritePreferAllRowsFlagOnly(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			prefer, err := parseWritePrefer([]string{tc.header}, config.TxEndCommit)
+			prefer, err := parseWritePrefer([]string{tc.header}, config.TxEndCommit, writeKindPatch)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected invalid prefer error")

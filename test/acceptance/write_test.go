@@ -808,6 +808,69 @@ func TestPreferMissingMaxAffectedAndHandlingOverMySQL(t *testing.T) {
 		t.Fatalf("rows changed after max-affected refuse: %s", body)
 	}
 
+	// max-affected is not an insert preference: POST writes normally and the
+	// answer does not echo the limit. handling=strict stays applied.
+	request, err = http.NewRequest(
+		http.MethodPost,
+		service.URL()+"/items",
+		strings.NewReader(`{"name":"max-post"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST max-affected: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "handling=strict, max-affected=0")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST max-affected: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err = io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d; body = %s", response.StatusCode, body)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "handling=strict" {
+		t.Fatalf("POST Preference-Applied = %q, want handling=strict", got)
+	}
+	_, body = get(t, service, "/items?select=name&name=eq.max-post")
+	if !strings.Contains(string(body), "max-post") {
+		t.Fatalf("row missing after max-affected insert: %s", body)
+	}
+
+	// PUT is also outside max-affected.
+	request, err = http.NewRequest(
+		http.MethodPut,
+		service.URL()+"/items?id=eq.9001",
+		strings.NewReader(`{"id":9001,"name":"max-put"}`),
+	)
+	if err != nil {
+		t.Fatalf("new PUT max-affected: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "handling=strict, max-affected=0")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("PUT max-affected: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err = io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d; body = %s", response.StatusCode, body)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "handling=strict" {
+		t.Fatalf("PUT Preference-Applied = %q, want handling=strict", got)
+	}
+	_, body = get(t, service, "/items?select=name&id=eq.9001")
+	if !strings.Contains(string(body), "max-put") {
+		t.Fatalf("row missing after max-affected put: %s", body)
+	}
+
 	// handling=strict rejects unknown tokens.
 	request, err = http.NewRequest(
 		http.MethodPost,

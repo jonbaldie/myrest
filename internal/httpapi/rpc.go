@@ -139,7 +139,7 @@ func (s *Service) invokeRoutine(
 
 	// RPC only honours Prefer: tx= from the write Prefer parser; other write
 	// Prefer tokens are accepted for strict handling but not applied on /rpc.
-	prefer, ok := s.readWritePrefer(writer, request)
+	prefer, ok := s.readWritePrefer(writer, request, writeKindRPC)
 	if !ok {
 		return
 	}
