@@ -48,6 +48,7 @@ func rpcCache() *schemacache.Cache {
 	secret := schemacache.RoutineID{Database: "shop", Name: "secret_count"}
 	writeMarker := schemacache.RoutineID{Database: "shop", Name: "write_marker"}
 	listItems := schemacache.RoutineID{Database: "shop", Name: "list_items"}
+	echoName := schemacache.RoutineID{Database: "shop", Name: "echo_name"}
 
 	return schemacache.Build(schemacache.Catalog{
 		Tables: []schemacache.TableID{items, orders},
@@ -100,12 +101,22 @@ func rpcCache() *schemacache.Cache {
 				Kind:          "PROCEDURE",
 				SQLDataAccess: "READS SQL DATA",
 			},
+			{
+				ID:            echoName,
+				Kind:          "PROCEDURE",
+				SQLDataAccess: "CONTAINS SQL",
+				Parameters: []schemacache.ParameterFact{
+					{Name: "src", Mode: "IN", Ordinal: 1, DataType: "varchar"},
+					{Name: "dst", Mode: "OUT", Ordinal: 2, DataType: "varchar"},
+				},
+			},
 		},
 		RoutinePrivileges: []schemacache.RoutinePrivilegeFact{
 			{Role: "myrest_anon", Routine: addThem, Privilege: "EXECUTE"},
 			{Role: "myrest_anon", Routine: ping, Privilege: "EXECUTE"},
 			{Role: "myrest_anon", Routine: writeMarker, Privilege: "EXECUTE"},
 			{Role: "myrest_anon", Routine: listItems, Privilege: "EXECUTE"},
+			{Role: "myrest_anon", Routine: echoName, Privilege: "EXECUTE"},
 		},
 	})
 }
@@ -253,6 +264,88 @@ func TestPostRPCWithAMissingArgumentIsNotAFoundRoutine(t *testing.T) {
 	)
 
 	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST202")
+}
+
+// Unknown named arguments are a signature mismatch, the way the parity target
+// treats them: not a found routine.
+func TestPostRPCWithAnUnknownArgumentIsNotAFoundRoutine(t *testing.T) {
+	t.Parallel()
+
+	source := &caller{body: int64(3)}
+	response, body := apitest.PostJSON(
+		t,
+		serveRPC(t, source).URL()+"/rpc/add_them",
+		`{"a":1,"b":2,"c":3}`,
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST202")
+	if want := "Could not find the function shop.add_them in the schema cache"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+	if source.routine.ID.Name != "" {
+		t.Fatalf("caller ran for %v, want no call", source.routine.ID)
+	}
+}
+
+// An unexpected argument on a no-parameter routine is also not a found routine.
+func TestPostRPCWithAnUnexpectedArgumentOnNoParamRoutineIsNotAFoundRoutine(t *testing.T) {
+	t.Parallel()
+
+	source := &caller{body: map[string]any{}}
+	response, body := apitest.PostJSON(
+		t,
+		serveRPC(t, source).URL()+"/rpc/ping",
+		`{"unexpected":1}`,
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST202")
+	if want := "Could not find the function shop.ping in the schema cache"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+	if source.routine.ID.Name != "" {
+		t.Fatalf("caller ran for %v, want no call", source.routine.ID)
+	}
+}
+
+// A supplied OUT parameter is not an IN or INOUT argument: not a found routine.
+func TestPostRPCWithAnOUTArgumentIsNotAFoundRoutine(t *testing.T) {
+	t.Parallel()
+
+	source := &caller{body: map[string]any{"dst": "hi"}}
+	response, body := apitest.PostJSON(
+		t,
+		serveRPC(t, source).URL()+"/rpc/echo_name",
+		`{"src":"hi","dst":"val"}`,
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST202")
+	if want := "Could not find the function shop.echo_name in the schema cache"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+	if source.routine.ID.Name != "" {
+		t.Fatalf("caller ran for %v, want no call", source.routine.ID)
+	}
+}
+
+func TestPostRPCWithOnlyINArgumentsOnOUTRoutineSucceeds(t *testing.T) {
+	t.Parallel()
+
+	source := &caller{body: map[string]any{"dst": "hi"}}
+	response, body := apitest.PostJSON(
+		t,
+		serveRPC(t, source).URL()+"/rpc/echo_name",
+		`{"src":"hi"}`,
+	)
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if source.args["src"] != "hi" {
+		t.Errorf("args = %#v, want src=hi", source.args)
+	}
+	if _, held := source.args["dst"]; held {
+		t.Errorf("args = %#v, want no dst", source.args)
+	}
 }
 
 // rpc-003: GET /rpc/<read-safe routine> with named query-string arguments

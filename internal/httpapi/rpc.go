@@ -131,7 +131,7 @@ func (s *Service) invokeRoutine(
 	args map[string]any,
 	query readquery.Query,
 ) {
-	if _, missing := missingRequiredArgument(routine, args); missing {
+	if signatureMismatch(routine, args) {
 		// The parity target treats a signature mismatch as a missing routine.
 		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
 		return
@@ -409,13 +409,20 @@ func splitRPCQuery(routine schemacache.RoutineFact, values url.Values) (map[stri
 	return args, readValues
 }
 
+// signatureMismatch reports a missing IN/INOUT argument or a body key that is
+// not an IN or INOUT parameter, including an unknown name or an OUT parameter.
+func signatureMismatch(routine schemacache.RoutineFact, args map[string]any) bool {
+	if _, missing := missingRequiredArgument(routine, args); missing {
+		return true
+	}
+	_, unknown := unknownArgument(routine, args)
+	return unknown
+}
+
 // missingRequiredArgument finds an IN or INOUT argument the body does not name.
 func missingRequiredArgument(routine schemacache.RoutineFact, args map[string]any) (string, bool) {
 	for _, param := range routine.Parameters {
-		if param.Ordinal == 0 || param.Name == "" {
-			continue
-		}
-		if strings.EqualFold(param.Mode, "OUT") {
+		if !inputParameter(param) {
 			continue
 		}
 		if _, held := args[param.Name]; !held {
@@ -423,6 +430,29 @@ func missingRequiredArgument(routine schemacache.RoutineFact, args map[string]an
 		}
 	}
 	return "", false
+}
+
+// unknownArgument finds a body key that is not an IN or INOUT parameter.
+func unknownArgument(routine schemacache.RoutineFact, args map[string]any) (string, bool) {
+	allowed := map[string]struct{}{}
+	for _, param := range routine.Parameters {
+		if inputParameter(param) {
+			allowed[param.Name] = struct{}{}
+		}
+	}
+	for name := range args {
+		if _, held := allowed[name]; !held {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+func inputParameter(param schemacache.ParameterFact) bool {
+	if param.Ordinal == 0 || param.Name == "" {
+		return false
+	}
+	return !strings.EqualFold(param.Mode, "OUT")
 }
 
 // readNamedJSONArgs reads the PostgREST named-argument object. An empty body

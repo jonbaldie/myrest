@@ -75,6 +75,62 @@ func TestPostRPCProcedureAnswersWithOUTParameters(t *testing.T) {
 	}
 }
 
+// Unknown named arguments are a signature mismatch: not a found routine.
+func TestPostRPCWithAnUnknownArgumentIsNotAFoundRoutine(t *testing.T) {
+	response, body := apitest.PostJSON(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/add_them",
+		`{"a":1,"b":2,"c":3}`,
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST202")
+	if want := "Could not find the function myrest_fixture.add_them in the schema cache"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+}
+
+// An unexpected argument on a no-parameter routine is also not a found routine.
+func TestPostRPCWithAnUnexpectedArgumentOnNoParamRoutineIsNotAFoundRoutine(t *testing.T) {
+	response, body := apitest.PostJSON(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/ping",
+		`{"unexpected":1}`,
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST202")
+	if want := "Could not find the function myrest_fixture.ping in the schema cache"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+}
+
+// A supplied OUT parameter is not an IN or INOUT argument: not a found routine.
+func TestPostRPCWithAnOUTArgumentIsNotAFoundRoutine(t *testing.T) {
+	response, body := apitest.PostJSON(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/echo_name",
+		`{"src":"hi","dst":"val"}`,
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST202")
+	if want := "Could not find the function myrest_fixture.echo_name in the schema cache"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+}
+
+// Missing named arguments continue to be a signature mismatch.
+func TestPostRPCWithAMissingArgumentIsNotAFoundRoutine(t *testing.T) {
+	response, body := apitest.PostJSON(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/add_them",
+		`{"a":1}`,
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST202")
+	if want := "Could not find the function myrest_fixture.add_them in the schema cache"; failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+}
+
 // A routine without EXECUTE is not usable as a resource.
 func TestRoutineWithoutExecuteIsNotAResource(t *testing.T) {
 	response, body := apitest.PostJSON(
