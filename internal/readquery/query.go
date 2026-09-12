@@ -167,6 +167,11 @@ type Filter struct {
 	Value   string
 	Values  []string // for in.(...)
 	Negated bool
+
+	// ValueQuoted records that the value token was double-quoted, so an
+	// unquoted null keyword keeps its SQL NULL meaning while a quoted
+	// "null" is the literal string. Issue #160.
+	ValueQuoted bool
 }
 
 // Group is a logical and/or tree of filters.

@@ -56,6 +56,7 @@ func parseFilterValue(filter *Filter, value string) error {
 			return err
 		}
 		filter.Value = literal
+		filter.ValueQuoted = strings.HasPrefix(value, `"`)
 	}
 	return nil
 }

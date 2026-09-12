@@ -94,7 +94,9 @@ func distinctSQL(column string, filter readquery.Filter) (string, []any, error) 
 		sql = column + " <=> ?"
 	}
 	var arg any = filter.Value
-	if strings.EqualFold(filter.Value, "null") {
+	// An unquoted null keyword means SQL NULL; a quoted "null" is the
+	// literal string. Issue #160.
+	if !filter.ValueQuoted && strings.EqualFold(filter.Value, "null") {
 		arg = nil
 	}
 	return sql, []any{arg}, nil

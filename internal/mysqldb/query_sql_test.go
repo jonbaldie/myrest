@@ -2,6 +2,7 @@ package mysqldb
 
 import (
 	"errors"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -33,6 +34,44 @@ func TestBuildSelectAppliesFilterOrderAndPage(t *testing.T) {
 	}
 	if len(parts.args) != 1 || parts.args[0] != "alpha" {
 		t.Fatalf("args = %#v", parts.args)
+	}
+}
+
+// Issue #160: a double-quoted "null" isdistinct value is the literal string,
+// not SQL NULL; only an unquoted null keyword binds as NULL.
+func TestBuildSelectIsDistinctQuotedNullStaysLiteral(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID:      schemacache.TableID{Database: "shop", Name: "items"},
+		Columns: []schemacache.Column{{Name: "id"}, {Name: "name"}},
+	}
+
+	cases := []struct {
+		raw      string
+		sql      string
+		arg      any
+	}{
+		{raw: `not.isdistinct."null"`, sql: "SELECT `id`, `name` FROM `shop`.`items` WHERE `name` <=> ?", arg: "null"},
+		{raw: `isdistinct."null"`, sql: "SELECT `id`, `name` FROM `shop`.`items` WHERE NOT (`name` <=> ?)", arg: "null"},
+		{raw: `not.isdistinct.null`, sql: "SELECT `id`, `name` FROM `shop`.`items` WHERE `name` <=> ?", arg: nil},
+		{raw: `isdistinct.null`, sql: "SELECT `id`, `name` FROM `shop`.`items` WHERE NOT (`name` <=> ?)", arg: nil},
+	}
+	for _, c := range cases {
+		query, err := readquery.Parse(url.Values{"name": []string{c.raw}}, nil)
+		if err != nil {
+			t.Fatalf("Parse %s: %v", c.raw, err)
+		}
+		parts, err := buildSelect(table, query)
+		if err != nil {
+			t.Fatalf("buildSelect %s: %v", c.raw, err)
+		}
+		if parts.statement != c.sql {
+			t.Fatalf("%s: statement = %q, want %q", c.raw, parts.statement, c.sql)
+		}
+		if len(parts.args) != 1 || parts.args[0] != c.arg {
+			t.Fatalf("%s: args = %#v, want one arg %#v", c.raw, parts.args, c.arg)
+		}
 	}
 }
 

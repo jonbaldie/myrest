@@ -60,6 +60,60 @@ func TestIsDistinctOverMySQL(t *testing.T) {
 	}
 }
 
+// Issue #160: isdistinct with double-quoted "null" matches the literal string "null",
+// while unquoted null matches SQL NULL.
+func TestIsDistinctQuotedNullOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	postResp, postBody := apitest.PostJSON(
+		t,
+		service.URL()+"/colors",
+		`[{"name":"null"},{"name":"red"}]`,
+	)
+	if postResp.StatusCode != http.StatusCreated {
+		t.Fatalf("insert colors status = %d, want %d; body = %s", postResp.StatusCode, http.StatusCreated, postBody)
+	}
+	t.Cleanup(func() {
+		_, _ = apitest.Do(t, http.MethodDelete, service.URL()+"/colors?name=in.(null,red)", nil)
+	})
+
+	// Probe 1: not.isdistinct."null" matches rows where name is literal string "null".
+	matchResp, matchBody := get(t, service, "/colors?select=name&name=not.isdistinct.%22null%22&order=name.asc")
+	if matchResp.StatusCode != http.StatusOK {
+		t.Fatalf("match status = %d; body = %s", matchResp.StatusCode, matchBody)
+	}
+	if want := `[{"name":"null"}]`; string(matchBody) != want+"\n" {
+		t.Fatalf("match body = %s, want %s", matchBody, want)
+	}
+
+	// Probe 2: isdistinct."null" excludes rows where name is literal string "null".
+	exclResp, exclBody := get(t, service, "/colors?select=name&name=isdistinct.%22null%22&order=name.asc")
+	if exclResp.StatusCode != http.StatusOK {
+		t.Fatalf("excl status = %d; body = %s", exclResp.StatusCode, exclBody)
+	}
+	if want := `[{"name":"red"}]`; string(exclBody) != want+"\n" {
+		t.Fatalf("excl body = %s, want %s", exclBody, want)
+	}
+
+	// Probe 3: isdistinct.null (unquoted) excludes SQL NULL, returning all non-null rows.
+	nullResp, nullBody := get(t, service, "/colors?select=name&name=isdistinct.null&order=name.asc")
+	if nullResp.StatusCode != http.StatusOK {
+		t.Fatalf("null status = %d; body = %s", nullResp.StatusCode, nullBody)
+	}
+	if want := `[{"name":"null"},{"name":"red"}]`; string(nullBody) != want+"\n" {
+		t.Fatalf("null body = %s, want %s", nullBody, want)
+	}
+
+	// Probe 4: not.isdistinct.null (unquoted) matches SQL NULL, returning no rows.
+	notNullResp, notNullBody := get(t, service, "/colors?select=name&name=not.isdistinct.null&order=name.asc")
+	if notNullResp.StatusCode != http.StatusOK {
+		t.Fatalf("not-null status = %d; body = %s", notNullResp.StatusCode, notNullBody)
+	}
+	if want := `[]`; string(notNullBody) != want+"\n" {
+		t.Fatalf("not-null body = %s, want %s", notNullBody, want)
+	}
+}
+
 // read-002: Prefer count=exact returns the exact total over MySQL 8.
 func TestPreferCountExactOverMySQL(t *testing.T) {
 	headers := make(http.Header)
