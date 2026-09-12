@@ -1275,6 +1275,95 @@ func TestPreferMaxAffectedStrict(t *testing.T) {
 	}
 }
 
+// write-010: max-affected is not an insert preference. POST writes normally
+// and neither enforces nor echoes the limit; handling=strict stays applied.
+func TestPreferMaxAffectedNotAppliedToInsert(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{}
+	headers := http.Header{}
+	headers.Set("Prefer", "handling=strict, max-affected=2")
+	headers.Set("Content-Type", "application/json")
+	request, err := http.NewRequest(
+		http.MethodPost,
+		serveWrite(t, &reader{}, sink).URL()+"/items",
+		strings.NewReader(`{"name":"x"}`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header = headers
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d; body = %s", response.StatusCode, body)
+	}
+	if sink.options.MaxAffected != nil {
+		t.Fatalf("insert options = %#v, want no MaxAffected", sink.options)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "handling=strict" {
+		t.Fatalf("Preference-Applied = %q, want handling=strict", got)
+	}
+}
+
+// write-010: max-affected is not a PUT preference either.
+func TestPreferMaxAffectedNotAppliedToPut(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{upserted: true}
+	response, body := putJSON(
+		t,
+		serveWrite(t, &reader{}, sink).URL()+"/items?id=eq.1",
+		`{"id":1,"name":"alpha2"}`,
+		"handling=strict, max-affected=2",
+	)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "handling=strict" {
+		t.Fatalf("Preference-Applied = %q, want handling=strict", got)
+	}
+}
+
+// write-010: PATCH still enforces and echoes max-affected when the write
+// succeeds within the limit.
+func TestPreferMaxAffectedAppliedToPatch(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{updated: 1}
+	headers := http.Header{}
+	headers.Set("Prefer", "handling=strict, max-affected=2")
+	headers.Set("Content-Type", "application/json")
+	request, err := http.NewRequest(
+		http.MethodPatch,
+		serveWrite(t, &reader{}, sink).URL()+"/items?name=eq.alpha",
+		strings.NewReader(`{"name":"alpha2"}`),
+	)
+	if err != nil {
+		t.Fatalf("new PATCH: %v", err)
+	}
+	request.Header = headers
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	if response.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(response.Body)
+		t.Fatalf("status = %d; body = %s", response.StatusCode, body)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "handling=strict, max-affected=2" {
+		t.Fatalf("Preference-Applied = %q, want handling=strict, max-affected=2", got)
+	}
+}
+
 // write-010: Prefer handling=strict refuses unknown preference tokens.
 func TestPreferHandlingStrictRejectsUnknown(t *testing.T) {
 	t.Parallel()

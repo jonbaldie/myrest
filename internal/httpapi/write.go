@@ -81,7 +81,7 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 	if !ok {
 		return
 	}
-	prefer, ok := s.readWritePrefer(writer, request)
+	prefer, ok := s.readWritePrefer(writer, request, writeKindInsert)
 	if !ok {
 		return
 	}
@@ -156,7 +156,7 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 	if !ok {
 		return
 	}
-	prefer, ok := s.readWritePrefer(writer, request)
+	prefer, ok := s.readWritePrefer(writer, request, writeKindPatch)
 	if !ok {
 		return
 	}
@@ -195,7 +195,7 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 	if !ok {
 		return
 	}
-	prefer, ok := s.readWritePrefer(writer, request)
+	prefer, ok := s.readWritePrefer(writer, request, writeKindDelete)
 	if !ok {
 		return
 	}
@@ -235,7 +235,7 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request) {
 	if !ok {
 		return
 	}
-	prefer, ok := s.readWritePrefer(writer, request)
+	prefer, ok := s.readWritePrefer(writer, request, writeKindPut)
 	if !ok {
 		return
 	}
@@ -269,8 +269,8 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request) {
 	writeMinimal(writer, http.StatusNoContent)
 }
 
-func (s *Service) readWritePrefer(writer http.ResponseWriter, request *http.Request) (writePrefer, bool) {
-	prefer, err := parseWritePrefer(request.Header.Values("Prefer"), s.settings.DB.TxEnd)
+func (s *Service) readWritePrefer(writer http.ResponseWriter, request *http.Request, kind writeKind) (writePrefer, bool) {
+	prefer, err := parseWritePrefer(request.Header.Values("Prefer"), s.settings.DB.TxEnd, kind)
 	if err != nil {
 		var invalid invalidPreferError
 		if errors.As(err, &invalid) {
@@ -283,7 +283,8 @@ func (s *Service) readWritePrefer(writer http.ResponseWriter, request *http.Requ
 	return prefer, true
 }
 
-// writeKind selects which honesty rules apply for return=representation.
+// writeKind selects which honesty rules apply for return=representation and
+// which write preferences apply.
 type writeKind int
 
 const (
@@ -291,7 +292,22 @@ const (
 	writeKindPatch
 	writeKindDelete
 	writeKindPut
+	// writeKindRPC marks the /rpc surface, which reuses the write Prefer
+	// parser for tx= only.
+	writeKindRPC
 )
+
+// honoursMaxAffected reports whether the write kind enforces Prefer
+// max-affected. Updates and deletes refuse with PGRST124 when they exceed the
+// limit; inserts and upserts write normally.
+func honoursMaxAffected(kind writeKind) bool {
+	switch kind {
+	case writeKindPatch, writeKindDelete:
+		return true
+	default:
+		return false
+	}
+}
 
 // buildWriteOptions checks representation honesty and builds database options.
 func (s *Service) buildWriteOptions(
@@ -307,7 +323,7 @@ func (s *Service) buildWriteOptions(
 		MissingDefault: prefer.MissingDefault,
 		PreferTx:       prefer.Tx,
 	}
-	if prefer.Strict && prefer.MaxAffected != nil {
+	if prefer.Strict && prefer.MaxAffected != nil && honoursMaxAffected(kind) {
 		options.MaxAffected = prefer.MaxAffected
 	}
 
