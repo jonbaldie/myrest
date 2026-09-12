@@ -243,7 +243,8 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request) {
 	if !ok {
 		return
 	}
-	if _, ok := s.buildWriteOptions(writer, role, asked, prefer, primaryKey, writeKindPut); !ok {
+	options, ok := s.buildWriteOptions(writer, role, asked, prefer, primaryKey, writeKindPut)
+	if !ok {
 		return
 	}
 
@@ -254,7 +255,7 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request) {
 		row,
 		primaryKey,
 		resolution,
-		writequery.Options{PreferTx: prefer.Tx},
+		options,
 	)
 	if err != nil {
 		s.log.Printf("myrest: upsert %s.%s as %s: %v", asked.Database, asked.Name, role, err)
@@ -298,11 +299,11 @@ const (
 )
 
 // honoursMaxAffected reports whether the write kind enforces Prefer
-// max-affected. Updates and deletes refuse with PGRST124 when they exceed the
-// limit; inserts and upserts write normally.
+// max-affected. Updates, deletes, and upserts refuse with PGRST124 when they
+// exceed the limit; inserts write normally.
 func honoursMaxAffected(kind writeKind) bool {
 	switch kind {
-	case writeKindPatch, writeKindDelete:
+	case writeKindPatch, writeKindDelete, writeKindPut:
 		return true
 	default:
 		return false

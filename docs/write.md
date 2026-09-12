@@ -112,7 +112,7 @@ this claim.
 | Prefer | Label | Behaviour |
 | --- | --- | --- |
 | `missing=default` | **full match** | On `POST`, columns omitted from a row use the SQL `DEFAULT` instead of `NULL`. |
-| `max-affected=<n>` | **full match** | With `handling=strict`, a `PATCH` or `DELETE` that would change more than `n` rows refuses with `PGRST124` and rolls back. `max-affected` is not an insert preference: `POST` and `PUT` write normally, do not enforce the limit, and do not echo `max-affected` in `Preference-Applied`; a valid token stays known under `handling=strict`. Ignored under lenient handling. |
+| `max-affected=<n>` | **full match** | With `handling=strict`, a `PUT`, `PATCH`, or `DELETE` that would change more than `n` rows refuses with `PGRST124` and rolls back. `max-affected` is not an insert preference: `POST` writes normally, does not enforce the limit, and does not echo `max-affected` in `Preference-Applied`; a valid token stays known under `handling=strict`. Ignored under lenient handling. |
 | `handling=strict` | **full match** | Unknown or invalid Prefer tokens refuse with `PGRST122`. |
 | `handling=lenient` (default) | **full match** | Unknown Prefer tokens are ignored. |
 

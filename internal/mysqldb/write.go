@@ -97,7 +97,7 @@ func (p *Pool) Upsert(
 	var inserted bool
 	err = p.withRequestTx(ctx, statement, options.PreferTx, func(ctx context.Context, tx *sql.Tx) error {
 		var upsertErr error
-		inserted, upsertErr = upsertRow(ctx, tx, table, row, primaryKey, resolution)
+		inserted, upsertErr = upsertRow(ctx, tx, table, row, primaryKey, resolution, options.MaxAffected)
 		return upsertErr
 	})
 	return inserted, err
@@ -676,6 +676,7 @@ func upsertRow(
 	row map[string]any,
 	primaryKey []string,
 	resolution httpapi.UpsertResolution,
+	maxAffected *int64,
 ) (bool, error) {
 	parts, err := buildUpsert(table, row, primaryKey, resolution)
 	if err != nil {
@@ -691,6 +692,13 @@ func upsertRow(
 	}
 	// INSERT and INSERT IGNORE report 1 for a new row. ON DUPLICATE KEY UPDATE
 	// reports 1 for insert, 2 for update, and 0 when values did not change.
+	var logicalAffected int64
+	if affected > 0 {
+		logicalAffected = 1
+	}
+	if err := checkMaxAffected(logicalAffected, maxAffected); err != nil {
+		return false, err
+	}
 	return affected == 1, nil
 }
 

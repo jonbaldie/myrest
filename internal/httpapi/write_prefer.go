@@ -215,7 +215,7 @@ func preferenceApplied(prefer writePrefer, tokens preferTokens, txEnd config.TxE
 	if prefer.MissingDefault {
 		applied = append(applied, "missing=default")
 	}
-	// max-affected is an update and delete preference. Inserts and upserts
+	// max-affected is an update, delete, and upsert preference. Inserts
 	// write normally, so they must not echo the limit as applied.
 	if prefer.Strict && prefer.MaxAffected != nil && honoursMaxAffected(kind) {
 		applied = append(
