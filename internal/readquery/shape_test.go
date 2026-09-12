@@ -74,3 +74,47 @@ func TestShapeFiltersARowSetWithAQuotedValue(t *testing.T) {
 		t.Fatalf("rows = %#v, want the alpha,beta row", result.Rows)
 	}
 }
+
+// A double-quoted "null" isdistinct value compares against the literal string,
+// while an unquoted null keeps its SQL NULL meaning. Issue #160.
+func TestShapeIsDistinctQuotedNullIsALiteral(t *testing.T) {
+	t.Parallel()
+
+	set := []rows.Row{
+		{Columns: []string{"id", "name"}, Values: []any{int64(1), "null"}},
+		{Columns: []string{"id", "name"}, Values: []any{int64(2), "red"}},
+		{Columns: []string{"id", "name"}, Values: []any{int64(3), nil}},
+	}
+
+	cases := []struct {
+		raw string
+		ids []int64
+	}{
+		{raw: `isdistinct."null"`, ids: []int64{2, 3}},
+		{raw: `not.isdistinct."null"`, ids: []int64{1}},
+		{raw: `isdistinct.null`, ids: []int64{1, 2}},
+		{raw: `not.isdistinct.null`, ids: []int64{3}},
+	}
+	for _, c := range cases {
+		query, err := readquery.Parse(url.Values{"name": {c.raw}}, nil)
+		if err != nil {
+			t.Fatalf("Parse %s: %v", c.raw, err)
+		}
+		result, err := readquery.Shape(set, query)
+		if err != nil {
+			t.Fatalf("Shape %s: %v", c.raw, err)
+		}
+		var ids []int64
+		for _, row := range result.Rows {
+			ids = append(ids, row.Values[0].(int64))
+		}
+		if len(ids) != len(c.ids) {
+			t.Fatalf("%s: ids = %v, want %v", c.raw, ids, c.ids)
+		}
+		for i, id := range c.ids {
+			if ids[i] != id {
+				t.Fatalf("%s: ids = %v, want %v", c.raw, ids, c.ids)
+			}
+		}
+	}
+}

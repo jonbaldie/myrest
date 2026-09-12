@@ -207,7 +207,7 @@ func compareValue(value any, filter Filter) (bool, error) {
 	case OpIs:
 		return matchIs(value, filter.Value)
 	case OpIsDistinct:
-		return compareIsDistinct(value, filter.Value), nil
+		return compareIsDistinct(value, filter), nil
 	default:
 		return false, fmt.Errorf("filter operator %q is not supported on a row set", filter.Op)
 	}
@@ -247,11 +247,16 @@ func compareIn(value any, candidates []string) bool {
 	return false
 }
 
-func compareIsDistinct(value any, raw string) bool {
-	if raw == "null" {
+func compareIsDistinct(value any, filter Filter) bool {
+	// An unquoted null keyword means SQL NULL; a quoted "null" is the
+	// literal string, so a NULL row is always distinct from it. Issue #160.
+	if !filter.ValueQuoted && filter.Value == "null" {
 		return value != nil
 	}
-	return !valuesEqual(value, raw)
+	if filter.ValueQuoted && value == nil {
+		return true
+	}
+	return !valuesEqual(value, filter.Value)
 }
 
 func matchIs(value any, want string) (bool, error) {

@@ -490,3 +490,54 @@ func TestParseIsOperatorKeepsLiteralValidation(t *testing.T) {
 		t.Fatalf("err = %v, want a non-gap ParseFailure", err)
 	}
 }
+
+// The parse keeps whether a scalar value token was double-quoted, so a
+// consumer can tell a quoted "null" from the unquoted null keyword. Issue #160.
+func TestParseRetainsWhetherTheScalarValueWasQuoted(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		raw    string
+		value  string
+		quoted bool
+	}{
+		{raw: `isdistinct."null"`, value: "null", quoted: true},
+		{raw: `not.isdistinct."null"`, value: "null", quoted: true},
+		{raw: `isdistinct.null`, value: "null", quoted: false},
+		{raw: `eq."null"`, value: "null", quoted: true},
+		{raw: `eq.null`, value: "null", quoted: false},
+		{raw: `(name.isdistinct."null",id.eq.1)`, value: "null", quoted: true},
+	}
+	for _, test := range cases {
+		t.Run(test.raw, func(t *testing.T) {
+			t.Parallel()
+
+			key := "name"
+			if strings.HasPrefix(test.raw, "(") {
+				key = "or"
+			}
+			query, err := readquery.Parse(url.Values{key: []string{test.raw}}, nil)
+			if err != nil {
+				t.Fatalf("Parse %s: %v", test.raw, err)
+			}
+			var filters []readquery.Filter
+			for _, group := range query.Groups {
+				filters = append(filters, group.Filters...)
+			}
+			filters = append(filters, query.Filters...)
+			var filter readquery.Filter
+			for _, candidate := range filters {
+				if candidate.Value == test.value {
+					filter = candidate
+					break
+				}
+			}
+			if filter.Value != test.value {
+				t.Fatalf("%s: no filter with value %q in %#v", test.raw, test.value, filters)
+			}
+			if filter.ValueQuoted != test.quoted {
+				t.Fatalf("%s: value quoted = %t, want %t", test.raw, filter.ValueQuoted, test.quoted)
+			}
+		})
+	}
+}
