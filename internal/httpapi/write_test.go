@@ -1313,8 +1313,8 @@ func TestPreferMaxAffectedNotAppliedToInsert(t *testing.T) {
 	}
 }
 
-// write-010: max-affected is not a PUT preference either.
-func TestPreferMaxAffectedNotAppliedToPut(t *testing.T) {
+// write-010: PUT enforces and echoes max-affected when the write succeeds within the limit.
+func TestPreferMaxAffectedAppliedToPut(t *testing.T) {
 	t.Parallel()
 
 	sink := &writer{upserted: true}
@@ -1327,8 +1327,28 @@ func TestPreferMaxAffectedNotAppliedToPut(t *testing.T) {
 	if response.StatusCode != http.StatusCreated {
 		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
 	}
-	if got := response.Header.Get("Preference-Applied"); got != "handling=strict" {
-		t.Fatalf("Preference-Applied = %q, want handling=strict", got)
+	if sink.options.MaxAffected == nil || *sink.options.MaxAffected != 2 {
+		t.Fatalf("options = %#v, want MaxAffected = 2", sink.options)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "handling=strict, max-affected=2" {
+		t.Fatalf("Preference-Applied = %q, want handling=strict, max-affected=2", got)
+	}
+}
+
+// write-010: PUT refuses with PGRST124 when max-affected limit is exceeded.
+func TestPreferMaxAffectedPutStrictExceeded(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{failure: writequery.MaxAffectedExceeded{Affected: 1, Max: 0}}
+	response, body := putJSON(
+		t,
+		serveWrite(t, &reader{}, sink).URL()+"/items?id=eq.1",
+		`{"id":1,"name":"alpha2"}`,
+		"handling=strict, max-affected=0",
+	)
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST124")
+	if sink.options.MaxAffected == nil || *sink.options.MaxAffected != 0 {
+		t.Fatalf("options = %#v, want MaxAffected = 0", sink.options)
 	}
 }
 

@@ -393,3 +393,42 @@ func TestKeyFilterValueFormatsJSONNumbers(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckMaxAffected(t *testing.T) {
+	t.Parallel()
+
+	zero := int64(0)
+	one := int64(1)
+	two := int64(2)
+
+	cases := []struct {
+		name     string
+		affected int64
+		max      *int64
+		wantErr  bool
+	}{
+		{"nil max allows any", 10, nil, false},
+		{"affected equals max", 1, &one, false},
+		{"affected less than max", 1, &two, false},
+		{"zero affected zero max", 0, &zero, false},
+		{"affected exceeds zero max", 1, &zero, true},
+		{"affected exceeds positive max", 2, &one, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := checkMaxAffected(tc.affected, tc.max)
+			if tc.wantErr {
+				var maxErr writequery.MaxAffectedExceeded
+				if !errors.As(err, &maxErr) {
+					t.Fatalf("checkMaxAffected(%d, %v) = %v, want MaxAffectedExceeded", tc.affected, tc.max, err)
+				}
+				if maxErr.Affected != tc.affected || maxErr.Max != *tc.max {
+					t.Fatalf("maxErr = %#v, want Affected=%d, Max=%d", maxErr, tc.affected, *tc.max)
+				}
+			} else if err != nil {
+				t.Fatalf("checkMaxAffected(%d, %v) unexpected error: %v", tc.affected, tc.max, err)
+			}
+		})
+	}
+}
