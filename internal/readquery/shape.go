@@ -250,10 +250,10 @@ func compareIn(value any, candidates []string) bool {
 func compareIsDistinct(value any, filter Filter) bool {
 	// An unquoted null keyword means SQL NULL; a quoted "null" is the
 	// literal string, so a NULL row is always distinct from it. Issue #160.
-	if !filter.ValueQuoted && filter.Value == "null" {
+	if !filter.ValueQuoted && strings.EqualFold(filter.Value, "null") {
 		return value != nil
 	}
-	if filter.ValueQuoted && value == nil {
+	if value == nil {
 		return true
 	}
 	return !valuesEqual(value, filter.Value)

@@ -94,6 +94,12 @@ func TestShapeIsDistinctQuotedNullIsALiteral(t *testing.T) {
 		{raw: `not.isdistinct."null"`, ids: []int64{1}},
 		{raw: `isdistinct.null`, ids: []int64{1, 2}},
 		{raw: `not.isdistinct.null`, ids: []int64{3}},
+		{raw: `isdistinct.NULL`, ids: []int64{1, 2}},
+		{raw: `not.isdistinct.NULL`, ids: []int64{3}},
+		{raw: `isdistinct.red`, ids: []int64{1, 3}},
+		{raw: `not.isdistinct.red`, ids: []int64{2}},
+		{raw: `isdistinct."red"`, ids: []int64{1, 3}},
+		{raw: `not.isdistinct."red"`, ids: []int64{2}},
 	}
 	for _, c := range cases {
 		query, err := readquery.Parse(url.Values{"name": {c.raw}}, nil)
