@@ -144,8 +144,16 @@ func applyInsertResolution(
 	if resolution == UpsertIgnoreDuplicates {
 		options.OnDuplicate = writequery.DuplicateIgnored
 	}
-	prefer.applied = append(prefer.applied, "resolution="+strings.ToLower(value))
+	prefer.applied = append(prefer.applied, appliedResolutionTokens(request)...)
 	return true
+}
+
+func appliedResolutionTokens(request *http.Request) []string {
+	value, _ := preferValue(request, "resolution")
+	if value == "" {
+		return nil
+	}
+	return []string{"resolution=" + strings.ToLower(value)}
 }
 
 // patchTable answers PATCH /<table> with the ordinary-read filter surface.
@@ -262,6 +270,7 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request) {
 		s.writeWriteFailure(writer, err)
 		return
 	}
+	prefer.applied = append(prefer.applied, appliedResolutionTokens(request)...)
 	setPreferenceApplied(writer, prefer)
 	if inserted {
 		writeMinimal(writer, http.StatusCreated)
