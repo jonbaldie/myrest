@@ -143,6 +143,11 @@ func (s *Service) invokeRoutine(
 	if !ok {
 		return
 	}
+	repr, ok := rpcRepresentation(writer, request, routine)
+	if !ok {
+		return
+	}
+
 	preferTx := prefer.Tx
 	result, err := s.caller.Call(
 		request.Context(),
@@ -163,7 +168,35 @@ func (s *Service) invokeRoutine(
 		writeUnsupportedFeature(writer, messageRowSetFeaturesRequired)
 		return
 	}
-	s.writeRPCResult(writer, request, role, asked, query, result, set, tabular)
+	s.writeRPCResult(writer, request, role, asked, query, result, set, tabular, repr)
+}
+
+// rpcRepresentation negotiates Accept before the routine runs, so an Accept
+// myrest cannot serve refuses without executing and committing the routine. A
+// function always answers with a scalar, so only the JSON array representation
+// can carry it; that refusal is known here too.
+func rpcRepresentation(
+	writer http.ResponseWriter,
+	request *http.Request,
+	routine schemacache.RoutineFact,
+) (representation, bool) {
+	repr, ok := requestRepresentation(writer, request)
+	if !ok {
+		return representation{}, false
+	}
+	if repr.kind != representationJSONArray && scalarRoutine(routine) {
+		writeUnsupportedMedia(writer, &unsupportedMediaError{
+			offered: acceptMediaTypes(request.Header.Values("Accept")),
+		})
+		return representation{}, false
+	}
+	return repr, true
+}
+
+// scalarRoutine reports whether the routine always answers with a scalar value.
+// A MySQL function returns one value; a procedure may answer with a row set.
+func scalarRoutine(routine schemacache.RoutineFact) bool {
+	return strings.EqualFold(routine.Kind, "FUNCTION")
 }
 
 func (s *Service) writeRPCResult(
@@ -175,11 +208,8 @@ func (s *Service) writeRPCResult(
 	result any,
 	set []rows.Row,
 	tabular bool,
+	repr representation,
 ) {
-	repr, ok := requestRepresentation(writer, request)
-	if !ok {
-		return
-	}
 	if !tabular {
 		writeScalarRPC(writer, request, repr, result)
 		return

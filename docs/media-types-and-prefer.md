@@ -21,13 +21,13 @@ resolution / all-rows (`write-007`–`write-010`). Prefer `tx=` lives in
 | `application/json` | **full match** | Ordinary table/view and row-set **RPC** bodies are a JSON array. | `repr-001`, `repr-004` |
 | `application/vnd.pgrst.array+json` (and bare `application/vnd.pgrst.array`) | **full match** | Same JSON array body; `Content-Type` stays the array media type. | `repr-004` |
 | `*/*` or no `Accept` | **full match** | Resolves to `application/json` for resource row data. | `repr-004` |
-| `application/vnd.pgrst.object+json` (and bare `application/vnd.pgrst.object`) | **full match** | One JSON object when the result has exactly one row; otherwise `PGRST116` and status 406. | `repr-005` |
+| `application/vnd.pgrst.object+json` (and bare `application/vnd.pgrst.object`) | **full match** | One JSON object when the result has exactly one row; otherwise `PGRST116` and status 406. On a write the 406 rolls the write back; see [Transactions](transactions.md). | `repr-005` |
 | `text/csv` | **full match** | CSV with a header row and UTF-8 charset for table/view and row-set bodies. An empty result still emits the header when `select` names columns. | `repr-006` |
 | `application/openapi+json` | **full match** | `GET /` discovery only; see [Discovery](discovery.md). | discovery scenarios |
 | `application/geo+json` | **not supported** | Refuses with `PGRST107` (no PostGIS / geo handler). | `repr-007` |
 | `application/vnd.pgrst.plan` and `application/vnd.pgrst.plan+json` | **not supported** | Refuses with `PGRST107` (plan-media gate is on the config drop list). | `repr-007` |
 | Custom media type handlers (Postgres domain / aggregate handlers) | **not supported** | Refuses with `PGRST107`. | `repr-007` |
-| Any other `Accept` value | **not supported** | Refuses with `PGRST107` and names the offered types. | `repr-007` |
+| Any other `Accept` value | **not supported** | Refuses with `PGRST107` and names the offered types. Writes and **RPC** negotiate `Accept` before they touch the database, so the refusal commits nothing. | `repr-007` |
 
 A claimed media type that myrest does not serve for that path (for example
 `text/csv` on a scalar **RPC** body) also refuses with `PGRST107`.

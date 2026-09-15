@@ -21,6 +21,22 @@ way PostgREST wraps every resource request: operators must not rely on
 A failing write or **RPC** rolls back that unit. A successful unit ends by
 `db-tx-end` and, when enabled, `Prefer: tx=`.
 
+## Refusals never commit
+
+A refusal tells the client that myrest did not do the work, so the database
+must agree. myrest negotiates `Accept` for the response body **before** it
+opens the write or **RPC** unit: an `Accept` it cannot serve refuses with
+`PGRST107` and status 415 while the database stays untouched.
+
+A singular `Accept` (`application/vnd.pgrst.object+json`) on a write with
+`Prefer: return=representation` can only refuse once the write knows how many
+rows it affected. myrest makes that count part of the write unit: a
+representation that is not exactly one row refuses inside the unit, so the
+`PGRST116` answer with status 406 rolls the write back.
+
+An **RPC** row set is shaped after the routine has run, outside the unit, so a
+`PGRST116` on a row-set **RPC** result does not roll the routine back.
+
 ## `db-tx-end` values
 
 The knob accepts the same value set as the **parity target**. Each value has

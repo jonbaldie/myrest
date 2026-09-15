@@ -25,7 +25,7 @@ func (p *Pool) Insert(
 	bodyRows []map[string]any,
 	options writequery.Options,
 ) (writequery.Result, error) {
-	return p.withWriteTx(ctx, role, options.PreferTx, func(ctx context.Context, tx *sql.Tx) (writequery.Result, error) {
+	return p.withWriteTx(ctx, role, options, func(ctx context.Context, tx *sql.Tx) (writequery.Result, error) {
 		return insertRows(ctx, tx, table, bodyRows, options)
 	})
 }
@@ -39,7 +39,7 @@ func (p *Pool) Update(
 	query readquery.Query,
 	options writequery.Options,
 ) (writequery.Result, error) {
-	return p.withWriteTx(ctx, role, options.PreferTx, func(ctx context.Context, tx *sql.Tx) (writequery.Result, error) {
+	return p.withWriteTx(ctx, role, options, func(ctx context.Context, tx *sql.Tx) (writequery.Result, error) {
 		return updateRows(ctx, tx, table, patch, query, options)
 	})
 }
@@ -52,7 +52,7 @@ func (p *Pool) Delete(
 	query readquery.Query,
 	options writequery.Options,
 ) (writequery.Result, error) {
-	return p.withWriteTx(ctx, role, options.PreferTx, func(ctx context.Context, tx *sql.Tx) (writequery.Result, error) {
+	return p.withWriteTx(ctx, role, options, func(ctx context.Context, tx *sql.Tx) (writequery.Result, error) {
 		return deleteRows(ctx, tx, table, query, options)
 	})
 }
@@ -60,7 +60,7 @@ func (p *Pool) Delete(
 func (p *Pool) withWriteTx(
 	ctx context.Context,
 	role schemacache.Role,
-	preferTx string,
+	options writequery.Options,
 	work func(context.Context, *sql.Tx) (writequery.Result, error),
 ) (writequery.Result, error) {
 	statement, err := roleSwitchStatement(role)
@@ -68,12 +68,29 @@ func (p *Pool) withWriteTx(
 		return writequery.Result{}, err
 	}
 	var result writequery.Result
-	err = p.withRequestTx(ctx, statement, preferTx, func(ctx context.Context, tx *sql.Tx) error {
+	err = p.withRequestTx(ctx, statement, options.PreferTx, func(ctx context.Context, tx *sql.Tx) error {
 		var workErr error
 		result, workErr = work(ctx, tx)
-		return workErr
+		if workErr != nil {
+			return workErr
+		}
+		return refuseNonSingular(options, result)
 	})
 	return result, err
+}
+
+// refuseNonSingular refuses inside the request transaction when a singular
+// Accept met a representation that is not exactly one row. The refusal leaves
+// the transaction uncommitted, so the write rolls back and the client that
+// reads PGRST116 keeps an unchanged database.
+func refuseNonSingular(options writequery.Options, result writequery.Result) error {
+	if !options.SingularResult || !options.ReturnRepresentation {
+		return nil
+	}
+	if len(result.Rows) == 1 {
+		return nil
+	}
+	return writequery.SingularResultMismatch{Rows: len(result.Rows)}
 }
 
 // Upsert writes one row by primary key as the database role.
