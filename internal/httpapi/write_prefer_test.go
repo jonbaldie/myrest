@@ -127,6 +127,38 @@ func TestParseWritePreferAllRowsFlagOnly(t *testing.T) {
 	}
 }
 
+func TestParseWritePreferMissingDefaultOnlyAppliesToInsert(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		kind writeKind
+		want string
+	}{
+		{name: "insert", kind: writeKindInsert, want: "missing=default"},
+		{name: "patch", kind: writeKindPatch},
+		{name: "delete", kind: writeKindDelete},
+		{name: "put", kind: writeKindPut},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			prefer, err := parseWritePrefer(
+				[]string{"missing=default"},
+				config.TxEndCommit,
+				tc.kind,
+			)
+			if err != nil {
+				t.Fatalf("parseWritePrefer: %v", err)
+			}
+			if got := strings.Join(prefer.applied, ", "); got != tc.want {
+				t.Fatalf("applied = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSetTxPreferenceApplied(t *testing.T) {
 	t.Parallel()
 

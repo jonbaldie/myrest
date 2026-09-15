@@ -212,7 +212,8 @@ func preferenceApplied(prefer writePrefer, tokens preferTokens, txEnd config.TxE
 	if tokens.returnSet && prefer.Return == tokens.returnValue {
 		applied = append(applied, "return="+prefer.Return)
 	}
-	if prefer.MissingDefault {
+	// missing=default changes omitted columns only for inserts.
+	if shouldApplyMissingDefault(prefer, kind) {
 		applied = append(applied, "missing=default")
 	}
 	// max-affected is an update, delete, and upsert preference. Inserts
@@ -227,6 +228,13 @@ func preferenceApplied(prefer writePrefer, tokens preferTokens, txEnd config.TxE
 		applied = append(applied, "tx="+prefer.Tx)
 	}
 	return applied
+}
+
+func shouldApplyMissingDefault(prefer writePrefer, kind writeKind) bool {
+	if !prefer.MissingDefault {
+		return false
+	}
+	return kind == writeKindInsert
 }
 
 type invalidPreferError struct {
