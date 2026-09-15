@@ -100,7 +100,7 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 
-	bodyRows, ok := readInsertRows(writer, request)
+	bodyRows, repr, ok := readInsertRowsAndRepr(writer, request, prefer)
 	if !ok {
 		return
 	}
@@ -113,8 +113,40 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
 		Prefer: prefer, Method: http.MethodPost, TableName: asked.Name,
-		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan,
+		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan, Repr: repr,
 	})
+}
+
+// writeRepresentationPrecheck negotiates Accept for a representation response
+// before the write unit runs, so a refused Accept header commits no data. It
+// answers only when the response would claim a representation.
+func writeRepresentationPrecheck(
+	writer http.ResponseWriter,
+	request *http.Request,
+	prefer writePrefer,
+) (representation, bool) {
+	if prefer.Return != returnRepresentation {
+		return representation{}, true
+	}
+	return requestRepresentation(writer, request)
+}
+
+// readInsertRowsAndRepr reads the JSON insert rows and, when the response
+// claims a representation, the negotiated Accept media type.
+func readInsertRowsAndRepr(
+	writer http.ResponseWriter,
+	request *http.Request,
+	prefer writePrefer,
+) ([]map[string]any, representation, bool) {
+	rows, ok := readInsertRows(writer, request)
+	if !ok {
+		return nil, representation{}, false
+	}
+	repr, ok := writeRepresentationPrecheck(writer, request, prefer)
+	if !ok {
+		return nil, representation{}, false
+	}
+	return rows, repr, true
 }
 
 // applyInsertResolution sets the POST duplicate-key mode from Prefer
@@ -183,6 +215,10 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 	if !ok {
 		return
 	}
+	repr, ok := writeRepresentationPrecheck(writer, request, prefer)
+	if !ok {
+		return
+	}
 	result, err := s.writer.Update(request.Context(), role, table, patch, query, options)
 	if err != nil {
 		s.log.Printf("myrest: update %s.%s as %s: %v", asked.Database, asked.Name, role, err)
@@ -191,7 +227,7 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
 		Prefer: prefer, Method: http.MethodPatch, TableName: asked.Name,
-		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan,
+		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan, Repr: repr,
 	})
 }
 
@@ -218,6 +254,10 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 
+	repr, ok := writeRepresentationPrecheck(writer, request, prefer)
+	if !ok {
+		return
+	}
 	result, err := s.writer.Delete(request.Context(), role, table, query, options)
 	if err != nil {
 		s.log.Printf("myrest: delete %s.%s as %s: %v", asked.Database, asked.Name, role, err)
@@ -226,7 +266,7 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
 		Prefer: prefer, Method: http.MethodDelete, TableName: asked.Name,
-		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan,
+		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan, Repr: repr,
 	})
 }
 
@@ -717,6 +757,9 @@ type writeOutcome struct {
 	Result     writequery.Result
 	Query      readquery.Query
 	Plan       []plannedEmbed
+	// Repr is the Accept negotiation the write checked before the write unit
+	// ran; the response reuses it instead of negotiating again.
+	Repr representation
 }
 
 // writeBound says whether PATCH/DELETE must have a filter or Prefer: all-rows.
@@ -823,10 +866,6 @@ func (s *Service) writeRepresentationResponse(
 	table schemacache.Table,
 	outcome writeOutcome,
 ) {
-	repr, ok := requestRepresentation(writer, request)
-	if !ok {
-		return
-	}
 	status := http.StatusOK
 	if outcome.Method == http.MethodPost {
 		status = http.StatusCreated
@@ -841,7 +880,7 @@ func (s *Service) writeRepresentationResponse(
 		s.writeReadFailure(writer, table.ID, role, err)
 		return
 	}
-	writeRows(writer, status, repr, shaped, csvHeaderNames(outcome.Query, shaped))
+	writeRows(writer, status, outcome.Repr, shaped, csvHeaderNames(outcome.Query, shaped))
 }
 
 func writeEmptyWriteResponse(writer http.ResponseWriter, outcome writeOutcome, headersOnly bool) {

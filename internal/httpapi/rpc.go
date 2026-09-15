@@ -144,6 +144,12 @@ func (s *Service) invokeRoutine(
 		return
 	}
 	preferTx := prefer.Tx
+	// Negotiate Accept before the routine runs, so a refused Accept header
+	// commits no routine side effects.
+	repr, ok := requestRepresentation(writer, request)
+	if !ok {
+		return
+	}
 	result, err := s.caller.Call(
 		request.Context(),
 		role,
@@ -163,7 +169,7 @@ func (s *Service) invokeRoutine(
 		writeUnsupportedFeature(writer, messageRowSetFeaturesRequired)
 		return
 	}
-	s.writeRPCResult(writer, request, role, asked, query, result, set, tabular)
+	s.writeRPCResult(writer, request, role, asked, query, result, set, tabular, repr)
 }
 
 func (s *Service) writeRPCResult(
@@ -175,11 +181,8 @@ func (s *Service) writeRPCResult(
 	result any,
 	set []rows.Row,
 	tabular bool,
+	repr representation,
 ) {
-	repr, ok := requestRepresentation(writer, request)
-	if !ok {
-		return
-	}
 	if !tabular {
 		writeScalarRPC(writer, request, repr, result)
 		return

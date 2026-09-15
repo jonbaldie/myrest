@@ -188,6 +188,120 @@ func TestRPCPreferTxRollbackUnderCommitAllowOverride(t *testing.T) {
 	}
 }
 
+// issue #168: a write or RPC with an unfulfillable Accept header refuses with
+// 415 and commits no data: the representation check happens before the write
+// unit, not after it.
+func TestRefusedAcceptHeaderCommitsNoWrite(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	t.Run("DELETE", func(t *testing.T) {
+		response, body := apitest.PostJSON(t, service.URL()+"/items", `{"name":"accept-delete-victim"}`)
+		if response.StatusCode != http.StatusCreated {
+			t.Fatalf("setup POST status = %d; body = %s", response.StatusCode, body)
+		}
+		t.Cleanup(func() {
+			headers := http.Header{}
+			headers.Set("Prefer", "all-rows")
+			_, _ = apitest.Do(t, http.MethodDelete, service.URL()+"/items?name=eq.accept-delete-victim", headers)
+		})
+
+		headers := http.Header{}
+		headers.Set("Prefer", "return=representation")
+		headers.Set("Accept", "application/geo+json")
+		response, body = apitest.Do(
+			t, http.MethodDelete, service.URL()+"/items?name=eq.accept-delete-victim", headers,
+		)
+		apitest.AssertEnvelope(t, response, body, http.StatusUnsupportedMediaType, "PGRST107")
+
+		_, body = get(t, service, "/items?select=name&name=eq.accept-delete-victim")
+		if !strings.Contains(string(body), `"name":"accept-delete-victim"`) {
+			t.Fatalf("the 415 refusal deleted the row: %s", body)
+		}
+	})
+
+	t.Run("PATCH", func(t *testing.T) {
+		response, body := apitest.PostJSON(t, service.URL()+"/items", `{"name":"accept-patch-victim"}`)
+		if response.StatusCode != http.StatusCreated {
+			t.Fatalf("setup POST status = %d; body = %s", response.StatusCode, body)
+		}
+		t.Cleanup(func() {
+			headers := http.Header{}
+			headers.Set("Prefer", "all-rows")
+			_, _ = apitest.Do(t, http.MethodDelete, service.URL()+"/items?name=eq.accept-patch-victim", headers)
+		})
+
+		request, err := http.NewRequest(
+			http.MethodPatch,
+			service.URL()+"/items?name=eq.accept-patch-victim",
+			strings.NewReader(`{"name":"accept-patch-mutated"}`),
+		)
+		if err != nil {
+			t.Fatalf("new PATCH: %v", err)
+		}
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Prefer", "return=representation")
+		request.Header.Set("Accept", "text/plain")
+		response, err = http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatalf("PATCH: %v", err)
+		}
+		t.Cleanup(func() { _ = response.Body.Close() })
+		patched, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		apitest.AssertEnvelope(t, response, patched, http.StatusUnsupportedMediaType, "PGRST107")
+
+		_, body = get(t, service, "/items?select=name&name=eq.accept-patch-victim")
+		if !strings.Contains(string(body), `"name":"accept-patch-victim"`) {
+			t.Fatalf("the 415 refusal changed the row: %s", body)
+		}
+	})
+
+	t.Run("POST", func(t *testing.T) {
+		request, err := http.NewRequest(
+			http.MethodPost,
+			service.URL()+"/items",
+			strings.NewReader(`{"name":"accept-post-ghost"}`),
+		)
+		if err != nil {
+			t.Fatalf("new POST: %v", err)
+		}
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Prefer", "return=representation")
+		request.Header.Set("Accept", "application/geo+json")
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatalf("POST: %v", err)
+		}
+		t.Cleanup(func() { _ = response.Body.Close() })
+		posted, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		apitest.AssertEnvelope(t, response, posted, http.StatusUnsupportedMediaType, "PGRST107")
+
+		_, body := get(t, service, "/items?select=name&name=eq.accept-post-ghost")
+		if string(body) != "[]\n" {
+			t.Fatalf("the 415 refusal inserted the row: %s", body)
+		}
+	})
+
+	t.Run("RPC", func(t *testing.T) {
+		clearRPCWriteMarker(t, service)
+
+		headers := http.Header{}
+		headers.Set("Accept", "text/plain")
+		response, body := apitest.Do(t, http.MethodPost, service.URL()+"/rpc/write_marker", headers)
+		apitest.AssertEnvelope(t, response, body, http.StatusUnsupportedMediaType, "PGRST107")
+
+		_, body = get(t, service, "/addresses?select=label&label=eq.rpc-write")
+		if string(body) != "[]\n" {
+			t.Fatalf("the 415 refusal committed the routine write: %s", body)
+		}
+	})
+}
+
 func clearRPCWriteMarker(t *testing.T, service *httpapi.Service) {
 	t.Helper()
 
