@@ -1541,6 +1541,45 @@ func TestPutUpsertByPrimaryKeyIgnoreDuplicates(t *testing.T) {
 	}
 }
 
+// A PUT echoes an explicit resolution in Preference-Applied. See issue #170.
+func TestPutPreferResolutionIsApplied(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		prefer  string
+		applied string
+	}{
+		{name: "without resolution", prefer: "return=minimal", applied: "return=minimal"},
+		{name: "merge", prefer: "resolution=merge-duplicates", applied: "resolution=merge-duplicates"},
+		{name: "ignore", prefer: "resolution=Ignore-Duplicates", applied: "resolution=ignore-duplicates"},
+		{
+			name:    "merge with return",
+			prefer:  "return=minimal, resolution=merge-duplicates",
+			applied: "return=minimal, resolution=merge-duplicates",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			sink := &writer{upserted: true}
+			response, body := putJSON(
+				t,
+				serveWrite(t, &reader{}, sink).URL()+"/items?id=eq.1",
+				`{"id":1,"name":"alpha2"}`,
+				tc.prefer,
+			)
+			if response.StatusCode != http.StatusCreated {
+				t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
+			}
+			if got := response.Header.Get("Preference-Applied"); got != tc.applied {
+				t.Fatalf("Preference-Applied = %q, want %q", got, tc.applied)
+			}
+		})
+	}
+}
+
 // A PUT that does not target the primary key refuses stably.
 func TestPutWithoutPrimaryKeyTargetRefuses(t *testing.T) {
 	t.Parallel()

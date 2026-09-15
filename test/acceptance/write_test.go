@@ -185,6 +185,9 @@ func TestPutUpsertByPrimaryKeyOverMySQL(t *testing.T) {
 	if response.StatusCode != http.StatusCreated {
 		t.Fatalf("PUT insert status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
 	}
+	if got := response.Header.Get("Preference-Applied"); got != "resolution=merge-duplicates" {
+		t.Fatalf("PUT insert Preference-Applied = %q", got)
+	}
 
 	// Update the same primary key with merge-duplicates.
 	request, err = http.NewRequest(
@@ -208,6 +211,9 @@ func TestPutUpsertByPrimaryKeyOverMySQL(t *testing.T) {
 	}
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("PUT merge status = %d, want %d; body = %s", response.StatusCode, http.StatusNoContent, body)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "resolution=merge-duplicates" {
+		t.Fatalf("PUT merge Preference-Applied = %q", got)
 	}
 
 	_, body = get(t, service, "/items?select=name&id=eq.100")
@@ -237,6 +243,9 @@ func TestPutUpsertByPrimaryKeyOverMySQL(t *testing.T) {
 	}
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("PUT ignore status = %d, want %d; body = %s", response.StatusCode, http.StatusNoContent, body)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "resolution=ignore-duplicates" {
+		t.Fatalf("PUT ignore Preference-Applied = %q", got)
 	}
 	_, body = get(t, service, "/items?select=name&id=eq.100")
 	if string(body) != `[{"name":"upsert-merged"}]`+"\n" {
