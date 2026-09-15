@@ -18,6 +18,7 @@ import (
 type caller struct {
 	body      any
 	failure   error
+	called    bool
 	stoppable bool
 	role      schemacache.Role
 	routine   schemacache.RoutineFact
@@ -33,6 +34,7 @@ func (c *caller) Call(
 	options httpapi.CallOptions,
 ) (any, error) {
 	c.stoppable = ctx != nil && ctx.Done() != nil
+	c.called = true
 	c.role, c.routine, c.args, c.options = role, routine, args, options
 	if c.failure != nil {
 		return nil, c.failure

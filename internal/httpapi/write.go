@@ -96,7 +96,8 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 
-	if !applyInsertResolution(writer, request, &prefer, &options) {
+	repr, ok := s.prepareInsert(writer, request, &prefer, &options)
+	if !ok {
 		return
 	}
 
@@ -113,8 +114,22 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
 		Prefer: prefer, Method: http.MethodPost, TableName: asked.Name,
-		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan,
+		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan, Repr: repr,
 	})
+}
+
+// prepareInsert settles the POST duplicate-key mode and negotiates Accept, both
+// before any database work starts.
+func (s *Service) prepareInsert(
+	writer http.ResponseWriter,
+	request *http.Request,
+	prefer *writePrefer,
+	options *writequery.Options,
+) (representation, bool) {
+	if !applyInsertResolution(writer, request, prefer, options) {
+		return representation{}, false
+	}
+	return s.writeRepresentation(writer, request, *prefer, options)
 }
 
 // applyInsertResolution sets the POST duplicate-key mode from Prefer
@@ -179,6 +194,11 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 		return
 	}
 
+	repr, ok := s.writeRepresentation(writer, request, prefer, &options)
+	if !ok {
+		return
+	}
+
 	patch, ok := readPatchObject(writer, request)
 	if !ok {
 		return
@@ -191,7 +211,7 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
 		Prefer: prefer, Method: http.MethodPatch, TableName: asked.Name,
-		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan,
+		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan, Repr: repr,
 	})
 }
 
@@ -218,6 +238,11 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 
+	repr, ok := s.writeRepresentation(writer, request, prefer, &options)
+	if !ok {
+		return
+	}
+
 	result, err := s.writer.Delete(request.Context(), role, table, query, options)
 	if err != nil {
 		s.log.Printf("myrest: delete %s.%s as %s: %v", asked.Database, asked.Name, role, err)
@@ -226,7 +251,7 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
 		Prefer: prefer, Method: http.MethodDelete, TableName: asked.Name,
-		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan,
+		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan, Repr: repr,
 	})
 }
 
@@ -356,6 +381,27 @@ func (s *Service) buildWriteOptions(
 		options.ReturnKeys = true
 	}
 	return options, true
+}
+
+// writeRepresentation negotiates Accept before any database work starts, so an
+// Accept myrest cannot serve refuses without leaving a committed mutation
+// behind. A singular Accept also tells the database layer to refuse, and so
+// roll back, a write whose representation is not exactly one row.
+func (s *Service) writeRepresentation(
+	writer http.ResponseWriter,
+	request *http.Request,
+	prefer writePrefer,
+	options *writequery.Options,
+) (representation, bool) {
+	if prefer.Return != returnRepresentation {
+		return representation{}, true
+	}
+	repr, ok := requestRepresentation(writer, request)
+	if !ok {
+		return representation{}, false
+	}
+	options.SingularResult = repr.kind == representationJSONObject
+	return repr, true
 }
 
 func (s *Service) canReturnRepresentation(kind writeKind, primaryKey []string) bool {
@@ -717,6 +763,8 @@ type writeOutcome struct {
 	Result     writequery.Result
 	Query      readquery.Query
 	Plan       []plannedEmbed
+	// Repr is the Accept negotiation made before the write started.
+	Repr representation
 }
 
 // writeBound says whether PATCH/DELETE must have a filter or Prefer: all-rows.
@@ -823,10 +871,6 @@ func (s *Service) writeRepresentationResponse(
 	table schemacache.Table,
 	outcome writeOutcome,
 ) {
-	repr, ok := requestRepresentation(writer, request)
-	if !ok {
-		return
-	}
 	status := http.StatusOK
 	if outcome.Method == http.MethodPost {
 		status = http.StatusCreated
@@ -841,7 +885,7 @@ func (s *Service) writeRepresentationResponse(
 		s.writeReadFailure(writer, table.ID, role, err)
 		return
 	}
-	writeRows(writer, status, repr, shaped, csvHeaderNames(outcome.Query, shaped))
+	writeRows(writer, status, outcome.Repr, shaped, csvHeaderNames(outcome.Query, shaped))
 }
 
 func writeEmptyWriteResponse(writer http.ResponseWriter, outcome writeOutcome, headersOnly bool) {
@@ -890,6 +934,11 @@ func (s *Service) writeWriteFailure(writer http.ResponseWriter, err error) {
 	var maxErr writequery.MaxAffectedExceeded
 	if errors.As(err, &maxErr) {
 		writeMaxAffected(writer, maxAffectedError{Affected: maxErr.Affected, Max: maxErr.Max})
+		return
+	}
+	var singular writequery.SingularResultMismatch
+	if errors.As(err, &singular) {
+		writeSingularObjectFailure(writer, singular.Rows)
 		return
 	}
 	var missing readquery.ColumnNotFound

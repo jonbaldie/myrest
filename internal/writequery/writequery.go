@@ -17,6 +17,9 @@ type Options struct {
 	MissingDefault bool
 	// MaxAffected, when set, refuses the write when more rows would change.
 	MaxAffected *int64
+	// SingularResult says the client asked for a single-object representation.
+	// The write refuses, and so rolls back, when it did not affect one row.
+	SingularResult bool
 	// PreferTx is Prefer: tx=commit|rollback when the client sent it.
 	PreferTx string
 	// OnDuplicate is what an insert does on a duplicate key (Prefer resolution).
@@ -42,6 +45,16 @@ type Result struct {
 	// Keys holds one primary-key map per inserted or updated row when the
 	// options asked for keys.
 	Keys []map[string]any
+}
+
+// SingularResultMismatch is a singular Accept (application/vnd.pgrst.object+json)
+// on a write whose representation is not exactly one row. The write rolls back.
+type SingularResultMismatch struct {
+	Rows int
+}
+
+func (e SingularResultMismatch) Error() string {
+	return "Cannot coerce the result to a single JSON object"
 }
 
 // MaxAffectedExceeded is Prefer max-affected under handling=strict.
