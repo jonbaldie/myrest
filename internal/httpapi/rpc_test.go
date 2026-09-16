@@ -37,6 +37,13 @@ func (c *caller) Call(
 	if c.failure != nil {
 		return nil, c.failure
 	}
+	// The unit runs the in-unit validation before it reports success, so a
+	// refused representation rolls back.
+	if options.Validate != nil {
+		if err := options.Validate(c.body); err != nil {
+			return nil, err
+		}
+	}
 	return c.body, nil
 }
 

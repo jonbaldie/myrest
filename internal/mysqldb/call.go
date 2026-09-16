@@ -31,7 +31,15 @@ func (p *Pool) Call(
 	err = p.withRequestTx(ctx, statement, options.PreferTx, func(ctx context.Context, tx *sql.Tx) error {
 		var callErr error
 		result, callErr = callRoutine(ctx, tx, routine, args)
-		return callErr
+		if callErr != nil {
+			return callErr
+		}
+		// Refuse before commit, so a refused representation rolls the
+		// routine side effects back (issue #175).
+		if options.Validate != nil {
+			return options.Validate(result)
+		}
+		return nil
 	})
 	return result, err
 }

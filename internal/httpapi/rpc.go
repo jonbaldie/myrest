@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -26,6 +27,10 @@ const messageRowSetFeaturesRequired = "Filter, order, pagination, and embed need
 type CallOptions struct {
 	// PreferTx is Prefer: tx=commit|rollback when the client sent it.
 	PreferTx string
+	// Validate runs inside the routine unit before commit, so a refused
+	// representation rolls the unit back (issue #175). A nil Validate
+	// validates nothing.
+	Validate func(any) error
 }
 
 // Caller runs a routine as one database role with named JSON arguments.
@@ -155,10 +160,15 @@ func (s *Service) invokeRoutine(
 		role,
 		routine,
 		args,
-		CallOptions{PreferTx: preferTx},
+		CallOptions{PreferTx: preferTx, Validate: validateRPCRepresentation(repr)},
 	)
 	if err != nil {
 		s.log.Printf("myrest: rpc %s.%s as %s: %v", asked.Database, asked.Name, role, err)
+		var refusal singularObjectRefusal
+		if errors.As(err, &refusal) {
+			writeSingularObjectFailure(writer, refusal.RowCount)
+			return
+		}
 		writeDatabaseFailure(writer, err)
 		return
 	}
@@ -378,6 +388,22 @@ func rowsHoldOriginKeys(set []rows.Row, plan []plannedEmbed) bool {
 		}
 	}
 	return true
+}
+
+// validateRPCRepresentation refuses a tabular routine result that does not
+// hold the one row the singular Accept claims. The unit runs it before
+// commit, so a refusal rolls the routine side effects back (issue #175).
+func validateRPCRepresentation(repr representation) func(any) error {
+	if repr.kind != representationJSONObject {
+		return nil
+	}
+	return func(result any) error {
+		set, tabular := rowSetResult(result)
+		if tabular && len(set) != 1 {
+			return singularObjectRefusal{RowCount: len(set)}
+		}
+		return nil
+	}
 }
 
 // rowSetResult reports whether the caller answer is a tabular row set.

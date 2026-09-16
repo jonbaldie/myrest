@@ -156,7 +156,13 @@ func finishInsert(
 		return result, nil
 	}
 	result.Rows, err = selectByKeys(ctx, tx, table, options.PrimaryKey, keys)
-	return result, err
+	if err != nil {
+		return writequery.Result{}, err
+	}
+	if err := validateUnit(options, result); err != nil {
+		return writequery.Result{}, err
+	}
+	return result, nil
 }
 
 func updateRows(
@@ -188,6 +194,9 @@ func updateRows(
 		if err != nil {
 			return writequery.Result{}, err
 		}
+		if err := validateUnit(options, result); err != nil {
+			return writequery.Result{}, err
+		}
 	}
 	return result, nil
 }
@@ -214,6 +223,11 @@ func deleteRows(
 		}
 		readRows, err = selectMatching(ctx, tx, table, readQuery)
 		if err != nil {
+			return writequery.Result{}, err
+		}
+		// Refuse the representation before the delete runs, so a singular
+		// refusal deletes nothing (issue #175).
+		if err := validateUnit(options, writequery.Result{Rows: readRows}); err != nil {
 			return writequery.Result{}, err
 		}
 	}
@@ -250,6 +264,15 @@ func checkMaxAffected(affected int64, max *int64) error {
 		return nil
 	}
 	return writequery.MaxAffectedExceeded{Affected: affected, Max: *max}
+}
+
+// validateUnit runs the caller's in-unit validation so a refused
+// representation rolls the unit back before commit (issue #175).
+func validateUnit(options writequery.Options, result writequery.Result) error {
+	if options.Validate == nil {
+		return nil
+	}
+	return options.Validate(result)
 }
 
 // writeValue binds one write body value for one column. A nested JSON object
