@@ -171,6 +171,28 @@ BEGIN
   SELECT id, name FROM items ORDER BY id;
 END;
 
+-- Row-set RPC results for the singular-object refusal of issue #175.
+CREATE PROCEDURE list_one_item()
+  READS SQL DATA
+BEGIN
+  SELECT id, name FROM items WHERE id = 1;
+END;
+
+CREATE PROCEDURE list_missing_items()
+  READS SQL DATA
+BEGIN
+  SELECT id, name FROM items WHERE id < 0;
+END;
+
+-- A tabular RPC result after a side effect, so the 406 refusal of the
+-- singular representation must roll the side effect back (issue #175).
+CREATE PROCEDURE mark_and_list()
+  MODIFIES SQL DATA
+BEGIN
+  INSERT INTO addresses (label) VALUES ('rpc-rollback');
+  SELECT id, name FROM items ORDER BY id;
+END;
+
 -- db-pre-request fixtures: a marker log and zero-argument procedures.
 CREATE TABLE pre_request_log (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -277,6 +299,9 @@ GRANT EXECUTE ON PROCEDURE myrest_fixture.ping TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.echo_name TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.bump_label TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.list_items TO 'myrest_anon';
+GRANT EXECUTE ON PROCEDURE myrest_fixture.list_one_item TO 'myrest_anon';
+GRANT EXECUTE ON PROCEDURE myrest_fixture.list_missing_items TO 'myrest_anon';
+GRANT EXECUTE ON PROCEDURE myrest_fixture.mark_and_list TO 'myrest_anon';
 GRANT INSERT ON myrest_fixture.addresses TO 'myrest_anon';
 GRANT SELECT, INSERT, DELETE ON myrest_fixture.pre_request_log TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.before_request TO 'myrest_anon';

@@ -60,6 +60,9 @@ func (w *writer) Insert(
 	if w.inserted != 0 {
 		result.Affected = int64(w.inserted)
 	}
+	if err := w.validate(options, result); err != nil {
+		return writequery.Result{}, err
+	}
 	return result, nil
 }
 
@@ -79,7 +82,11 @@ func (w *writer) Update(
 	if w.failure != nil {
 		return writequery.Result{}, w.failure
 	}
-	return writequery.Result{Affected: w.updated, Rows: w.resultRows, Keys: w.resultKeys}, nil
+	result := writequery.Result{Affected: w.updated, Rows: w.resultRows, Keys: w.resultKeys}
+	if err := w.validate(options, result); err != nil {
+		return writequery.Result{}, err
+	}
+	return result, nil
 }
 
 func (w *writer) Delete(
@@ -97,7 +104,20 @@ func (w *writer) Delete(
 	if w.failure != nil {
 		return writequery.Result{}, w.failure
 	}
-	return writequery.Result{Affected: w.deleted, Rows: w.resultRows, Keys: w.resultKeys}, nil
+	result := writequery.Result{Affected: w.deleted, Rows: w.resultRows, Keys: w.resultKeys}
+	if err := w.validate(options, result); err != nil {
+		return writequery.Result{}, err
+	}
+	return result, nil
+}
+
+// validate models the database unit: it runs the in-unit validation before
+// the unit reports success, so a refused representation rolls back.
+func (w *writer) validate(options writequery.Options, result writequery.Result) error {
+	if options.Validate == nil {
+		return nil
+	}
+	return options.Validate(result)
 }
 
 func (w *writer) Upsert(

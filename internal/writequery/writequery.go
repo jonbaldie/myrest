@@ -21,6 +21,10 @@ type Options struct {
 	PreferTx string
 	// OnDuplicate is what an insert does on a duplicate key (Prefer resolution).
 	OnDuplicate OnDuplicate
+	// Validate runs inside the unit after the write and before commit, so a
+	// refused representation rolls the unit back (issue #175). A nil
+	// Validate validates nothing.
+	Validate func(Result) error
 }
 
 // OnDuplicate selects insert behaviour on a duplicate key.

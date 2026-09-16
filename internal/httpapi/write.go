@@ -104,6 +104,7 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 	if !ok {
 		return
 	}
+	options.Validate = validateRepresentation(query, repr)
 
 	result, err := s.writer.Insert(request.Context(), role, table, bodyRows, options)
 	if err != nil {
@@ -115,6 +116,37 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 		Prefer: prefer, Method: http.MethodPost, TableName: asked.Name,
 		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan, Repr: repr,
 	})
+}
+
+// singularObjectRefusal says a write or RPC unit that claims one JSON object
+// yielded a different row count. The unit answers 406 PGRST116 and rolls the
+// unit back (issue #175).
+type singularObjectRefusal struct {
+	RowCount int
+}
+
+func (e singularObjectRefusal) Error() string {
+	return fmt.Sprintf("the singular representation claimed one row, the unit held %d", e.RowCount)
+}
+
+// validateRepresentation builds the in-unit validation of one representation
+// write: a singular-object Accept needs exactly one row, and the client
+// select list must project. The unit runs it before commit, so a refusal
+// rolls the write back (issue #175).
+func validateRepresentation(
+	query readquery.Query,
+	repr representation,
+) func(writequery.Result) error {
+	if repr.kind != representationJSONObject && (query.SelectAll || len(query.Columns) == 0) {
+		return nil
+	}
+	return func(result writequery.Result) error {
+		if repr.kind == representationJSONObject && len(result.Rows) != 1 {
+			return singularObjectRefusal{RowCount: len(result.Rows)}
+		}
+		_, err := readquery.Project(result.Rows, query)
+		return err
+	}
 }
 
 // writeRepresentationPrecheck negotiates Accept for a representation response
@@ -219,6 +251,7 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 	if !ok {
 		return
 	}
+	options.Validate = validateRepresentation(query, repr)
 	result, err := s.writer.Update(request.Context(), role, table, patch, query, options)
 	if err != nil {
 		s.log.Printf("myrest: update %s.%s as %s: %v", asked.Database, asked.Name, role, err)
@@ -258,6 +291,7 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 	if !ok {
 		return
 	}
+	options.Validate = validateRepresentation(query, repr)
 	result, err := s.writer.Delete(request.Context(), role, table, query, options)
 	if err != nil {
 		s.log.Printf("myrest: delete %s.%s as %s: %v", asked.Database, asked.Name, role, err)
@@ -929,6 +963,11 @@ func (s *Service) writeWriteFailure(writer http.ResponseWriter, err error) {
 	var maxErr writequery.MaxAffectedExceeded
 	if errors.As(err, &maxErr) {
 		writeMaxAffected(writer, maxAffectedError{Affected: maxErr.Affected, Max: maxErr.Max})
+		return
+	}
+	var refusal singularObjectRefusal
+	if errors.As(err, &refusal) {
+		writeSingularObjectFailure(writer, refusal.RowCount)
 		return
 	}
 	var missing readquery.ColumnNotFound
