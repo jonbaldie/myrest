@@ -327,9 +327,6 @@ func matchLikeParts(text string, parts []string) bool {
 }
 
 func valuesEqual(value any, raw string) bool {
-	if value == nil {
-		return raw == "null"
-	}
 	if text, ok := valueAsString(value); ok && text == raw {
 		return true
 	}
