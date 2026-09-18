@@ -193,6 +193,13 @@ BEGIN
   SELECT id, name FROM items ORDER BY id;
 END;
 
+-- Row-set RPC result with nullable strings for issue #180.
+CREATE PROCEDURE list_null_records()
+  READS SQL DATA
+BEGIN
+  SELECT id, label FROM null_records ORDER BY id;
+END;
+
 -- db-pre-request fixtures: a marker log and zero-argument procedures.
 CREATE TABLE pre_request_log (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -236,6 +243,15 @@ CREATE TABLE quoted_values (
 
 INSERT INTO quoted_values (value) VALUES ('alpha'), ('a,b'), ('say "hi"');
 
+-- Null value filter fixtures (issue #180).
+CREATE TABLE null_records (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  label VARCHAR(255) NULL,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT INTO null_records (label) VALUES ('null'), (NULL), ('other');
+
 -- Write preference fixtures: DEFAULT column and a table with no primary key.
 CREATE TABLE colors (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -272,6 +288,7 @@ SET DEFAULT ROLE NONE TO 'authenticator'@'%';
 
 GRANT SELECT ON myrest_fixture.items TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.quoted_values TO 'myrest_anon';
+GRANT SELECT ON myrest_fixture.null_records TO 'myrest_anon';
 GRANT SELECT, INSERT, UPDATE ON myrest_fixture.profiles TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.orders TO 'myrest_anon';
 GRANT SELECT ON myrest_fixture.tags TO 'myrest_anon';
@@ -302,6 +319,7 @@ GRANT EXECUTE ON PROCEDURE myrest_fixture.list_items TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.list_one_item TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.list_missing_items TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.mark_and_list TO 'myrest_anon';
+GRANT EXECUTE ON PROCEDURE myrest_fixture.list_null_records TO 'myrest_anon';
 GRANT INSERT ON myrest_fixture.addresses TO 'myrest_anon';
 GRANT SELECT, INSERT, DELETE ON myrest_fixture.pre_request_log TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.before_request TO 'myrest_anon';

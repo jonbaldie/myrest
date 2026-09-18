@@ -124,3 +124,83 @@ func TestShapeIsDistinctQuotedNullIsALiteral(t *testing.T) {
 		}
 	}
 }
+
+// A row set filter with col=eq.null, col=eq."null", or col=in.(null) matches
+// rows containing the literal string "null" and excludes nil (SQL NULL) rows.
+// col=is.null and col=is.not_null continue to match correctly. Issue #180.
+func TestShapeNullFilterParity(t *testing.T) {
+	t.Parallel()
+
+	set := []rows.Row{
+		{Columns: []string{"id", "name"}, Values: []any{int64(1), "null"}},
+		{Columns: []string{"id", "name"}, Values: []any{int64(2), nil}},
+		{Columns: []string{"id", "name"}, Values: []any{int64(3), "other"}},
+	}
+
+	cases := []struct {
+		name string
+		raw  string
+		ids  []int64
+	}{
+		{
+			name: "eq.null matches literal string null and excludes nil",
+			raw:  "eq.null",
+			ids:  []int64{1},
+		},
+		{
+			name: "eq quoted null matches literal string null and excludes nil",
+			raw:  `eq."null"`,
+			ids:  []int64{1},
+		},
+		{
+			name: "in null matches literal string null and excludes nil",
+			raw:  "in.(null)",
+			ids:  []int64{1},
+		},
+		{
+			name: "in quoted null matches literal string null and excludes nil",
+			raw:  `in.("null")`,
+			ids:  []int64{1},
+		},
+		{
+			name: "in with multiple values including null matches literal string null",
+			raw:  "in.(null,other)",
+			ids:  []int64{1, 3},
+		},
+		{
+			name: "is.null matches nil and excludes literal string null",
+			raw:  "is.null",
+			ids:  []int64{2},
+		},
+		{
+			name: "is.not_null matches non-nil values and excludes nil",
+			raw:  "is.not_null",
+			ids:  []int64{1, 3},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			query, err := readquery.Parse(url.Values{"name": {c.raw}}, nil)
+			if err != nil {
+				t.Fatalf("Parse %s: %v", c.raw, err)
+			}
+			result, err := readquery.Shape(set, query)
+			if err != nil {
+				t.Fatalf("Shape %s: %v", c.raw, err)
+			}
+			var gotIDs []int64
+			for _, row := range result.Rows {
+				gotIDs = append(gotIDs, row.Values[0].(int64))
+			}
+			if len(gotIDs) != len(c.ids) {
+				t.Fatalf("%s: ids = %v, want %v", c.raw, gotIDs, c.ids)
+			}
+			for i, id := range c.ids {
+				if gotIDs[i] != id {
+					t.Fatalf("%s: ids[%d] = %d, want %d", c.raw, i, gotIDs[i], id)
+				}
+			}
+		})
+	}
+}
