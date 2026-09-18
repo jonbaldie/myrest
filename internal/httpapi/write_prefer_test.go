@@ -192,3 +192,119 @@ func TestSetPreferenceAppliedJoinsTokens(t *testing.T) {
 		t.Fatalf("empty applied set header %q", got)
 	}
 }
+
+func TestParseWritePreferCount(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		header    string
+		wantCount string
+		wantErr   bool
+	}{
+		{
+			name:      "exact under strict",
+			header:    "handling=strict, count=exact",
+			wantCount: "exact",
+		},
+		{
+			name:      "exact under lenient",
+			header:    "count=exact",
+			wantCount: "exact",
+		},
+		{
+			name:    "bogus under strict",
+			header:  "handling=strict, count=bogus",
+			wantErr: true,
+		},
+		{
+			name:    "planned under strict",
+			header:  "handling=strict, count=planned",
+			wantErr: true,
+		},
+		{
+			name:    "estimated under strict",
+			header:  "handling=strict, count=estimated",
+			wantErr: true,
+		},
+		{
+			name:      "bogus under lenient ignored",
+			header:    "count=bogus",
+			wantCount: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			prefer, err := parseWritePrefer([]string{tc.header}, config.TxEndCommit, writeKindPatch)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected invalid prefer error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseWritePrefer: %v", err)
+			}
+			if prefer.Count != tc.wantCount {
+				t.Fatalf("Count = %q, want %q", prefer.Count, tc.wantCount)
+			}
+		})
+	}
+}
+
+func TestParseWritePreferResolution(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name           string
+		header         string
+		wantResolution string
+		wantErr        bool
+	}{
+		{
+			name:           "merge-duplicates under strict",
+			header:         "handling=strict, resolution=merge-duplicates",
+			wantResolution: "merge-duplicates",
+		},
+		{
+			name:           "ignore-duplicates under strict",
+			header:         "handling=strict, resolution=ignore-duplicates",
+			wantResolution: "ignore-duplicates",
+		},
+		{
+			name:           "merge-duplicates case-insensitive",
+			header:         "handling=strict, resolution=Merge-Duplicates",
+			wantResolution: "merge-duplicates",
+		},
+		{
+			name:    "bogus under strict",
+			header:  "handling=strict, resolution=bogus",
+			wantErr: true,
+		},
+		{
+			name:           "bogus under lenient ignored",
+			header:         "resolution=bogus",
+			wantResolution: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			prefer, err := parseWritePrefer([]string{tc.header}, config.TxEndCommit, writeKindPatch)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected invalid prefer error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseWritePrefer: %v", err)
+			}
+			if prefer.Resolution != tc.wantResolution {
+				t.Fatalf("Resolution = %q, want %q", prefer.Resolution, tc.wantResolution)
+			}
+		})
+	}
+}
+

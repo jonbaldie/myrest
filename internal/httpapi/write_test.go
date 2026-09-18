@@ -1744,3 +1744,244 @@ func putJSON(t *testing.T, url, body, prefer string) (*http.Response, []byte) {
 	}
 	return response, answer
 }
+
+func TestPreferHandlingStrictRejectsInvalidCountAndResolution(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+		prefer string
+	}{
+		{
+			name:   "PATCH with invalid count under strict handling",
+			method: http.MethodPatch,
+			path:   "/items?id=eq.1",
+			body:   `{"name":"mutated"}`,
+			prefer: "handling=strict, count=bogus",
+		},
+		{
+			name:   "DELETE with invalid resolution under strict handling",
+			method: http.MethodDelete,
+			path:   "/items?id=eq.1",
+			prefer: "handling=strict, resolution=bogus",
+		},
+		{
+			name:   "POST with invalid resolution under strict handling",
+			method: http.MethodPost,
+			path:   "/items",
+			body:   `{"name":"item"}`,
+			prefer: "handling=strict, resolution=bogus",
+		},
+		{
+			name:   "PUT with invalid resolution under strict handling",
+			method: http.MethodPut,
+			path:   "/items?id=eq.1",
+			body:   `{"name":"item"}`,
+			prefer: "handling=strict, resolution=bogus",
+		},
+		{
+			name:   "POST with invalid count under strict handling",
+			method: http.MethodPost,
+			path:   "/items",
+			body:   `{"name":"item"}`,
+			prefer: "handling=strict, count=bogus",
+		},
+		{
+			name:   "PUT with invalid count under strict handling",
+			method: http.MethodPut,
+			path:   "/items?id=eq.1",
+			body:   `{"name":"item"}`,
+			prefer: "handling=strict, count=bogus",
+		},
+		{
+			name:   "DELETE with invalid count under strict handling",
+			method: http.MethodDelete,
+			path:   "/items?id=eq.1",
+			prefer: "handling=strict, count=bogus",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			sink := &writer{}
+			var bodyReader io.Reader
+			if tc.body != "" {
+				bodyReader = strings.NewReader(tc.body)
+			}
+			req, err := http.NewRequest(
+				tc.method,
+				serveWrite(t, &reader{}, sink).URL()+tc.path,
+				bodyReader,
+			)
+			if err != nil {
+				t.Fatalf("new request: %v", err)
+			}
+			if tc.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			req.Header.Set("Prefer", tc.prefer)
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("request failed: %v", err)
+			}
+			t.Cleanup(func() { _ = res.Body.Close() })
+			body, err := io.ReadAll(res.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			apitest.AssertEnvelope(t, res, body, http.StatusBadRequest, "PGRST122")
+			if sink.called != "" {
+				t.Fatalf("writer must not run; called %q", sink.called)
+			}
+		})
+	}
+}
+
+func TestPreferHandlingLenientAndValidTokens(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		method     string
+		path       string
+		body       string
+		prefer     string
+		wantStatus int
+	}{
+		{
+			name:       "PATCH with invalid count under lenient handling succeeds",
+			method:     http.MethodPatch,
+			path:       "/items?id=eq.1",
+			body:       `{"name":"mutated"}`,
+			prefer:     "handling=lenient, count=bogus",
+			wantStatus: http.StatusNoContent,
+		},
+		{
+			name:       "DELETE with invalid count under lenient handling succeeds",
+			method:     http.MethodDelete,
+			path:       "/items?id=eq.1",
+			prefer:     "handling=lenient, count=bogus",
+			wantStatus: http.StatusNoContent,
+		},
+		{
+			name:       "POST with invalid count under lenient handling succeeds",
+			method:     http.MethodPost,
+			path:       "/items",
+			body:       `{"name":"item"}`,
+			prefer:     "handling=lenient, count=bogus",
+			wantStatus: http.StatusCreated,
+		},
+		{
+			name:       "PUT with invalid count under lenient handling succeeds",
+			method:     http.MethodPut,
+			path:       "/items?id=eq.1",
+			body:       `{"id":1,"name":"item"}`,
+			prefer:     "handling=lenient, count=bogus",
+			wantStatus: http.StatusNoContent,
+		},
+		{
+			name:       "PATCH with unapplied resolution under lenient handling succeeds",
+			method:     http.MethodPatch,
+			path:       "/items?id=eq.1",
+			body:       `{"name":"mutated"}`,
+			prefer:     "handling=lenient, resolution=bogus",
+			wantStatus: http.StatusNoContent,
+		},
+		{
+			name:       "DELETE with unapplied resolution under lenient handling succeeds",
+			method:     http.MethodDelete,
+			path:       "/items?id=eq.1",
+			prefer:     "handling=lenient, resolution=bogus",
+			wantStatus: http.StatusNoContent,
+		},
+		{
+			name:       "PATCH with valid resolution under strict handling succeeds",
+			method:     http.MethodPatch,
+			path:       "/items?id=eq.1",
+			body:       `{"name":"mutated"}`,
+			prefer:     "handling=strict, resolution=merge-duplicates",
+			wantStatus: http.StatusNoContent,
+		},
+		{
+			name:       "DELETE with valid resolution under strict handling succeeds",
+			method:     http.MethodDelete,
+			path:       "/items?id=eq.1",
+			prefer:     "handling=strict, resolution=merge-duplicates",
+			wantStatus: http.StatusNoContent,
+		},
+		{
+			name:       "POST with valid count under strict handling succeeds",
+			method:     http.MethodPost,
+			path:       "/items",
+			body:       `{"name":"item"}`,
+			prefer:     "handling=strict, count=exact",
+			wantStatus: http.StatusCreated,
+		},
+		{
+			name:       "PATCH with valid count under strict handling succeeds",
+			method:     http.MethodPatch,
+			path:       "/items?id=eq.1",
+			body:       `{"name":"mutated"}`,
+			prefer:     "handling=strict, count=exact",
+			wantStatus: http.StatusNoContent,
+		},
+		{
+			name:       "DELETE with valid count under strict handling succeeds",
+			method:     http.MethodDelete,
+			path:       "/items?id=eq.1",
+			prefer:     "handling=strict, count=exact",
+			wantStatus: http.StatusNoContent,
+		},
+		{
+			name:       "PUT with valid count under strict handling succeeds",
+			method:     http.MethodPut,
+			path:       "/items?id=eq.1",
+			body:       `{"id":1,"name":"item"}`,
+			prefer:     "handling=strict, count=exact",
+			wantStatus: http.StatusNoContent,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			sink := &writer{}
+			var bodyReader io.Reader
+			if tc.body != "" {
+				bodyReader = strings.NewReader(tc.body)
+			}
+			req, err := http.NewRequest(
+				tc.method,
+				serveWrite(t, &reader{}, sink).URL()+tc.path,
+				bodyReader,
+			)
+			if err != nil {
+				t.Fatalf("new request: %v", err)
+			}
+			if tc.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			req.Header.Set("Prefer", tc.prefer)
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("request failed: %v", err)
+			}
+			t.Cleanup(func() { _ = res.Body.Close() })
+			body, err := io.ReadAll(res.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			if res.StatusCode != tc.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", res.StatusCode, tc.wantStatus, body)
+			}
+		})
+	}
+}
+
+

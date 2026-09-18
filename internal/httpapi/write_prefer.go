@@ -24,6 +24,8 @@ const (
 // writePrefer is the Prefer control surface for ordinary writes.
 type writePrefer struct {
 	Return         string
+	Count          string
+	Resolution     string
 	MissingDefault bool
 	MaxAffected    *int64
 	Strict         bool
@@ -49,18 +51,22 @@ var knownPreferNames = map[string]bool{
 }
 
 type preferTokens struct {
-	returnValue   string
-	returnSet     bool
-	missingValue  string
-	missingSet    bool
-	maxRaw        string
-	maxSet        bool
-	handlingValue string
-	handlingSet   bool
-	txValue       string
-	txSet         bool
-	allRows       bool
-	invalid       []string
+	returnValue     string
+	returnSet       bool
+	missingValue    string
+	missingSet      bool
+	maxRaw          string
+	maxSet          bool
+	handlingValue   string
+	handlingSet     bool
+	txValue         string
+	txSet           bool
+	countValue      string
+	countSet        bool
+	resolutionValue string
+	resolutionSet   bool
+	allRows         bool
+	invalid         []string
 }
 
 func parseWritePrefer(headers []string, txEnd config.TxEnd, kind writeKind) (writePrefer, error) {
@@ -126,6 +132,12 @@ func collectKnownToken(tokens *preferTokens, name, value string, hasValue bool, 
 	case "tx":
 		tokens.txValue = strings.ToLower(value)
 		tokens.txSet = true
+	case "count":
+		tokens.countValue = strings.ToLower(value)
+		tokens.countSet = true
+	case "resolution":
+		tokens.resolutionValue = strings.ToLower(value)
+		tokens.resolutionSet = true
 	}
 }
 
@@ -137,6 +149,8 @@ func applyPreferTokens(tokens preferTokens) (writePrefer, []string) {
 	invalid = append(invalid, applyMissing(&prefer, tokens)...)
 	invalid = append(invalid, applyMaxAffected(&prefer, tokens)...)
 	invalid = append(invalid, applyTx(&prefer, tokens)...)
+	invalid = append(invalid, applyCount(&prefer, tokens)...)
+	invalid = append(invalid, applyResolution(&prefer, tokens)...)
 	return prefer, invalid
 }
 
@@ -202,6 +216,32 @@ func applyMaxAffected(prefer *writePrefer, tokens preferTokens) []string {
 	}
 	prefer.MaxAffected = &maxValue
 	return nil
+}
+
+func applyCount(prefer *writePrefer, tokens preferTokens) []string {
+	if !tokens.countSet {
+		return nil
+	}
+	switch tokens.countValue {
+	case "exact":
+		prefer.Count = tokens.countValue
+		return nil
+	default:
+		return []string{"count=" + tokens.countValue}
+	}
+}
+
+func applyResolution(prefer *writePrefer, tokens preferTokens) []string {
+	if !tokens.resolutionSet {
+		return nil
+	}
+	switch tokens.resolutionValue {
+	case "merge-duplicates", "ignore-duplicates":
+		prefer.Resolution = tokens.resolutionValue
+		return nil
+	default:
+		return []string{"resolution=" + tokens.resolutionValue}
+	}
 }
 
 func preferenceApplied(prefer writePrefer, tokens preferTokens, txEnd config.TxEnd, kind writeKind) []string {
