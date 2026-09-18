@@ -309,15 +309,15 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 // Content-Profile selects the database; with no header the table comes from
 // the default database.
 func (s *Service) putTable(writer http.ResponseWriter, request *http.Request) {
+	prefer, ok := s.readWritePrefer(writer, request, writeKindPut)
+	if !ok {
+		return
+	}
 	resolution, ok := parseUpsertResolution(writer, request)
 	if !ok {
 		return
 	}
 	role, asked, table, ok := s.lookupPutTable(writer, request, resolution)
-	if !ok {
-		return
-	}
-	prefer, ok := s.readWritePrefer(writer, request, writeKindPut)
 	if !ok {
 		return
 	}
