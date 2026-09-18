@@ -49,18 +49,9 @@ var knownPreferNames = map[string]bool{
 }
 
 type preferTokens struct {
-	returnValue   string
-	returnSet     bool
-	missingValue  string
-	missingSet    bool
-	maxRaw        string
-	maxSet        bool
-	handlingValue string
-	handlingSet   bool
-	txValue       string
-	txSet         bool
-	allRows       bool
-	invalid       []string
+	values  map[string]string
+	allRows bool
+	invalid []string
 }
 
 func parseWritePrefer(headers []string, txEnd config.TxEnd, kind writeKind) (writePrefer, error) {
@@ -74,7 +65,7 @@ func parseWritePrefer(headers []string, txEnd config.TxEnd, kind writeKind) (wri
 }
 
 func collectPreferTokens(headers []string) preferTokens {
-	var tokens preferTokens
+	tokens := preferTokens{values: make(map[string]string)}
 	for _, header := range headers {
 		for _, part := range strings.Split(header, ",") {
 			token := strings.TrimSpace(part)
@@ -110,23 +101,7 @@ func collectKnownToken(tokens *preferTokens, name, value string, hasValue bool, 
 		tokens.invalid = append(tokens.invalid, raw)
 		return
 	}
-	switch name {
-	case "return":
-		tokens.returnValue = strings.ToLower(value)
-		tokens.returnSet = true
-	case "missing":
-		tokens.missingValue = strings.ToLower(value)
-		tokens.missingSet = true
-	case "max-affected":
-		tokens.maxRaw = value
-		tokens.maxSet = true
-	case "handling":
-		tokens.handlingValue = strings.ToLower(value)
-		tokens.handlingSet = true
-	case "tx":
-		tokens.txValue = strings.ToLower(value)
-		tokens.txSet = true
-	}
+	tokens.values[name] = value
 }
 
 func applyPreferTokens(tokens preferTokens) (writePrefer, []string) {
@@ -137,68 +112,107 @@ func applyPreferTokens(tokens preferTokens) (writePrefer, []string) {
 	invalid = append(invalid, applyMissing(&prefer, tokens)...)
 	invalid = append(invalid, applyMaxAffected(&prefer, tokens)...)
 	invalid = append(invalid, applyTx(&prefer, tokens)...)
+	invalid = append(invalid, applyCount(&prefer, tokens)...)
+	invalid = append(invalid, applyResolution(&prefer, tokens)...)
 	return prefer, invalid
 }
 
-func applyTx(prefer *writePrefer, tokens preferTokens) []string {
-	if !tokens.txSet {
+func applyCount(prefer *writePrefer, tokens preferTokens) []string {
+	val, ok := tokens.values["count"]
+	if !ok {
 		return nil
 	}
-	switch tokens.txValue {
-	case config.PreferTxCommit, config.PreferTxRollback:
-		prefer.Tx = tokens.txValue
+	lower := strings.ToLower(val)
+	switch lower {
+	case "exact":
 		return nil
 	default:
-		return []string{"tx=" + tokens.txValue}
+		return []string{"count=" + lower}
+	}
+}
+
+func applyResolution(prefer *writePrefer, tokens preferTokens) []string {
+	val, ok := tokens.values["resolution"]
+	if !ok {
+		return nil
+	}
+	lower := strings.ToLower(val)
+	switch lower {
+	case "merge-duplicates", "ignore-duplicates":
+		return nil
+	default:
+		return []string{"resolution=" + lower}
+	}
+}
+
+func applyTx(prefer *writePrefer, tokens preferTokens) []string {
+	val, ok := tokens.values["tx"]
+	if !ok {
+		return nil
+	}
+	lower := strings.ToLower(val)
+	switch lower {
+	case config.PreferTxCommit, config.PreferTxRollback:
+		prefer.Tx = lower
+		return nil
+	default:
+		return []string{"tx=" + lower}
 	}
 }
 
 func applyHandling(prefer *writePrefer, tokens preferTokens) []string {
-	if !tokens.handlingSet {
+	val, ok := tokens.values["handling"]
+	if !ok {
 		return nil
 	}
-	switch tokens.handlingValue {
+	lower := strings.ToLower(val)
+	switch lower {
 	case "strict":
 		prefer.Strict = true
 	case "lenient":
 		prefer.Strict = false
 	default:
-		return []string{"handling=" + tokens.handlingValue}
+		return []string{"handling=" + lower}
 	}
 	return nil
 }
 
 func applyReturn(prefer *writePrefer, tokens preferTokens) []string {
-	if !tokens.returnSet {
+	val, ok := tokens.values["return"]
+	if !ok {
 		return nil
 	}
-	switch tokens.returnValue {
+	lower := strings.ToLower(val)
+	switch lower {
 	case returnMinimal, returnHeadersOnly, returnRepresentation:
-		prefer.Return = tokens.returnValue
+		prefer.Return = lower
 		return nil
 	default:
-		return []string{"return=" + tokens.returnValue}
+		return []string{"return=" + lower}
 	}
 }
 
 func applyMissing(prefer *writePrefer, tokens preferTokens) []string {
-	if !tokens.missingSet {
+	val, ok := tokens.values["missing"]
+	if !ok {
 		return nil
 	}
-	if tokens.missingValue == "default" {
+	lower := strings.ToLower(val)
+	if lower == "default" {
 		prefer.MissingDefault = true
 		return nil
 	}
-	return []string{"missing=" + tokens.missingValue}
+	return []string{"missing=" + lower}
 }
 
 func applyMaxAffected(prefer *writePrefer, tokens preferTokens) []string {
-	if !tokens.maxSet {
+	val, ok := tokens.values["max-affected"]
+	if !ok {
 		return nil
 	}
-	maxValue, err := strconv.ParseInt(tokens.maxRaw, 10, 64)
+	maxValue, err := strconv.ParseInt(val, 10, 64)
 	if err != nil || maxValue < 0 {
-		return []string{"max-affected=" + tokens.maxRaw}
+		return []string{"max-affected=" + val}
 	}
 	prefer.MaxAffected = &maxValue
 	return nil
@@ -209,7 +223,7 @@ func preferenceApplied(prefer writePrefer, tokens preferTokens, txEnd config.TxE
 	if prefer.Strict {
 		applied = append(applied, "handling=strict")
 	}
-	if tokens.returnSet && prefer.Return == tokens.returnValue {
+	if val, ok := tokens.values["return"]; ok && prefer.Return == strings.ToLower(val) {
 		applied = append(applied, "return="+prefer.Return)
 	}
 	// missing=default changes omitted columns only for inserts.

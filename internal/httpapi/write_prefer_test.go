@@ -192,3 +192,71 @@ func TestSetPreferenceAppliedJoinsTokens(t *testing.T) {
 		t.Fatalf("empty applied set header %q", got)
 	}
 }
+
+func TestParseWritePreferStrictInvalidCountAndResolution(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		header  string
+		wantErr bool
+	}{
+		{
+			name:    "strict invalid count token",
+			header:  "handling=strict, count=bogus",
+			wantErr: true,
+		},
+		{
+			name:    "strict planned count token is invalid",
+			header:  "handling=strict, count=planned",
+			wantErr: true,
+		},
+		{
+			name:    "strict estimated count token is invalid",
+			header:  "handling=strict, count=estimated",
+			wantErr: true,
+		},
+		{
+			name:    "strict valid exact count token",
+			header:  "handling=strict, count=exact",
+			wantErr: false,
+		},
+		{
+			name:    "lenient invalid count token is ignored",
+			header:  "count=bogus",
+			wantErr: false,
+		},
+		{
+			name:    "strict invalid resolution token",
+			header:  "handling=strict, resolution=bogus",
+			wantErr: true,
+		},
+		{
+			name:    "strict valid resolution merge-duplicates",
+			header:  "handling=strict, resolution=merge-duplicates",
+			wantErr: false,
+		},
+		{
+			name:    "strict valid resolution ignore-duplicates",
+			header:  "handling=strict, resolution=ignore-duplicates",
+			wantErr: false,
+		},
+		{
+			name:    "lenient invalid resolution token is ignored",
+			header:  "resolution=bogus",
+			wantErr: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := parseWritePrefer([]string{tc.header}, config.TxEndCommit, writeKindPatch)
+			if tc.wantErr && err == nil {
+				t.Fatal("expected invalid prefer error")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
