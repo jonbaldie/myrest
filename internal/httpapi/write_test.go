@@ -1471,6 +1471,168 @@ func TestPreferHandlingLenientIgnoresUnknown(t *testing.T) {
 	}
 }
 
+// Issue #179: Prefer handling=strict rejects invalid count on all write methods.
+func TestPreferHandlingStrictRejectsInvalidCount(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{method: http.MethodPost, path: "/items", body: `{"name":"x"}`},
+		{method: http.MethodPatch, path: "/items?id=eq.1", body: `{"name":"x"}`},
+		{method: http.MethodPut, path: "/items?id=eq.1", body: `{"id":1,"name":"x"}`},
+		{method: http.MethodDelete, path: "/items?id=eq.1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.method, func(t *testing.T) {
+			t.Parallel()
+
+			sink := &writer{upserted: true}
+			var bodyReader io.Reader
+			if tc.body != "" {
+				bodyReader = strings.NewReader(tc.body)
+			}
+			request, err := http.NewRequest(
+				tc.method,
+				serveWrite(t, &reader{}, sink).URL()+tc.path,
+				bodyReader,
+			)
+			if err != nil {
+				t.Fatalf("new %s: %v", tc.method, err)
+			}
+			if tc.body != "" {
+				request.Header.Set("Content-Type", "application/json")
+			}
+			request.Header.Set("Prefer", "handling=strict, count=bogus")
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				t.Fatalf("%s: %v", tc.method, err)
+			}
+			t.Cleanup(func() { _ = response.Body.Close() })
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			envelope := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST122")
+			if envelope.Details != "Invalid preferences: count=bogus" {
+				t.Fatalf("details = %v, want 'Invalid preferences: count=bogus'", envelope.Details)
+			}
+			if sink.called != "" {
+				t.Fatalf("%s executed write: called %q", tc.method, sink.called)
+			}
+		})
+	}
+}
+
+// Issue #179: Prefer handling=strict rejects invalid resolution on all write methods.
+func TestPreferHandlingStrictRejectsInvalidResolution(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{method: http.MethodPost, path: "/items", body: `{"name":"x"}`},
+		{method: http.MethodPut, path: "/items?id=eq.1", body: `{"id":1,"name":"x"}`},
+		{method: http.MethodPatch, path: "/items?id=eq.1", body: `{"name":"x"}`},
+		{method: http.MethodDelete, path: "/items?id=eq.1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.method, func(t *testing.T) {
+			t.Parallel()
+
+			sink := &writer{upserted: true}
+			var bodyReader io.Reader
+			if tc.body != "" {
+				bodyReader = strings.NewReader(tc.body)
+			}
+			request, err := http.NewRequest(
+				tc.method,
+				serveWrite(t, &reader{}, sink).URL()+tc.path,
+				bodyReader,
+			)
+			if err != nil {
+				t.Fatalf("new %s: %v", tc.method, err)
+			}
+			if tc.body != "" {
+				request.Header.Set("Content-Type", "application/json")
+			}
+			request.Header.Set("Prefer", "handling=strict, resolution=bogus")
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				t.Fatalf("%s: %v", tc.method, err)
+			}
+			t.Cleanup(func() { _ = response.Body.Close() })
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			envelope := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST122")
+			if envelope.Details != "Invalid preferences: resolution=bogus" {
+				t.Fatalf("details = %v, want 'Invalid preferences: resolution=bogus'", envelope.Details)
+			}
+			if sink.called != "" {
+				t.Fatalf("%s executed write: called %q", tc.method, sink.called)
+			}
+		})
+	}
+}
+
+// Issue #179: Prefer handling=lenient ignores unhandled or invalid count and resolution tokens.
+func TestPreferHandlingLenientIgnoresInvalidCountAndResolution(t *testing.T) {
+	t.Parallel()
+
+	sinkPatch := &writer{}
+	requestPatch, err := http.NewRequest(
+		http.MethodPatch,
+		serveWrite(t, &reader{}, sinkPatch).URL()+"/items?id=eq.1",
+		strings.NewReader(`{"name":"y"}`),
+	)
+	if err != nil {
+		t.Fatalf("new PATCH: %v", err)
+	}
+	requestPatch.Header.Set("Content-Type", "application/json")
+	requestPatch.Header.Set("Prefer", "resolution=bogus, count=bogus")
+	responsePatch, err := http.DefaultClient.Do(requestPatch)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	t.Cleanup(func() { _ = responsePatch.Body.Close() })
+	if responsePatch.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(responsePatch.Body)
+		t.Fatalf("PATCH status = %d, want 204; body = %s", responsePatch.StatusCode, body)
+	}
+	if sinkPatch.called != "update" {
+		t.Fatalf("PATCH writer called %q, want update", sinkPatch.called)
+	}
+
+	sinkDelete := &writer{}
+	requestDelete, err := http.NewRequest(
+		http.MethodDelete,
+		serveWrite(t, &reader{}, sinkDelete).URL()+"/items?id=eq.1",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new DELETE: %v", err)
+	}
+	requestDelete.Header.Set("Prefer", "resolution=bogus, count=bogus")
+	responseDelete, err := http.DefaultClient.Do(requestDelete)
+	if err != nil {
+		t.Fatalf("DELETE: %v", err)
+	}
+	t.Cleanup(func() { _ = responseDelete.Body.Close() })
+	if responseDelete.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(responseDelete.Body)
+		t.Fatalf("DELETE status = %d, want 204; body = %s", responseDelete.StatusCode, body)
+	}
+	if sinkDelete.called != "delete" {
+		t.Fatalf("DELETE writer called %q, want delete", sinkDelete.called)
+	}
+}
+
 func TestPutUpsertByPrimaryKeyMergeDuplicates(t *testing.T) {
 	t.Parallel()
 
