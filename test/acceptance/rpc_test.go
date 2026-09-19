@@ -322,3 +322,61 @@ func TestRPCScalarRefusesRowSetFeatures(t *testing.T) {
 		t.Fatalf("procedure message = %q, want %q", failure.Message, want)
 	}
 }
+
+// Issue #178: a mutating non-tabular RPC that refuses row-set query features
+// rolls the routine side effects back.
+func TestRPCNonTabularRowSetFeaturesRollBackTheRoutine(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	_, beforeBody := get(t, service, "/addresses?select=label&label=eq.rpc-write")
+	before := decodeRows(t, beforeBody)
+
+	cases := []string{
+		"/rpc/write_marker?limit=1",
+		"/rpc/write_marker?offset=1",
+		"/rpc/write_marker?order=label.desc",
+		"/rpc/write_marker?label=eq.rpc-write",
+		"/rpc/write_marker?select=*,items(id)",
+	}
+	for _, path := range cases {
+		response, body := apitest.PostJSON(t, service.URL()+path, `{}`)
+		failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+		if want := "Filter, order, pagination, and embed need a row-set RPC result"; failure.Message != want {
+			t.Fatalf("path %s: message = %q, want %q", path, failure.Message, want)
+		}
+	}
+
+	markers, afterBody := get(t, service, "/addresses?select=label&label=eq.rpc-write")
+	if markers.StatusCode != http.StatusOK {
+		t.Fatalf("marker read-back status = %d; body = %s", markers.StatusCode, afterBody)
+	}
+	after := decodeRows(t, afterBody)
+	if len(after) != len(before) {
+		t.Fatalf("the refused routine kept its side effect: before %d after %d (%v)", len(before), len(after), after)
+	}
+}
+
+// Issue #178: a tabular mutating RPC whose representation shaping fails
+// rolls the routine side effects back.
+func TestRPCShapingFailureRollsBackTheRoutine(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	_, beforeBody := get(t, service, "/addresses?select=label&label=eq.rpc-rollback")
+	before := decodeRows(t, beforeBody)
+
+	response, body := apitest.PostJSON(
+		t,
+		service.URL()+"/rpc/mark_and_list?select=nonexistent",
+		`{}`,
+	)
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST204")
+
+	markers, afterBody := get(t, service, "/addresses?select=label&label=eq.rpc-rollback")
+	if markers.StatusCode != http.StatusOK {
+		t.Fatalf("marker read-back status = %d; body = %s", markers.StatusCode, afterBody)
+	}
+	after := decodeRows(t, afterBody)
+	if len(after) != len(before) {
+		t.Fatalf("the refused routine kept its side effect: before %d after %d (%v)", len(before), len(after), after)
+	}
+}

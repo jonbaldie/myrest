@@ -23,6 +23,7 @@ type caller struct {
 	routine   schemacache.RoutineFact
 	args      map[string]any
 	options   httpapi.CallOptions
+	committed bool
 }
 
 func (c *caller) Call(
@@ -44,6 +45,7 @@ func (c *caller) Call(
 			return nil, err
 		}
 	}
+	c.committed = true
 	return c.body, nil
 }
 
@@ -550,6 +552,50 @@ func TestPostRPCScalarRefusesRowSetFeatures(t *testing.T) {
 		if want := "Filter, order, pagination, and embed need a row-set RPC result"; failure.Message != want {
 			t.Fatalf("path %s: message = %q, want %q", path, failure.Message, want)
 		}
+	}
+}
+
+// Issue #178: a mutating non-tabular RPC that refuses row-set query features
+// must not commit the routine unit.
+func TestPostRPCNonTabularRowSetFeaturesDoNotCommit(t *testing.T) {
+	t.Parallel()
+
+	cases := []string{
+		"/rpc/write_marker?limit=1",
+		"/rpc/write_marker?offset=1",
+		"/rpc/write_marker?order=label.desc",
+		"/rpc/write_marker?label=eq.rpc-write",
+		"/rpc/write_marker?select=*,items(id)",
+	}
+	for _, path := range cases {
+		source := &caller{body: map[string]any{}}
+		response, body := apitest.PostJSON(t, serveRPC(t, source).URL()+path, `{}`)
+		failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+		if want := "Filter, order, pagination, and embed need a row-set RPC result"; failure.Message != want {
+			t.Fatalf("path %s: message = %q, want %q", path, failure.Message, want)
+		}
+		if source.committed {
+			t.Fatalf("path %s: the refused RPC unit committed", path)
+		}
+	}
+}
+
+// Issue #178: a tabular RPC whose representation shaping fails must not
+// commit the routine unit.
+func TestPostRPCShapingFailureDoesNotCommit(t *testing.T) {
+	t.Parallel()
+
+	source := &caller{body: []rows.Row{
+		{Columns: []string{"id", "name"}, Values: []any{int64(1), "alpha"}},
+	}}
+	response, body := apitest.PostJSON(
+		t,
+		serveRPC(t, source).URL()+"/rpc/list_items?select=nonexistent",
+		`{}`,
+	)
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST204")
+	if source.committed {
+		t.Fatal("the refused RPC unit committed")
 	}
 }
 

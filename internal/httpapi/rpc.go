@@ -160,26 +160,41 @@ func (s *Service) invokeRoutine(
 		role,
 		routine,
 		args,
-		CallOptions{PreferTx: preferTx, Validate: validateRPCRepresentation(repr)},
+		CallOptions{PreferTx: preferTx, Validate: validateRPCRepresentation(query, repr)},
 	)
 	if err != nil {
 		s.log.Printf("myrest: rpc %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		var refusal singularObjectRefusal
-		if errors.As(err, &refusal) {
-			writeSingularObjectFailure(writer, refusal.RowCount)
-			return
-		}
-		writeDatabaseFailure(writer, err)
+		writeRPCCallFailure(writer, err)
 		return
 	}
 
 	setTxPreferenceApplied(writer, preferTx, s.settings.DB.TxEnd)
 	set, tabular := rowSetResult(result)
-	if readquery.HasRowSetFeatures(query) && !tabular {
+	s.writeRPCResult(writer, request, role, asked, query, result, set, tabular, repr)
+}
+
+func writeRPCCallFailure(writer http.ResponseWriter, err error) {
+	var refusal singularObjectRefusal
+	if errors.As(err, &refusal) {
+		writeSingularObjectFailure(writer, refusal.RowCount)
+		return
+	}
+	var rowSet rowSetFeaturesRefusal
+	if errors.As(err, &rowSet) {
 		writeUnsupportedFeature(writer, messageRowSetFeaturesRequired)
 		return
 	}
-	s.writeRPCResult(writer, request, role, asked, query, result, set, tabular, repr)
+	var missing readquery.ColumnNotFound
+	if errors.As(err, &missing) {
+		writeFailure(writer, http.StatusBadRequest, codeNoColumn, missing.Error())
+		return
+	}
+	var gap readquery.UnsupportedFeature
+	if errors.As(err, &gap) {
+		writeUnsupportedFeature(writer, gap.Message)
+		return
+	}
+	writeDatabaseFailure(writer, err)
 }
 
 func (s *Service) writeRPCResult(
@@ -390,20 +405,50 @@ func rowsHoldOriginKeys(set []rows.Row, plan []plannedEmbed) bool {
 	return true
 }
 
+// rowSetFeaturesRefusal says a non-tabular RPC result cannot take filter,
+// order, pagination, or embed. The unit answers 400 MYREST001 and rolls the
+// unit back (issue #178).
+type rowSetFeaturesRefusal struct{}
+
+func (rowSetFeaturesRefusal) Error() string {
+	return messageRowSetFeaturesRequired
+}
+
 // validateRPCRepresentation refuses a tabular routine result that does not
-// hold the one row the singular Accept claims. The unit runs it before
-// commit, so a refusal rolls the routine side effects back (issue #175).
-func validateRPCRepresentation(repr representation) func(any) error {
-	if repr.kind != representationJSONObject {
+// hold the one row the singular Accept claims, and refuses row-set query
+// features on a non-tabular result. The unit runs it before commit, so a
+// refusal rolls the routine side effects back (issues #175 and #178).
+func validateRPCRepresentation(query readquery.Query, repr representation) func(any) error {
+	needSingular := repr.kind == representationJSONObject
+	needRowSet := readquery.HasRowSetFeatures(query)
+	if !needSingular && !needRowSet {
 		return nil
 	}
 	return func(result any) error {
-		set, tabular := rowSetResult(result)
-		if tabular && len(set) != 1 {
-			return singularObjectRefusal{RowCount: len(set)}
-		}
+		return checkRPCResult(query, needSingular, needRowSet, result)
+	}
+}
+
+func checkRPCResult(query readquery.Query, needSingular, needRowSet bool, result any) error {
+	set, tabular := rowSetResult(result)
+	if needSingular && tabular && len(set) != 1 {
+		return singularObjectRefusal{RowCount: len(set)}
+	}
+	if needRowSet && !tabular {
+		return rowSetFeaturesRefusal{}
+	}
+	if !tabular {
 		return nil
 	}
+	return shapeRPCRepresentation(set, query)
+}
+
+func shapeRPCRepresentation(set []rows.Row, query readquery.Query) error {
+	if _, err := readquery.Shape(set, query); err != nil {
+		return err
+	}
+	_, err := readquery.Project(set, query)
+	return err
 }
 
 // rowSetResult reports whether the caller answer is a tabular row set.
