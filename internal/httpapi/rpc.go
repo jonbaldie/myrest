@@ -248,31 +248,15 @@ func (s *Service) shapeRPCRowSet(
 	set []rows.Row,
 	query readquery.Query,
 ) (readquery.Result, error) {
-	shaped, err := readquery.Shape(set, query)
-	if err != nil {
-		return readquery.Result{}, err
-	}
+	var origin schemacache.Table
 	if len(query.Embeds) > 0 {
-		origin, err := s.rowSetOrigin(role, database, shaped.Rows, query.Embeds)
+		var err error
+		origin, err = s.rowSetOrigin(role, database, set, query.Embeds)
 		if err != nil {
 			return readquery.Result{}, err
 		}
-		plan, err := s.planEmbeds(role, origin.ID, query.Embeds)
-		if err != nil {
-			return readquery.Result{}, err
-		}
-		nested, err := s.nestEmbeds(ctx, role, origin, shaped.Rows, plan)
-		if err != nil {
-			return readquery.Result{}, err
-		}
-		shaped.Rows = nested
 	}
-	projected, err := readquery.Project(shaped.Rows, query)
-	if err != nil {
-		return readquery.Result{}, err
-	}
-	shaped.Rows = projected
-	return shaped, nil
+	return s.reads.Shape(ctx, role, origin, set, query)
 }
 
 // rowSetOrigin finds the one table resource that can own the embed graph for
@@ -310,14 +294,14 @@ func (s *Service) collectRowSetOrigins(
 		if !ok {
 			continue
 		}
-		plan, err := s.planEmbeds(role, table.ID, embeds)
+		plan, err := s.reads.Plan(role, table.ID, embeds)
 		if err != nil {
 			if firstMissing == nil {
 				firstMissing = err
 			}
 			continue
 		}
-		if rowsHoldOriginKeys(set, plan) {
+		if rowsHoldColumns(set, plan.OriginColumns()) {
 			matches = append(matches, table)
 		}
 	}
@@ -387,7 +371,7 @@ func tableHasColumns(table schemacache.Table, names []string) bool {
 	return true
 }
 
-func rowsHoldOriginKeys(set []rows.Row, plan []plannedEmbed) bool {
+func rowsHoldColumns(set []rows.Row, names []string) bool {
 	if len(set) == 0 {
 		return true
 	}
@@ -395,11 +379,9 @@ func rowsHoldOriginKeys(set []rows.Row, plan []plannedEmbed) bool {
 	for _, column := range set[0].Columns {
 		have[column] = true
 	}
-	for _, embed := range plan {
-		for _, column := range embed.relationship.OriginColumns {
-			if !have[column] {
-				return false
-			}
+	for _, name := range names {
+		if !have[name] {
+			return false
 		}
 	}
 	return true

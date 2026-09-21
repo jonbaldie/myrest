@@ -10,6 +10,7 @@ import (
 
 	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/jwt"
+	"github.com/jonbaldie/myrest/internal/readexec"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
@@ -34,7 +35,7 @@ type Service struct {
 	listener net.Listener
 	settings config.Settings
 	cache    *schemacache.Cache
-	reader   Reader
+	reads    *readexec.Executor
 	writer   Writer
 	caller   Caller
 	verifier *jwt.Verifier
@@ -73,7 +74,7 @@ func Listen(options Options) (*Service, error) {
 		listener: listener,
 		settings: options.Settings,
 		cache:    options.Cache,
-		reader:   options.Reader,
+		reads:    readexec.New(options.Cache, options.Reader),
 		writer:   options.Writer,
 		caller:   options.Caller,
 		verifier: verifier,
