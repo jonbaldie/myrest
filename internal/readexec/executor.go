@@ -63,6 +63,7 @@ func (e *Executor) Execute(
 // Shape filters, orders, and pages rows the caller already holds, nests the
 // embeds of query with table as their origin, and keeps the selected columns.
 // It adds no join columns: the rows must hold the origin keys of the embeds.
+// When query has no embeds, table is not used and can be the zero Table.
 func (e *Executor) Shape(
 	ctx context.Context,
 	role schemacache.Role,
@@ -70,22 +71,21 @@ func (e *Executor) Shape(
 	set []rows.Row,
 	query readquery.Query,
 ) (readquery.Result, error) {
-	shaped, err := readquery.Shape(set, query)
-	if err != nil {
-		return readquery.Result{}, err
-	}
 	plan, err := e.Plan(role, table.ID, query.Embeds)
 	if err != nil {
 		return readquery.Result{}, err
 	}
-	shaped.Rows, err = e.nest(ctx, role, shaped.Rows, plan.embeds)
-	if err != nil {
-		return readquery.Result{}, err
-	}
-	projected, err := readquery.Project(shaped.Rows, query)
-	if err != nil {
-		return readquery.Result{}, err
-	}
-	shaped.Rows = projected
-	return shaped, nil
+	return e.shapeRows(ctx, role, plan, set, query)
+}
+
+// ShapePlanned is Shape with an embed plan the caller made before, so a write
+// nests the embeds it checked before the mutation.
+func (e *Executor) ShapePlanned(
+	ctx context.Context,
+	role schemacache.Role,
+	plan Plan,
+	set []rows.Row,
+	query readquery.Query,
+) (readquery.Result, error) {
+	return e.shapeRows(ctx, role, plan, set, query)
 }

@@ -39,7 +39,8 @@ func writeEmbedPlanFailure(writer http.ResponseWriter, err error) bool {
 		)
 		return true
 	}
-	if errors.As(err, &readexec.SpreadAggregateRefused{}) {
+	var spreadAggregate readexec.SpreadAggregateRefused
+	if errors.As(err, &spreadAggregate) {
 		writeFailureExtra(
 			writer,
 			http.StatusBadRequest,
@@ -50,7 +51,8 @@ func writeEmbedPlanFailure(writer http.ResponseWriter, err error) bool {
 		)
 		return true
 	}
-	if errors.As(err, &readexec.SpreadNotSupported{}) {
+	var spread readexec.SpreadNotSupported
+	if errors.As(err, &spread) {
 		writeUnsupportedFeature(writer, msgSpreadNotSupported)
 		return true
 	}

@@ -535,6 +535,30 @@ func TestPostRPCRowSetSupportsEmbed(t *testing.T) {
 	}
 }
 
+// An embed on a row set that the filters empty still answers an empty array,
+// even when the routine returns a column that no table has: the origin comes
+// from the rows the client gets, not from the rows the routine returned.
+func TestPostRPCRowSetEmbedOnFilteredOutRowsAnswersEmpty(t *testing.T) {
+	t.Parallel()
+
+	source := &caller{body: []rows.Row{
+		{Columns: []string{"id", "name", "score"}, Values: []any{int64(1), "alpha", int64(7)}},
+	}}
+	service := serveRPCWithReader(t, source, &reader{})
+	response, body := apitest.PostJSON(
+		t,
+		service.URL()+"/rpc/list_items?select=id,orders(id)&id=gt.5",
+		`{}`,
+	)
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if string(body) != "[]\n" {
+		t.Fatalf("body = %s, want []", body)
+	}
+}
+
 // rpc-006: filter, order, pagination, or embed on a scalar RPC result refuses.
 func TestPostRPCScalarRefusesRowSetFeatures(t *testing.T) {
 	t.Parallel()

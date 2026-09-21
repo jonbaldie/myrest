@@ -250,8 +250,13 @@ func (s *Service) shapeRPCRowSet(
 ) (readquery.Result, error) {
 	var origin schemacache.Table
 	if len(query.Embeds) > 0 {
-		var err error
-		origin, err = s.rowSetOrigin(role, database, set, query.Embeds)
+		// Infer the origin from the rows the client will get, as before the
+		// executor: a result that the filters empty can still take any origin.
+		shaped, err := readquery.Shape(set, query)
+		if err != nil {
+			return readquery.Result{}, err
+		}
+		origin, err = s.rowSetOrigin(role, database, shaped.Rows, query.Embeds)
 		if err != nil {
 			return readquery.Result{}, err
 		}
@@ -359,28 +364,27 @@ func rowSetColumns(set []rows.Row) []string {
 }
 
 func tableHasColumns(table schemacache.Table, names []string) bool {
-	have := map[string]bool{}
+	have := make([]string, 0, len(table.Columns))
 	for _, column := range table.Columns {
-		have[column.Name] = true
+		have = append(have, column.Name)
 	}
-	for _, name := range names {
-		if !have[name] {
-			return false
-		}
-	}
-	return true
+	return containsAll(have, names)
 }
 
 func rowsHoldColumns(set []rows.Row, names []string) bool {
 	if len(set) == 0 {
 		return true
 	}
-	have := map[string]bool{}
-	for _, column := range set[0].Columns {
-		have[column] = true
+	return containsAll(set[0].Columns, names)
+}
+
+func containsAll(have, names []string) bool {
+	seen := map[string]bool{}
+	for _, name := range have {
+		seen[name] = true
 	}
 	for _, name := range names {
-		if !have[name] {
+		if !seen[name] {
 			return false
 		}
 	}

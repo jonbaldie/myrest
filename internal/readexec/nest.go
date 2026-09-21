@@ -231,3 +231,28 @@ func pageRows(children []rows.Row, ask readquery.Embed) []rows.Row {
 	}
 	return children
 }
+
+// shapeRows filters, orders, and pages set, nests the planned embeds, and
+// keeps the selected columns.
+func (e *Executor) shapeRows(
+	ctx context.Context,
+	role schemacache.Role,
+	plan Plan,
+	set []rows.Row,
+	query readquery.Query,
+) (readquery.Result, error) {
+	shaped, err := readquery.Shape(set, query)
+	if err != nil {
+		return readquery.Result{}, err
+	}
+	shaped.Rows, err = e.nest(ctx, role, shaped.Rows, plan.embeds)
+	if err != nil {
+		return readquery.Result{}, err
+	}
+	projected, err := readquery.Project(shaped.Rows, query)
+	if err != nil {
+		return readquery.Result{}, err
+	}
+	shaped.Rows = projected
+	return shaped, nil
+}

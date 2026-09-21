@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jonbaldie/myrest/internal/readexec"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
@@ -85,7 +86,7 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 	if !ok {
 		return
 	}
-	query, ok := s.parseWriteQuery(writer, request, role, asked, prefer, writeBoundOptional)
+	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, prefer, writeBoundOptional)
 	if !ok {
 		return
 	}
@@ -114,7 +115,7 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
 		Prefer: prefer, Method: http.MethodPost, TableName: asked.Name,
-		PrimaryKey: primaryKey, Result: result, Query: query, Repr: repr,
+		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan, Repr: repr,
 	})
 }
 
@@ -232,7 +233,7 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 	if !ok {
 		return
 	}
-	query, ok := s.parseWriteQuery(writer, request, role, asked, prefer, writeBoundRequired)
+	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, prefer, writeBoundRequired)
 	if !ok {
 		return
 	}
@@ -260,7 +261,7 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
 		Prefer: prefer, Method: http.MethodPatch, TableName: asked.Name,
-		PrimaryKey: primaryKey, Result: result, Query: query, Repr: repr,
+		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan, Repr: repr,
 	})
 }
 
@@ -276,7 +277,7 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 	if !ok {
 		return
 	}
-	query, ok := s.parseWriteQuery(writer, request, role, asked, prefer, writeBoundRequired)
+	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, prefer, writeBoundRequired)
 	if !ok {
 		return
 	}
@@ -300,7 +301,7 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
 		Prefer: prefer, Method: http.MethodDelete, TableName: asked.Name,
-		PrimaryKey: primaryKey, Result: result, Query: query, Repr: repr,
+		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan, Repr: repr,
 	})
 }
 
@@ -790,6 +791,8 @@ type writeOutcome struct {
 	PrimaryKey []string
 	Result     writequery.Result
 	Query      readquery.Query
+	// Plan is the embed plan the write made before the mutation.
+	Plan readexec.Plan
 	// Repr is the Accept negotiation the write checked before the write unit
 	// ran; the response reuses it instead of negotiating again.
 	Repr representation
@@ -804,7 +807,7 @@ const (
 )
 
 // parseWriteQuery reads the mutate query, optional unbounded-write gate, and
-// embed plan check for Prefer return=representation.
+// embed plan for Prefer return=representation.
 func (s *Service) parseWriteQuery(
 	writer http.ResponseWriter,
 	request *http.Request,
@@ -812,19 +815,20 @@ func (s *Service) parseWriteQuery(
 	origin schemacache.TableID,
 	prefer writePrefer,
 	bound writeBound,
-) (readquery.Query, bool) {
+) (readquery.Query, readexec.Plan, bool) {
 	query, err := parseMutateQuery(request)
 	if err != nil {
 		writeQueryFailure(writer, err)
-		return readquery.Query{}, false
+		return readquery.Query{}, readexec.Plan{}, false
 	}
 	if bound == writeBoundRequired && refuseUnbounded(writer, prefer, query) {
-		return readquery.Query{}, false
+		return readquery.Query{}, readexec.Plan{}, false
 	}
-	if !s.planWriteEmbeds(writer, role, origin, prefer, query) {
-		return readquery.Query{}, false
+	plan, ok := s.planWriteEmbeds(writer, role, origin, prefer, query)
+	if !ok {
+		return readquery.Query{}, readexec.Plan{}, false
 	}
-	return query, true
+	return query, plan, true
 }
 
 // planWriteEmbeds resolves nested select relationships before a write when
@@ -836,32 +840,32 @@ func (s *Service) planWriteEmbeds(
 	origin schemacache.TableID,
 	prefer writePrefer,
 	query readquery.Query,
-) bool {
+) (readexec.Plan, bool) {
 	if prefer.Return != returnRepresentation || len(query.Embeds) == 0 {
-		return true
+		return readexec.Plan{}, true
 	}
-	if _, err := s.reads.Plan(role, origin, query.Embeds); err != nil {
-		if writeEmbedPlanFailure(writer, err) {
-			return false
+	plan, err := s.reads.Plan(role, origin, query.Embeds)
+	if err != nil {
+		if !writeEmbedPlanFailure(writer, err) {
+			writeFailure(writer, http.StatusBadRequest, codeParseFailure, err.Error())
 		}
-		writeFailure(writer, http.StatusBadRequest, codeParseFailure, err.Error())
-		return false
+		return readexec.Plan{}, false
 	}
-	return true
+	return plan, true
 }
 
 // shapeWriteRepresentation nests and projects the rows the write unit
-// returned. The database already applied the filters of the write, and the
-// rows may no longer match them, so only the select of the query shapes the
-// representation.
+// returned, with the embed plan made before the mutation. The database
+// already applied the filters of the write, and the rows may no longer match
+// them, so only the select of the query shapes the representation.
 func (s *Service) shapeWriteRepresentation(
 	ctx context.Context,
 	role schemacache.Role,
-	table schemacache.Table,
+	plan readexec.Plan,
 	set []rows.Row,
 	query readquery.Query,
 ) ([]rows.Row, error) {
-	shaped, err := s.reads.Shape(ctx, role, table, set, readquery.Query{
+	shaped, err := s.reads.ShapePlanned(ctx, role, plan, set, readquery.Query{
 		Columns:   query.Columns,
 		SelectAll: query.SelectAll,
 		Embeds:    query.Embeds,
@@ -906,7 +910,7 @@ func (s *Service) writeRepresentationResponse(
 		}
 	}
 	shaped, err := s.shapeWriteRepresentation(
-		request.Context(), role, table, outcome.Result.Rows, outcome.Query,
+		request.Context(), role, outcome.Plan, outcome.Result.Rows, outcome.Query,
 	)
 	if err != nil {
 		s.writeReadFailure(writer, table.ID, role, err)

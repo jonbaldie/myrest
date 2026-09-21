@@ -627,3 +627,31 @@ func TestShapeRefusesUnknownColumns(t *testing.T) {
 		}
 	}
 }
+
+// ShapePlanned nests with a plan the caller made before, as a write does
+// before its mutation, and does not plan again.
+func TestShapePlannedNestsWithTheGivenPlan(t *testing.T) {
+	t.Parallel()
+
+	cache := shopCache()
+	source := shopRows()
+	executor := readexec.New(cache, source)
+	query := parse(t, "select=id,items(name)")
+	plan, err := executor.Plan(anon, resource(t, cache, "orders").ID, query.Embeds)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	held := []rows.Row{row([]string{"id", "item_id"}, int64(10), int64(1))}
+	result, err := executor.ShapePlanned(context.Background(), anon, plan, held, query)
+	if err != nil {
+		t.Fatalf("ShapePlanned: %v", err)
+	}
+	assertJSON(t, toJSON(t, result.Rows), `[{"id":10,"items":{"name":"alpha"}}]`)
+
+	// The zero Plan nests nothing, so the embed key is not in the rows.
+	result, err = executor.ShapePlanned(context.Background(), anon, readexec.Plan{}, held, parse(t, "select=id"))
+	if err != nil {
+		t.Fatalf("ShapePlanned zero plan: %v", err)
+	}
+	assertJSON(t, toJSON(t, result.Rows), `[{"id":10}]`)
+}

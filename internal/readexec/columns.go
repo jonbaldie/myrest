@@ -7,7 +7,7 @@ import (
 )
 
 // withJoinColumns adds the parent columns an embed plan needs, and returns the
-// names that were injected so the response can drop them again.
+// names that were injected so Execute can drop them again.
 func withJoinColumns(table schemacache.Table, query readquery.Query, plan []plannedEmbed) (readquery.Query, []string) {
 	if len(plan) == 0 || (len(query.Columns) == 0 && query.SelectAll) {
 		return query, nil
