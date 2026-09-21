@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jonbaldie/myrest/internal/readexec"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
@@ -790,7 +791,8 @@ type writeOutcome struct {
 	PrimaryKey []string
 	Result     writequery.Result
 	Query      readquery.Query
-	Plan       []plannedEmbed
+	// Plan is the embed plan the write made before the mutation.
+	Plan readexec.Plan
 	// Repr is the Accept negotiation the write checked before the write unit
 	// ran; the response reuses it instead of negotiating again.
 	Repr representation
@@ -813,18 +815,18 @@ func (s *Service) parseWriteQuery(
 	origin schemacache.TableID,
 	prefer writePrefer,
 	bound writeBound,
-) (readquery.Query, []plannedEmbed, bool) {
+) (readquery.Query, readexec.Plan, bool) {
 	query, err := parseMutateQuery(request)
 	if err != nil {
 		writeQueryFailure(writer, err)
-		return readquery.Query{}, nil, false
+		return readquery.Query{}, readexec.Plan{}, false
 	}
 	if bound == writeBoundRequired && refuseUnbounded(writer, prefer, query) {
-		return readquery.Query{}, nil, false
+		return readquery.Query{}, readexec.Plan{}, false
 	}
 	plan, ok := s.planWriteEmbeds(writer, role, origin, prefer, query)
 	if !ok {
-		return readquery.Query{}, nil, false
+		return readquery.Query{}, readexec.Plan{}, false
 	}
 	return query, plan, true
 }
@@ -838,40 +840,40 @@ func (s *Service) planWriteEmbeds(
 	origin schemacache.TableID,
 	prefer writePrefer,
 	query readquery.Query,
-) ([]plannedEmbed, bool) {
+) (readexec.Plan, bool) {
 	if prefer.Return != returnRepresentation || len(query.Embeds) == 0 {
-		return nil, true
+		return readexec.Plan{}, true
 	}
-	plan, err := s.planEmbeds(role, origin, query.Embeds)
+	plan, err := s.reads.Plan(role, origin, query.Embeds)
 	if err != nil {
-		if writeEmbedPlanFailure(writer, err) {
-			return nil, false
+		if !writeEmbedPlanFailure(writer, err) {
+			writeFailure(writer, http.StatusBadRequest, codeParseFailure, err.Error())
 		}
-		writeFailure(writer, http.StatusBadRequest, codeParseFailure, err.Error())
-		return nil, false
+		return readexec.Plan{}, false
 	}
 	return plan, true
 }
 
+// shapeWriteRepresentation nests and projects the rows the write unit
+// returned, with the embed plan made before the mutation. The database
+// already applied the filters of the write, and the rows may no longer match
+// them, so only the select of the query shapes the representation.
 func (s *Service) shapeWriteRepresentation(
 	ctx context.Context,
 	role schemacache.Role,
-	table schemacache.Table,
+	plan readexec.Plan,
 	set []rows.Row,
 	query readquery.Query,
-	plan []plannedEmbed,
 ) ([]rows.Row, error) {
-	if set == nil {
-		set = []rows.Row{}
+	shaped, err := s.reads.ShapePlanned(ctx, role, plan, set, readquery.Query{
+		Columns:   query.Columns,
+		SelectAll: query.SelectAll,
+		Embeds:    query.Embeds,
+	})
+	if err != nil {
+		return nil, err
 	}
-	if len(plan) > 0 {
-		nested, err := s.nestEmbeds(ctx, role, table, set, plan)
-		if err != nil {
-			return nil, err
-		}
-		set = nested
-	}
-	return readquery.Project(set, query)
+	return shaped.Rows, nil
 }
 
 func (s *Service) writeWriteResponse(
@@ -908,7 +910,7 @@ func (s *Service) writeRepresentationResponse(
 		}
 	}
 	shaped, err := s.shapeWriteRepresentation(
-		request.Context(), role, table, outcome.Result.Rows, outcome.Query, outcome.Plan,
+		request.Context(), role, outcome.Plan, outcome.Result.Rows, outcome.Query,
 	)
 	if err != nil {
 		s.writeReadFailure(writer, table.ID, role, err)

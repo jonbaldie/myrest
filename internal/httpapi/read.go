@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"net/url"
@@ -9,19 +8,13 @@ import (
 	"strings"
 
 	"github.com/jonbaldie/myrest/internal/config"
+	"github.com/jonbaldie/myrest/internal/readexec"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
 // Reader reads a resource as one database role under an ordinary-read query.
-type Reader interface {
-	Read(
-		ctx context.Context,
-		role schemacache.Role,
-		table schemacache.Table,
-		query readquery.Query,
-	) (readquery.Result, error)
-}
+type Reader = readexec.Reader
 
 const (
 	// codeParseFailure is the parity-target code for a bad query string.
@@ -70,35 +63,12 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	read, err := s.readWithEmbeds(request.Context(), requested.role, table, query)
+	read, err := s.reads.Execute(request.Context(), requested.role, table, query)
 	if err != nil {
 		s.writeReadFailure(writer, requested.table(), requested.role, err)
 		return
 	}
 	writeRead(writer, request.Method == http.MethodHead, query, read, repr)
-}
-
-func (s *Service) readWithEmbeds(
-	ctx context.Context,
-	role schemacache.Role,
-	table schemacache.Table,
-	query readquery.Query,
-) (readquery.Result, error) {
-	plan, err := s.planEmbeds(role, table.ID, query.Embeds)
-	if err != nil {
-		return readquery.Result{}, err
-	}
-	query, injected := withJoinColumns(table, query, plan)
-	read, err := s.reader.Read(ctx, role, table, query)
-	if err != nil {
-		return readquery.Result{}, err
-	}
-	nested, err := s.nestEmbeds(ctx, role, table, read.Rows, plan)
-	if err != nil {
-		return readquery.Result{}, err
-	}
-	read.Rows = dropInjectedColumns(nested, injected)
-	return read, nil
 }
 
 func (s *Service) writeReadFailure(
