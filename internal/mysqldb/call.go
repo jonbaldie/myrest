@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/rows"
+	"github.com/jonbaldie/myrest/internal/rpcexec"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
@@ -20,7 +20,7 @@ func (p *Pool) Call(
 	role schemacache.Role,
 	routine schemacache.RoutineFact,
 	args map[string]any,
-	options httpapi.CallOptions,
+	options rpcexec.CallOptions,
 ) (any, error) {
 	statement, err := roleSwitchStatement(role)
 	if err != nil {

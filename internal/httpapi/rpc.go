@@ -12,6 +12,7 @@ import (
 
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/rows"
+	"github.com/jonbaldie/myrest/internal/rpcexec"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
@@ -24,25 +25,10 @@ const codeNoRoutine = "PGRST202"
 const messageRowSetFeaturesRequired = "Filter, order, pagination, and embed need a row-set RPC result"
 
 // CallOptions carries Prefer-driven RPC behaviour into the database layer.
-type CallOptions struct {
-	// PreferTx is Prefer: tx=commit|rollback when the client sent it.
-	PreferTx string
-	// Validate runs inside the routine unit before commit, so a refused
-	// representation rolls the unit back (issue #175). A nil Validate
-	// validates nothing.
-	Validate func(any) error
-}
+type CallOptions = rpcexec.CallOptions
 
 // Caller runs a routine as one database role with named JSON arguments.
-type Caller interface {
-	Call(
-		ctx context.Context,
-		role schemacache.Role,
-		routine schemacache.RoutineFact,
-		args map[string]any,
-		options CallOptions,
-	) (any, error)
-}
+type Caller = rpcexec.Caller
 
 // callRoutine answers POST /rpc/<name>: named JSON body arguments, optional
 // read features on the query string for row-set results.
@@ -60,7 +46,7 @@ func (s *Service) callRoutine(writer http.ResponseWriter, request *http.Request)
 		writeQueryFailure(writer, err)
 		return
 	}
-	s.invokeRoutine(writer, request, role, asked, routine, args, query)
+	s.invokeRoutine(writer, request, role, asked, routine, args, query, rpcexec.CallModePost)
 }
 
 // getRoutine answers GET /rpc/<name>: named query-string arguments for the
@@ -69,15 +55,6 @@ func (s *Service) callRoutine(writer http.ResponseWriter, request *http.Request)
 func (s *Service) getRoutine(writer http.ResponseWriter, request *http.Request) {
 	role, asked, routine, ok := s.lookupRoutine(writer, request)
 	if !ok {
-		return
-	}
-	if !routine.ReadSafe() {
-		writeFailure(
-			writer,
-			http.StatusBadRequest,
-			codePostgresOnlyFeature,
-			"Only a read-safe routine can be called with GET",
-		)
 		return
 	}
 	values, err := requestQuery(request)
@@ -99,7 +76,7 @@ func (s *Service) getRoutine(writer http.ResponseWriter, request *http.Request) 
 		writeQueryFailure(writer, err)
 		return
 	}
-	s.invokeRoutine(writer, request, role, asked, routine, args, query)
+	s.invokeRoutine(writer, request, role, asked, routine, args, query, rpcexec.CallModeGet)
 }
 
 func (s *Service) lookupRoutine(
@@ -135,51 +112,83 @@ func (s *Service) invokeRoutine(
 	routine schemacache.RoutineFact,
 	args map[string]any,
 	query readquery.Query,
+	callMode rpcexec.CallMode,
 ) {
-	if signatureMismatch(routine, args) {
-		// The parity target treats a signature mismatch as a missing routine.
-		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
-		return
-	}
-
 	// RPC only honours Prefer: tx= from the write Prefer parser; other write
 	// Prefer tokens are accepted for strict handling but not applied on /rpc.
 	prefer, ok := s.readWritePrefer(writer, request, writeKindRPC)
 	if !ok {
 		return
 	}
-	preferTx := prefer.Tx
 	// Negotiate Accept before the routine runs, so a refused Accept header
 	// commits no routine side effects.
 	repr, ok := requestRepresentation(writer, request)
 	if !ok {
 		return
 	}
-	result, err := s.caller.Call(
+
+	var reprConstraint rpcexec.RepresentationConstraint
+	if repr.kind == representationJSONObject {
+		reprConstraint = rpcexec.RepresentationSingularObject
+	}
+
+	outcome, err := s.executor.Execute(
 		request.Context(),
-		role,
-		routine,
-		args,
-		CallOptions{PreferTx: preferTx, Validate: validateRPCRepresentation(query, repr)},
+		rpcexec.Intent{
+			Routine:        routine,
+			Role:           role,
+			Args:           args,
+			CallMode:       callMode,
+			PreferTx:       prefer.Tx,
+			Representation: reprConstraint,
+			Query:          query,
+		},
 	)
 	if err != nil {
 		s.log.Printf("myrest: rpc %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		writeRPCCallFailure(writer, err)
+		writeRPCCallFailure(writer, asked, err)
 		return
 	}
 
-	setTxPreferenceApplied(writer, preferTx, s.settings.DB.TxEnd)
-	set, tabular := rowSetResult(result)
-	s.writeRPCResult(writer, request, role, asked, query, result, set, tabular, repr)
+	if outcome.TxOutcome.PreferApplied {
+		setTxPreferenceApplied(writer, prefer.Tx, s.settings.DB.TxEnd)
+	}
+
+	if outcome.Kind == rpcexec.ResultKindRowSet {
+		read, err := s.shapeRPCRowSet(request.Context(), role, asked.Database, outcome.Rows, query)
+		if err != nil {
+			s.writeReadFailure(writer, schemacache.TableID{Database: asked.Database, Name: asked.Name}, role, err)
+			return
+		}
+		writeRead(writer, request.Method == http.MethodHead, query, read, repr)
+		return
+	}
+
+	writeScalarRPC(writer, request, repr, outcome.Data)
 }
 
-func writeRPCCallFailure(writer http.ResponseWriter, err error) {
-	var refusal singularObjectRefusal
+func writeRPCCallFailure(writer http.ResponseWriter, asked schemacache.RoutineID, err error) {
+	var mismatch rpcexec.SignatureMismatch
+	if errors.As(err, &mismatch) {
+		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
+		return
+	}
+	var readSafety rpcexec.ReadSafetyViolation
+	if errors.As(err, &readSafety) {
+		writeFailure(
+			writer,
+			http.StatusBadRequest,
+			codePostgresOnlyFeature,
+			readSafety.Error(),
+		)
+		return
+	}
+	var refusal rpcexec.SingularObjectRefusal
 	if errors.As(err, &refusal) {
 		writeSingularObjectFailure(writer, refusal.RowCount)
 		return
 	}
-	var rowSet rowSetFeaturesRefusal
+	var rowSet rpcexec.RowSetFeaturesRefusal
 	if errors.As(err, &rowSet) {
 		writeUnsupportedFeature(writer, messageRowSetFeaturesRequired)
 		return
@@ -195,29 +204,6 @@ func writeRPCCallFailure(writer http.ResponseWriter, err error) {
 		return
 	}
 	writeDatabaseFailure(writer, err)
-}
-
-func (s *Service) writeRPCResult(
-	writer http.ResponseWriter,
-	request *http.Request,
-	role schemacache.Role,
-	asked schemacache.RoutineID,
-	query readquery.Query,
-	result any,
-	set []rows.Row,
-	tabular bool,
-	repr representation,
-) {
-	if !tabular {
-		writeScalarRPC(writer, request, repr, result)
-		return
-	}
-	read, err := s.shapeRPCRowSet(request.Context(), role, asked.Database, set, query)
-	if err != nil {
-		s.writeReadFailure(writer, schemacache.TableID{Database: asked.Database, Name: asked.Name}, role, err)
-		return
-	}
-	writeRead(writer, request.Method == http.MethodHead, query, read, repr)
 }
 
 func writeScalarRPC(
@@ -405,61 +391,6 @@ func rowsHoldOriginKeys(set []rows.Row, plan []plannedEmbed) bool {
 	return true
 }
 
-// rowSetFeaturesRefusal says a non-tabular RPC result cannot take filter,
-// order, pagination, or embed. The unit answers 400 MYREST001 and rolls the
-// unit back (issue #178).
-type rowSetFeaturesRefusal struct{}
-
-func (rowSetFeaturesRefusal) Error() string {
-	return messageRowSetFeaturesRequired
-}
-
-// validateRPCRepresentation refuses a tabular routine result that does not
-// hold the one row the singular Accept claims, and refuses row-set query
-// features on a non-tabular result. The unit runs it before commit, so a
-// refusal rolls the routine side effects back (issues #175 and #178).
-func validateRPCRepresentation(query readquery.Query, repr representation) func(any) error {
-	needSingular := repr.kind == representationJSONObject
-	needRowSet := readquery.HasRowSetFeatures(query)
-	if !needSingular && !needRowSet {
-		return nil
-	}
-	return func(result any) error {
-		return checkRPCResult(query, needSingular, needRowSet, result)
-	}
-}
-
-func checkRPCResult(query readquery.Query, needSingular, needRowSet bool, result any) error {
-	set, tabular := rowSetResult(result)
-	if needSingular && tabular && len(set) != 1 {
-		return singularObjectRefusal{RowCount: len(set)}
-	}
-	if needRowSet && !tabular {
-		return rowSetFeaturesRefusal{}
-	}
-	if !tabular {
-		return nil
-	}
-	return shapeRPCRepresentation(set, query)
-}
-
-func shapeRPCRepresentation(set []rows.Row, query readquery.Query) error {
-	if _, err := readquery.Shape(set, query); err != nil {
-		return err
-	}
-	_, err := readquery.Project(set, query)
-	return err
-}
-
-// rowSetResult reports whether the caller answer is a tabular row set.
-func rowSetResult(result any) ([]rows.Row, bool) {
-	set, ok := result.([]rows.Row)
-	if !ok {
-		return nil, false
-	}
-	return set, true
-}
-
 // splitRPCQuery takes IN/INOUT parameter names as arguments and leaves the
 // remaining query keys for ordinary-read parsing.
 func splitRPCQuery(routine schemacache.RoutineFact, values url.Values) (map[string]any, url.Values) {
@@ -481,52 +412,6 @@ func splitRPCQuery(routine schemacache.RoutineFact, values url.Values) (map[stri
 		}
 	}
 	return args, readValues
-}
-
-// signatureMismatch reports a missing IN/INOUT argument or a body key that is
-// not an IN or INOUT parameter, including an unknown name or an OUT parameter.
-func signatureMismatch(routine schemacache.RoutineFact, args map[string]any) bool {
-	if _, missing := missingRequiredArgument(routine, args); missing {
-		return true
-	}
-	_, unknown := unknownArgument(routine, args)
-	return unknown
-}
-
-// missingRequiredArgument finds an IN or INOUT argument the body does not name.
-func missingRequiredArgument(routine schemacache.RoutineFact, args map[string]any) (string, bool) {
-	for _, param := range routine.Parameters {
-		if !inputParameter(param) {
-			continue
-		}
-		if _, held := args[param.Name]; !held {
-			return param.Name, true
-		}
-	}
-	return "", false
-}
-
-// unknownArgument finds a body key that is not an IN or INOUT parameter.
-func unknownArgument(routine schemacache.RoutineFact, args map[string]any) (string, bool) {
-	allowed := map[string]struct{}{}
-	for _, param := range routine.Parameters {
-		if inputParameter(param) {
-			allowed[param.Name] = struct{}{}
-		}
-	}
-	for name := range args {
-		if _, held := allowed[name]; !held {
-			return name, true
-		}
-	}
-	return "", false
-}
-
-func inputParameter(param schemacache.ParameterFact) bool {
-	if param.Ordinal == 0 || param.Name == "" {
-		return false
-	}
-	return !strings.EqualFold(param.Mode, "OUT")
 }
 
 // readNamedJSONArgs reads the PostgREST named-argument object. An empty body
