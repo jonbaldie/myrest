@@ -13,6 +13,7 @@ import (
 	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/mysqldb"
+	"github.com/jonbaldie/myrest/internal/rpcexec"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
@@ -43,7 +44,7 @@ func main() {
 		Cache:    cache,
 		Reader:   pool,
 		Writer:   pool,
-		Caller:   pool,
+		Executor: rpcexec.New(pool, settings.DB.TxEnd),
 	})
 	if err != nil {
 		log.Fatalf("myrest: listen: %v", err)

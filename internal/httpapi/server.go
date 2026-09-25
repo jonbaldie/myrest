@@ -10,20 +10,23 @@ import (
 
 	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/jwt"
+	"github.com/jonbaldie/myrest/internal/rpcexec"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
 // Options holds what a myrest listener needs: where to bind, the resolved
 // settings, the schema cache, the reader that runs the read as the database
-// role of the request, the writer that runs table writes, and the caller that
-// runs POST /rpc and GET /rpc. Log takes what the operator must see and the
-// client must not; it defaults to the logger of the log package.
+// role of the request, the writer that runs table writes, the routine executor
+// that runs POST /rpc and GET /rpc (or the caller adapter), and the logger.
+// Log takes what the operator must see and the client must not; it defaults
+// to the logger of the log package.
 type Options struct {
 	Addr     string
 	Settings config.Settings
 	Cache    *schemacache.Cache
 	Reader   Reader
 	Writer   Writer
+	Executor rpcexec.Executor
 	Caller   Caller
 	Log      *log.Logger
 }
@@ -36,7 +39,7 @@ type Service struct {
 	cache    *schemacache.Cache
 	reader   Reader
 	writer   Writer
-	caller   Caller
+	executor rpcexec.Executor
 	verifier *jwt.Verifier
 	log      *log.Logger
 }
@@ -69,13 +72,18 @@ func Listen(options Options) (*Service, error) {
 		verifier = built
 	}
 
+	executor := options.Executor
+	if executor == nil && options.Caller != nil {
+		executor = rpcexec.New(options.Caller, options.Settings.DB.TxEnd)
+	}
+
 	service := &Service{
 		listener: listener,
 		settings: options.Settings,
 		cache:    options.Cache,
 		reader:   options.Reader,
 		writer:   options.Writer,
-		caller:   options.Caller,
+		executor: executor,
 		verifier: verifier,
 		log:      logger,
 	}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jonbaldie/myrest/internal/config"
+	"github.com/jonbaldie/myrest/internal/rpcexec"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
@@ -44,7 +45,7 @@ func (s *Service) writeRootSpec(
 	role schemacache.Role,
 	name string,
 ) {
-	if s.caller == nil {
+	if s.executor == nil {
 		writeNoHandler(writer, request)
 		return
 	}
@@ -58,19 +59,21 @@ func (s *Service) writeRootSpec(
 	if !ok {
 		return
 	}
-	result, err := s.caller.Call(
+	outcome, err := s.executor.Execute(
 		request.Context(),
-		role,
-		routine,
-		map[string]any{},
-		CallOptions{},
+		rpcexec.Intent{
+			Routine:  routine,
+			Role:     role,
+			Args:     map[string]any{},
+			CallMode: rpcexec.CallModePost,
+		},
 	)
 	if err != nil {
 		s.log.Printf("db-root-spec %s: %v", name, err)
 		writeDatabaseFailure(writer, err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, result)
+	writeJSON(writer, http.StatusOK, outcome.Data)
 }
 
 func splitRootSpec(name string) (database, routine string, err error) {
