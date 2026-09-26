@@ -1,6 +1,7 @@
 package acceptance_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -378,5 +379,127 @@ func TestRPCShapingFailureRollsBackTheRoutine(t *testing.T) {
 	after := decodeRows(t, afterBody)
 	if len(after) != len(before) {
 		t.Fatalf("the refused routine kept its side effect: before %d after %d (%v)", len(before), len(after), after)
+	}
+}
+
+// Issue #196: POST /rpc with a JSON object for a non-JSON parameter refuses with 400 MYREST001.
+func TestPostRPCNonJSONParamRefusesObject(t *testing.T) {
+	response, body := apitest.PostJSON(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/echo_name",
+		`{"src":{"k":1}}`,
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	want := "Cannot pass a JSON object to parameter src: the parameter does not hold JSON"
+	if failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+}
+
+// Issue #196: POST /rpc with a JSON array for a non-JSON parameter refuses with 400 MYREST001.
+func TestPostRPCNonJSONParamRefusesArray(t *testing.T) {
+	response, body := apitest.PostJSON(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/echo_name",
+		`{"src":[1,2]}`,
+	)
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	want := "Cannot pass a JSON array to parameter src: the parameter does not hold JSON"
+	if failure.Message != want {
+		t.Fatalf("message = %q, want %q", failure.Message, want)
+	}
+}
+
+// Issue #196: POST /rpc with an object for a JSON IN parameter returns a JSON value.
+// A JSON OUT parameter is encoded as a JSON value, not a quoted string.
+func TestPostRPCProcedureAnswersWithJSONObject(t *testing.T) {
+	response, body := apitest.PostJSON(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/echo_json",
+		`{"doc":{"k":1}}`,
+	)
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if contentType := response.Header.Get("Content-Type"); contentType != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", contentType)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatalf("decode body %s: %v", body, err)
+	}
+	doc, ok := result["back"].(map[string]any)
+	if !ok {
+		t.Fatalf("back = %#v (%T), want a JSON object; body = %s", result["back"], result["back"], body)
+	}
+	if doc["k"] != float64(1) {
+		t.Fatalf("doc[k] = %#v, want 1", doc["k"])
+	}
+}
+
+// Issue #196: POST /rpc with an array for a JSON IN parameter returns a JSON value.
+func TestPostRPCProcedureAnswersWithJSONArray(t *testing.T) {
+	response, body := apitest.PostJSON(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/echo_json",
+		`{"doc":[1,2]}`,
+	)
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatalf("decode body %s: %v", body, err)
+	}
+	items, ok := result["back"].([]any)
+	if !ok {
+		t.Fatalf("back = %#v (%T), want a JSON array; body = %s", result["back"], result["back"], body)
+	}
+	if len(items) != 2 || items[0] != float64(1) || items[1] != float64(2) {
+		t.Fatalf("items = %#v, want [1, 2]", items)
+	}
+}
+
+// Issue #196: POST /rpc function with a JSON parameter returns a JSON value.
+func TestPostRPCFunctionAnswersWithJSONObject(t *testing.T) {
+	response, body := apitest.PostJSON(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/echo_json_func",
+		`{"doc":{"status":"ok"}}`,
+	)
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatalf("decode body %s: %v", body, err)
+	}
+	if result["status"] != "ok" {
+		t.Fatalf("result = %#v, want status=ok", result)
+	}
+}
+
+// Issue #196: POST /rpc procedure with null for a JSON parameter returns null.
+func TestPostRPCProcedureEchoesNullJSON(t *testing.T) {
+	response, body := apitest.PostJSON(
+		t,
+		serve(t, "myrest_fixture").URL()+"/rpc/echo_json",
+		`{"doc":null}`,
+	)
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatalf("decode body %s: %v", body, err)
+	}
+	if back, ok := result["back"]; !ok || back != nil {
+		t.Fatalf("back = %#v, want null; body = %s", back, body)
 	}
 }

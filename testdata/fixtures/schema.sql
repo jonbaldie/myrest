@@ -159,6 +159,16 @@ BEGIN
   SET dst = src;
 END;
 
+CREATE PROCEDURE echo_json(IN doc JSON, OUT back JSON)
+BEGIN
+  SET back = doc;
+END;
+
+CREATE FUNCTION echo_json_func(doc JSON) RETURNS JSON
+  DETERMINISTIC
+  NO SQL
+  RETURN doc;
+
 CREATE PROCEDURE bump_label(INOUT label VARCHAR(255))
 BEGIN
   SET label = CONCAT(label, '!');
@@ -314,6 +324,8 @@ GRANT EXECUTE ON FUNCTION myrest_fixture.add_them TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.write_marker TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.ping TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.echo_name TO 'myrest_anon';
+GRANT EXECUTE ON PROCEDURE myrest_fixture.echo_json TO 'myrest_anon';
+GRANT EXECUTE ON FUNCTION myrest_fixture.echo_json_func TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.bump_label TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.list_items TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.list_one_item TO 'myrest_anon';

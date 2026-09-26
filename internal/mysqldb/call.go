@@ -3,9 +3,11 @@ package mysqldb
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/rpcexec"
 	"github.com/jonbaldie/myrest/internal/schemacache"
@@ -77,13 +79,13 @@ func callFunction(
 	if err := row.Scan(&value); err != nil {
 		return nil, err
 	}
-	return jsonValue(value, "")
+	return jsonValue(value, routine.ReturnType)
 }
 
 type procedureCall struct {
 	placeholders []string
 	bound        []any
-	outNames     []string
+	outParams    []schemacache.ParameterFact
 	outVars      []string
 }
 
@@ -117,7 +119,7 @@ func callProcedure(
 	if tabular {
 		return set, nil
 	}
-	return readProcedureOutputs(ctx, tx, built.outNames, built.outVars)
+	return readProcedureOutputs(ctx, tx, built.outParams, built.outVars)
 }
 
 // readFirstResultSet reads the first CALL result set. A set with column
@@ -160,7 +162,7 @@ func buildProcedureCall(
 	for i, param := range params {
 		switch strings.ToUpper(param.Mode) {
 		case "IN":
-			value, err := argumentValue(param.Name, args)
+			value, err := boundArgument(param, args)
 			if err != nil {
 				return procedureCall{}, err
 			}
@@ -187,7 +189,7 @@ func bindOutParameter(
 ) error {
 	name := userVarName(len(built.outVars))
 	if strings.EqualFold(param.Mode, "INOUT") {
-		value, err := argumentValue(param.Name, args)
+		value, err := boundArgument(param, args)
 		if err != nil {
 			return err
 		}
@@ -198,7 +200,7 @@ func bindOutParameter(
 		return err
 	}
 	built.placeholders[index] = name
-	built.outNames = append(built.outNames, param.Name)
+	built.outParams = append(built.outParams, param)
 	built.outVars = append(built.outVars, name)
 	return nil
 }
@@ -206,21 +208,24 @@ func bindOutParameter(
 func readProcedureOutputs(
 	ctx context.Context,
 	tx *sql.Tx,
-	outNames, outVars []string,
+	outParams []schemacache.ParameterFact,
+	outVars []string,
 ) (rows.Row, error) {
-	values := make([]any, len(outNames))
-	for i := range outNames {
+	values := make([]any, len(outParams))
+	names := make([]string, len(outParams))
+	for i, param := range outParams {
+		names[i] = param.Name
 		var value any
 		if err := tx.QueryRowContext(ctx, "SELECT "+outVars[i]).Scan(&value); err != nil {
 			return rows.Row{}, err
 		}
-		converted, err := jsonValue(value, "")
+		converted, err := jsonValue(value, param.DataType)
 		if err != nil {
 			return rows.Row{}, err
 		}
 		values[i] = converted
 	}
-	return rows.Row{Columns: append([]string(nil), outNames...), Values: values}, nil
+	return rows.Row{Columns: names, Values: values}, nil
 }
 
 func inputParameters(routine schemacache.RoutineFact) []schemacache.ParameterFact {
@@ -260,13 +265,46 @@ func (e MissingArgument) Error() string {
 func bindArguments(params []schemacache.ParameterFact, args map[string]any) ([]any, error) {
 	values := make([]any, len(params))
 	for i, param := range params {
-		value, err := argumentValue(param.Name, args)
+		value, err := boundArgument(param, args)
 		if err != nil {
 			return nil, err
 		}
 		values[i] = value
 	}
 	return values, nil
+}
+
+// boundArgument binds one routine argument. A nested JSON object or array
+// payload serializes to a JSON document string when the parameter holds
+// JSON. On any other parameter type, the call refuses before MySQL sees
+// the statement. Scalar, string, and null values bind as the body sent them.
+func boundArgument(param schemacache.ParameterFact, args map[string]any) (any, error) {
+	value, err := argumentValue(param.Name, args)
+	if err != nil {
+		return nil, err
+	}
+	switch value.(type) {
+	case map[string]any, []any:
+	default:
+		return value, nil
+	}
+	if !isJSONDataType(param.DataType) {
+		kind := "object"
+		if _, held := value.([]any); held {
+			kind = "array"
+		}
+		return nil, readquery.UnsupportedFeature{
+			Message: fmt.Sprintf(
+				"Cannot pass a JSON %s to parameter %s: the parameter does not hold JSON",
+				kind, param.Name,
+			),
+		}
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	return string(raw), nil
 }
 
 func argumentValue(name string, args map[string]any) (any, error) {

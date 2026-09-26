@@ -36,6 +36,17 @@ Each `/rpc` call runs as one request transaction ended by `db-tx-end` (and
 `Prefer: tx=` when that mode allows override). See
 [Transaction end and isolation](transactions.md).
 
+## JSON values in RPC calls
+
+A routine call body holds JSON parameter values as JSON. When the routine
+parameter has type JSON (`DATA_TYPE = json` in the schema cache), a JSON
+object or array argument binds as that JSON. Output parameters and function
+returns with type JSON encode as JSON values.
+
+Scalar, string, and null values bind as the body sent them. A JSON object or
+array for a parameter that does not hold JSON refuses with status 400 and
+`MYREST001`.
+
 ## Full match rows
 
 | Item | Parity label | Scenarios |
