@@ -1,6 +1,7 @@
 package mysqldb
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -380,6 +381,7 @@ func TestKeyFilterValueFormatsJSONNumbers(t *testing.T) {
 		want  string
 	}{
 		{"large json integer", float64(1000000), "1000000"},
+		{"json.Number large integer", json.Number("9007199254740993"), "9007199254740993"},
 		{"small json integer", float64(123), "123"},
 		{"fractional json number", float64(1.5), "1.5"},
 		{"auto-increment int64", int64(9), "9"},

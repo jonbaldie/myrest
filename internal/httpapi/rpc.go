@@ -3,7 +3,6 @@ package httpapi
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -435,7 +434,7 @@ func readNamedJSONArgs(writer http.ResponseWriter, request *http.Request) (map[s
 	}
 
 	var decoded any
-	if err := json.Unmarshal(body, &decoded); err != nil {
+	if err := decodeJSONNumber(body, &decoded); err != nil {
 		writeFailure(writer, http.StatusBadRequest, codeParseFailure, "Could not parse the JSON body")
 		return nil, false
 	}

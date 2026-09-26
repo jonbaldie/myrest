@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -937,6 +938,7 @@ func TestPreferReturnHeadersOnlyJSONIntegerKeys(t *testing.T) {
 		want string
 	}{
 		{"large json integer", float64(1000000), "/items?id=eq.1000000"},
+		{"json.Number large integer", json.Number("9007199254740993"), "/items?id=eq.9007199254740993"},
 		{"small json integer", float64(123), "/items?id=eq.123"},
 		{"fractional json number", float64(1.5), "/items?id=eq.1.5"},
 		{"auto-increment int64", int64(9), "/items?id=eq.9"},
@@ -2014,5 +2016,107 @@ func TestPreferHandlingLenientAndValidTokens(t *testing.T) {
 		})
 	}
 }
+
+// Issue #197: JSON numbers must keep precision at the writer interface.
+func TestWriteJSONNumberPrecision(t *testing.T) {
+	sink := &writer{}
+	service := serveWrite(t, &reader{}, sink)
+
+	t.Run("POST preserves large integer as json.Number", func(t *testing.T) {
+		req, err := http.NewRequest(
+			http.MethodPost,
+			service.URL()+"/items",
+			strings.NewReader(`{"id":9007199254740993,"name":"big"}`),
+		)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusCreated {
+			t.Fatalf("status = %d, want %d", res.StatusCode, http.StatusCreated)
+		}
+		if len(sink.rows) != 1 {
+			t.Fatalf("len(sink.rows) = %d, want 1", len(sink.rows))
+		}
+		id, ok := sink.rows[0]["id"].(json.Number)
+		if !ok || id.String() != "9007199254740993" {
+			t.Fatalf("sink.rows[0][id] = %#v, want json.Number 9007199254740993", sink.rows[0]["id"])
+		}
+	})
+
+	t.Run("PATCH preserves large integer as json.Number", func(t *testing.T) {
+		req, err := http.NewRequest(
+			http.MethodPatch,
+			service.URL()+"/items?id=eq.1",
+			strings.NewReader(`{"id":9007199254740993}`),
+		)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusNoContent {
+			t.Fatalf("status = %d, want %d", res.StatusCode, http.StatusNoContent)
+		}
+		id, ok := sink.patch["id"].(json.Number)
+		if !ok || id.String() != "9007199254740993" {
+			t.Fatalf("sink.patch[id] = %#v, want json.Number 9007199254740993", sink.patch["id"])
+		}
+	})
+
+	t.Run("PUT preserves large integer as json.Number", func(t *testing.T) {
+		req, err := http.NewRequest(
+			http.MethodPut,
+			service.URL()+"/items?id=eq.9007199254740993",
+			strings.NewReader(`{"id":9007199254740993,"name":"put-big"}`),
+		)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusCreated && res.StatusCode != http.StatusNoContent {
+			t.Fatalf("status = %d, want 201 or 204", res.StatusCode)
+		}
+		id, ok := sink.row["id"].(json.Number)
+		if !ok || id.String() != "9007199254740993" {
+			t.Fatalf("sink.row[id] = %#v, want json.Number 9007199254740993", sink.row["id"])
+		}
+	})
+
+	t.Run("POST rejects trailing data in body", func(t *testing.T) {
+		req, err := http.NewRequest(
+			http.MethodPost,
+			service.URL()+"/items",
+			strings.NewReader(`{"id":1,"name":"first"}{"id":2}`),
+		)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d", res.StatusCode, http.StatusBadRequest)
+		}
+	})
+}
+
 
 

@@ -1,6 +1,7 @@
 package acceptance_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1084,7 +1085,9 @@ func TestPreferMissingMaxAffectedAndHandlingOverMySQL(t *testing.T) {
 func jsonNumberField(t *testing.T, body []byte, field string) string {
 	t.Helper()
 	var rows []map[string]any
-	if err := json.Unmarshal(body, &rows); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	if err := dec.Decode(&rows); err != nil {
 		t.Fatalf("decode body: %v; body = %s", err, body)
 	}
 	if len(rows) != 1 {
@@ -1095,6 +1098,8 @@ func jsonNumberField(t *testing.T, body []byte, field string) string {
 		t.Fatalf("missing %s in %s", field, body)
 	}
 	switch typed := value.(type) {
+	case json.Number:
+		return typed.String()
 	case float64:
 		return strconv.FormatInt(int64(typed), 10)
 	default:

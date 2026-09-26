@@ -637,7 +637,7 @@ func readPutObject(writer http.ResponseWriter, request *http.Request) (map[strin
 		return nil, false
 	}
 	var row map[string]any
-	if err := json.Unmarshal(body, &row); err != nil {
+	if err := decodeJSONNumber(body, &row); err != nil {
 		writeFailure(writer, http.StatusBadRequest, codeBadBody, "Could not parse the JSON body")
 		return nil, false
 	}
@@ -714,7 +714,7 @@ func readInsertRows(writer http.ResponseWriter, request *http.Request) ([]map[st
 	trimmed := bytes.TrimSpace(body)
 	var rows []map[string]any
 	if trimmed[0] == '[' {
-		if err := json.Unmarshal(body, &rows); err != nil {
+		if err := decodeJSONNumber(body, &rows); err != nil {
 			writeFailure(writer, http.StatusBadRequest, codeBadBody, "Could not parse the JSON body")
 			return nil, false
 		}
@@ -724,7 +724,7 @@ func readInsertRows(writer http.ResponseWriter, request *http.Request) ([]map[st
 		}
 	} else {
 		var row map[string]any
-		if err := json.Unmarshal(body, &row); err != nil {
+		if err := decodeJSONNumber(body, &row); err != nil {
 			writeFailure(writer, http.StatusBadRequest, codeBadBody, "Could not parse the JSON body")
 			return nil, false
 		}
@@ -756,7 +756,7 @@ func readPatchObject(writer http.ResponseWriter, request *http.Request) (map[str
 		return nil, false
 	}
 	var patch map[string]any
-	if err := json.Unmarshal(body, &patch); err != nil {
+	if err := decodeJSONNumber(body, &patch); err != nil {
 		writeFailure(writer, http.StatusBadRequest, codeBadBody, "Could not parse the JSON body")
 		return nil, false
 	}
@@ -765,6 +765,19 @@ func readPatchObject(writer http.ResponseWriter, request *http.Request) (map[str
 		return nil, false
 	}
 	return patch, true
+}
+
+func decodeJSONNumber(data []byte, dest any) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(dest); err != nil {
+		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return errors.New("unexpected trailing data")
+	}
+	return nil
 }
 
 func readJSONBody(writer http.ResponseWriter, request *http.Request) ([]byte, bool) {
@@ -954,6 +967,8 @@ func locationValue(value any) string {
 		return url.QueryEscape(string(typed))
 	case float64:
 		return url.QueryEscape(strconv.FormatFloat(typed, 'f', -1, 64))
+	case json.Number:
+		return url.QueryEscape(typed.String())
 	default:
 		return url.QueryEscape(fmt.Sprint(typed))
 	}
