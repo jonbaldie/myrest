@@ -1,0 +1,115 @@
+===== A: integer precision (write)
+2026/09/26 01:52:35 myrest listening on http://127.0.0.1:3111 (databases=myrest_fixture)
+### POST /items -H Content-Type: application/json -H Prefer: return=representation -d {"id":9007199254740993,"name":"big"}
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /items?id=eq.9007199254740992
+Preference-Applied: return=representation
+
+[{"id":9007199254740992,"name":"big","name_len":3}]
+
+### GET /items?id=eq.9007199254740993 
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+
+[]
+
+===== A: integer precision (rpc)
+### POST /rpc/add_them -H Content-Type: application/json -d {"a":9007199254740993,"b":0}
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+9007199254740992
+
+### GET /rpc/add_them?a=9007199254740993&b=0 
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+9007199254740993
+
+===== B: singular object on filtered rpc row set
+2026/09/26 01:52:42 myrest listening on http://127.0.0.1:3111 (databases=myrest_fixture)
+### GET /rpc/list_items?id=eq.1 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+
+[{"id":1,"name":"alpha"}]
+
+### GET /rpc/list_items?id=eq.1 -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+
+{"code":"PGRST116","message":"Cannot coerce the result to a single JSON object","details":"The result contains 2 rows","hint":null}
+
+### GET /items?id=eq.1 -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/vnd.pgrst.object+json
+Range-Unit: items
+
+{"id":1,"name":"alpha","name_len":5}
+
+===== C: bulk POST mixed keys representation
+2026/09/26 01:52:48 myrest listening on http://127.0.0.1:3111 (databases=myrest_fixture)
+### POST /items -H Content-Type: application/json -H Prefer: return=representation -d [{"name":"x"},{"name":"y","id":50}]
+HTTP/1.1 201 Created
+Content-Type: application/json
+Preference-Applied: return=representation
+
+[{"id":3,"name":"x","name_len":1}]
+
+### GET /items?name=in.(x,y) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+
+[{"id":3,"name":"x","name_len":1},{"id":50,"name":"y","name_len":1}]
+
+===== D: PATCH changing primary key representation
+2026/09/26 01:52:54 myrest listening on http://127.0.0.1:3111 (databases=myrest_fixture)
+### POST /items -H Content-Type: application/json -d {"id":10,"name":"ten"}
+HTTP/1.1 201 Created
+
+
+### PATCH /items?id=eq.10 -H Content-Type: application/json -H Prefer: return=representation -d {"id":20}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+
+[]
+
+### GET /items?id=in.(10,20) 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+
+[{"id":20,"name":"ten","name_len":3}]
+
+===== E: JSON object argument to a JSON routine parameter (fixture addition as root)
+2026/09/26 01:52:59 myrest listening on http://127.0.0.1:3111 (databases=myrest_fixture)
+### POST /rpc/et_echo_json -H Content-Type: application/json -d {"doc":{"k":1}}
+HTTP/1.1 500 Internal Server Error
+Content-Type: application/json
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+### POST /rpc/et_echo_json -H Content-Type: application/json -d {"doc":"{\"k\":1}"}
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"back":"{\"k\": 1}"}
+
+### PATCH /profiles?id=eq.1 -H Content-Type: application/json -H Prefer: return=representation -d {"meta":{"k":1}}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+
+[{"id":1,"meta":{"k":1}}]
+
+2026/09/26 01:53:03 myrest: rpc myrest_fixture.et_echo_json as myrest_anon: sql: converting argument $1 type: unsupported type map[string]interface {}, a map
