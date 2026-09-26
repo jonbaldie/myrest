@@ -117,6 +117,9 @@ func insertRows(
 	if err != nil {
 		return writequery.Result{}, err
 	}
+	if usePerRowKeys(table, bodyRows, options) {
+		return insertRowsByKey(ctx, tx, table, columns, bodyRows, options)
+	}
 	parts, err := buildInsert(table, columns, bodyRows, options.MissingDefault)
 	if err != nil {
 		return writequery.Result{}, err
@@ -151,18 +154,143 @@ func finishInsert(
 	if err != nil {
 		return writequery.Result{}, err
 	}
+	return resultFromInsertedKeys(ctx, tx, table, options, affected, keys)
+}
+
+func usePerRowKeys(table schemacache.Table, bodyRows []map[string]any, options writequery.Options) bool {
+	if !options.ReturnRepresentation && !options.ReturnKeys {
+		return false
+	}
+	if options.OnDuplicate != writequery.DuplicateFails || len(options.PrimaryKey) != 1 {
+		return false
+	}
+	column, ok := tableColumn(table, options.PrimaryKey[0])
+	if !ok || !column.AutoIncrement {
+		return false
+	}
+	return mixedKeyPresence(bodyRows, options.PrimaryKey[0])
+}
+
+func mixedKeyPresence(bodyRows []map[string]any, column string) bool {
+	seen, missing := false, false
+	for _, row := range bodyRows {
+		if explicitKey(row, column) {
+			seen = true
+			continue
+		}
+		missing = true
+	}
+	return seen && missing
+}
+
+func hasExplicitKey(bodyRows []map[string]any, column string) bool {
+	for _, row := range bodyRows {
+		if explicitKey(row, column) {
+			return true
+		}
+	}
+	return false
+}
+
+func explicitKey(row map[string]any, column string) bool {
+	value, held := row[column]
+	return held && value != nil
+}
+
+func insertRowsByKey(
+	ctx context.Context,
+	tx *sql.Tx,
+	table schemacache.Table,
+	columns []string,
+	bodyRows []map[string]any,
+	options writequery.Options,
+) (writequery.Result, error) {
+	keys := make([]map[string]any, 0, len(bodyRows))
+	var affected int64
+	column := options.PrimaryKey[0]
+	for _, row := range bodyRows {
+		key, n, err := insertOneRowKey(ctx, tx, table, columns, row, options, column)
+		if err != nil {
+			return writequery.Result{}, err
+		}
+		affected += n
+		keys = append(keys, key)
+	}
+	return resultFromInsertedKeys(ctx, tx, table, options, affected, keys)
+}
+
+func insertOneRowKey(
+	ctx context.Context,
+	tx *sql.Tx,
+	table schemacache.Table,
+	columns []string,
+	row map[string]any,
+	options writequery.Options,
+	column string,
+) (map[string]any, int64, error) {
+	parts, err := buildInsert(table, columns, []map[string]any{row}, options.MissingDefault)
+	if err != nil {
+		return nil, 0, err
+	}
+	execResult, err := tx.ExecContext(ctx, parts.statement, parts.args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	affected, err := execResult.RowsAffected()
+	if err != nil {
+		return nil, 0, err
+	}
+	key, err := keyForInsertedRow(row, column, execResult)
+	if err != nil {
+		return nil, 0, err
+	}
+	return key, affected, nil
+}
+
+func keyForInsertedRow(row map[string]any, column string, execResult sql.Result) (map[string]any, error) {
+	if explicitKey(row, column) {
+		return map[string]any{column: row[column]}, nil
+	}
+	id, err := execResult.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+	if id == 0 {
+		return nil, cannotIdentifyInsertedKeys()
+	}
+	return map[string]any{column: id}, nil
+}
+
+func resultFromInsertedKeys(
+	ctx context.Context,
+	tx *sql.Tx,
+	table schemacache.Table,
+	options writequery.Options,
+	affected int64,
+	keys []map[string]any,
+) (writequery.Result, error) {
 	result := writequery.Result{Affected: affected, Keys: keys}
 	if !options.ReturnRepresentation {
 		return result, nil
 	}
-	result.Rows, err = selectByKeys(ctx, tx, table, options.PrimaryKey, keys)
+	rows, err := selectByKeys(ctx, tx, table, options.PrimaryKey, keys)
 	if err != nil {
 		return writequery.Result{}, err
 	}
+	if len(keys) > 0 && len(rows) != len(keys) {
+		return writequery.Result{}, cannotIdentifyInsertedKeys()
+	}
+	result.Rows = rows
 	if err := validateUnit(options, result); err != nil {
 		return writequery.Result{}, err
 	}
 	return result, nil
+}
+
+func cannotIdentifyInsertedKeys() error {
+	return readquery.UnsupportedFeature{
+		Message: "Prefer return cannot identify inserted primary key values honestly",
+	}
 }
 
 func updateRows(
@@ -502,25 +630,35 @@ func insertedKeys(
 	if keysFromPayload, ok := keysFromBody(bodyRows, primaryKey); ok {
 		return keysFromPayload, nil
 	}
-	// LastInsertId does not map to body rows once a duplicate key can merge
-	// or skip a row.
-	if len(primaryKey) == 1 && options.OnDuplicate == writequery.DuplicateFails {
-		column, ok := tableColumn(table, primaryKey[0])
-		if ok && column.AutoIncrement {
-			first, err := execResult.LastInsertId()
-			if err != nil {
-				return nil, err
-			}
-			keys := make([]map[string]any, len(bodyRows))
-			for i := range bodyRows {
-				keys[i] = map[string]any{primaryKey[0]: first + int64(i)}
-			}
-			return keys, nil
-		}
+	if keys, ok, err := consecutiveAutoKeys(table, bodyRows, options, execResult); ok || err != nil {
+		return keys, err
 	}
-	return nil, readquery.UnsupportedFeature{
-		Message: "Prefer return cannot identify inserted primary key values honestly",
+	return nil, cannotIdentifyInsertedKeys()
+}
+
+func consecutiveAutoKeys(
+	table schemacache.Table,
+	bodyRows []map[string]any,
+	options writequery.Options,
+	execResult sql.Result,
+) ([]map[string]any, bool, error) {
+	primaryKey := options.PrimaryKey
+	if len(primaryKey) != 1 || options.OnDuplicate != writequery.DuplicateFails || hasExplicitKey(bodyRows, primaryKey[0]) {
+		return nil, false, nil
 	}
+	column, ok := tableColumn(table, primaryKey[0])
+	if !ok || !column.AutoIncrement {
+		return nil, false, nil
+	}
+	first, err := execResult.LastInsertId()
+	if err != nil {
+		return nil, false, err
+	}
+	keys := make([]map[string]any, len(bodyRows))
+	for i := range bodyRows {
+		keys[i] = map[string]any{primaryKey[0]: first + int64(i)}
+	}
+	return keys, true, nil
 }
 
 func keysFromBody(bodyRows []map[string]any, primaryKey []string) ([]map[string]any, bool) {

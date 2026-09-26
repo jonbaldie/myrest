@@ -11,6 +11,54 @@ import (
 	"github.com/jonbaldie/myrest/internal/writequery"
 )
 
+type idResult struct {
+	id int64
+}
+
+func (r idResult) LastInsertId() (int64, error) { return r.id, nil }
+func (r idResult) RowsAffected() (int64, error) { return 1, nil }
+
+func TestInsertedKeysDoesNotGuessMixedExplicitKeys(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		Columns: []schemacache.Column{{Name: "id", AutoIncrement: true}},
+	}
+	options := writequery.Options{
+		PrimaryKey:  []string{"id"},
+		OnDuplicate: writequery.DuplicateFails,
+	}
+	rows := []map[string]any{
+		{"name": "auto"},
+		{"name": "explicit", "id": json.Number("50")},
+	}
+	_, err := insertedKeys(table, rows, options, idResult{id: 3})
+	var gap readquery.UnsupportedFeature
+	if !errors.As(err, &gap) {
+		t.Fatalf("err = %v, want UnsupportedFeature", err)
+	}
+}
+
+func TestInsertedKeysKeepsConsecutiveAutoIncrementKeys(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		Columns: []schemacache.Column{{Name: "id", AutoIncrement: true}},
+	}
+	options := writequery.Options{
+		PrimaryKey:  []string{"id"},
+		OnDuplicate: writequery.DuplicateFails,
+	}
+	rows := []map[string]any{{"name": "a"}, {"name": "b"}}
+	keys, err := insertedKeys(table, rows, options, idResult{id: 8})
+	if err != nil {
+		t.Fatalf("insertedKeys: %v", err)
+	}
+	if len(keys) != 2 || keys[0]["id"] != int64(8) || keys[1]["id"] != int64(9) {
+		t.Fatalf("keys = %#v", keys)
+	}
+}
+
 func TestBuildInsertSQL(t *testing.T) {
 	t.Parallel()
 

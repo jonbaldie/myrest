@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/jonbaldie/myrest/internal/apitest"
+	"github.com/jonbaldie/myrest/internal/httpapi"
 )
 
 // write-001: a POST of one object and a POST of a JSON array both insert rows.
@@ -626,6 +627,198 @@ func TestPatchChangesPrimaryKeyReturnRepresentationOverMySQL(t *testing.T) {
 	}
 	if !strings.Contains(string(body), `"name":"twenty"`) || !strings.Contains(string(body), `"id":10196`) {
 		t.Fatalf("PATCH non-key body = %s", body)
+	}
+}
+
+// Issue #199: a bulk POST that mixes explicit and auto-increment keys
+// returns every inserted row under return=representation.
+func TestBulkPostMixedKeysReturnRepresentationOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	cases := []struct {
+		name         string
+		body         string
+		explicitID   int
+		explicitName string
+		autoName     string
+		alsoAutoName string
+	}{
+		{
+			name:         "explicit key after auto-increment row",
+			body:         `[{"name":"mix199-auto-a"},{"name":"mix199-explicit-a","id":50199}]`,
+			explicitID:   50199,
+			explicitName: "mix199-explicit-a",
+			autoName:     "mix199-auto-a",
+		},
+		{
+			name:         "explicit key before auto-increment row",
+			body:         `[{"name":"mix199-explicit-b","id":50200},{"name":"mix199-auto-b"}]`,
+			explicitID:   50200,
+			explicitName: "mix199-explicit-b",
+			autoName:     "mix199-auto-b",
+		},
+		{
+			name:         "auto-increment rows on both sides of an explicit key",
+			body:         `[{"name":"mix199-auto-c1"},{"name":"mix199-explicit-c","id":199010},{"name":"mix199-auto-c2"}]`,
+			explicitID:   199010,
+			explicitName: "mix199-explicit-c",
+			autoName:     "mix199-auto-c1",
+			alsoAutoName: "mix199-auto-c2",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			request, err := http.NewRequest(http.MethodPost, service.URL()+"/items", strings.NewReader(tc.body))
+			if err != nil {
+				t.Fatalf("new POST: %v", err)
+			}
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Prefer", "return=representation")
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				t.Fatalf("POST: %v", err)
+			}
+			t.Cleanup(func() { _ = response.Body.Close() })
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			if response.StatusCode != http.StatusCreated {
+				t.Fatalf("status = %d; body = %s", response.StatusCode, body)
+			}
+			if got := response.Header.Get("Preference-Applied"); got != "return=representation" {
+				t.Fatalf("Preference-Applied = %q", got)
+			}
+			text := string(body)
+			if !strings.Contains(text, `"name":"`+tc.explicitName+`"`) {
+				t.Fatalf("representation omits explicit row: %s", text)
+			}
+			if !strings.Contains(text, `"id":`+strconv.Itoa(tc.explicitID)) {
+				t.Fatalf("representation omits explicit key: %s", text)
+			}
+			if !strings.Contains(text, `"name":"`+tc.autoName+`"`) {
+				t.Fatalf("representation omits auto-increment row: %s", text)
+			}
+			if !representationHasStoredKey(t, service, text, tc.autoName) {
+				t.Fatalf("representation omits stored auto key for %s: %s", tc.autoName, text)
+			}
+			if tc.alsoAutoName == "" {
+				return
+			}
+			if !strings.Contains(text, `"name":"`+tc.alsoAutoName+`"`) {
+				t.Fatalf("representation omits second auto-increment row: %s", text)
+			}
+			if !representationHasStoredKey(t, service, text, tc.alsoAutoName) {
+				t.Fatalf("representation omits stored auto key for %s: %s", tc.alsoAutoName, text)
+			}
+		})
+	}
+}
+
+func representationHasStoredKey(t *testing.T, service *httpapi.Service, text, name string) bool {
+	t.Helper()
+
+	_, stored := get(t, service, "/items?name=eq."+name+"&select=id,name")
+	decoder := json.NewDecoder(bytes.NewReader(stored))
+	decoder.UseNumber()
+	var storedRows []map[string]any
+	if err := decoder.Decode(&storedRows); err != nil {
+		t.Fatalf("decode stored row: %v; body = %s", err, stored)
+	}
+	if len(storedRows) != 1 {
+		t.Fatalf("stored row count = %d; body = %s", len(storedRows), stored)
+	}
+	id, ok := storedRows[0]["id"].(json.Number)
+	if !ok {
+		t.Fatalf("stored id = %#v", storedRows[0]["id"])
+	}
+	return strings.Contains(text, `"id":`+id.String())
+}
+
+// Issue #199: all-explicit and all-auto-increment bulk representation stay honest.
+func TestBulkPostUniformKeysReturnRepresentationOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	cases := []struct {
+		name string
+		body string
+		ids  []string
+	}{
+		{
+			name: "all auto-increment",
+			body: `[{"name":"mix199-all-auto-a"},{"name":"mix199-all-auto-b"}]`,
+		},
+		{
+			name: "all explicit",
+			body: `[{"name":"mix199-all-explicit-a","id":199201},{"name":"mix199-all-explicit-b","id":199202}]`,
+			ids:  []string{"199201", "199202"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			request, err := http.NewRequest(http.MethodPost, service.URL()+"/items", strings.NewReader(tc.body))
+			if err != nil {
+				t.Fatalf("new POST: %v", err)
+			}
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Prefer", "return=representation")
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				t.Fatalf("POST: %v", err)
+			}
+			t.Cleanup(func() { _ = response.Body.Close() })
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			if response.StatusCode != http.StatusCreated {
+				t.Fatalf("status = %d; body = %s", response.StatusCode, body)
+			}
+			var got []map[string]any
+			if err := json.Unmarshal(body, &got); err != nil {
+				t.Fatalf("decode body: %v; body = %s", err, body)
+			}
+			if len(got) != 2 {
+				t.Fatalf("row count = %d; body = %s", len(got), body)
+			}
+			for _, id := range tc.ids {
+				if !strings.Contains(string(body), `"id":`+id) {
+					t.Fatalf("representation omits id %s: %s", id, body)
+				}
+			}
+		})
+	}
+}
+
+// Issue #199: a mixed bulk POST that myrest cannot key honestly refuses and
+// inserts no rows.
+func TestBulkPostMixedKeysRepresentationRefusalRollsBackOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	request, err := http.NewRequest(
+		http.MethodPost,
+		service.URL()+"/items",
+		strings.NewReader(`[{"name":"mix199-refuse-auto"},{"name":"mix199-refuse-explicit","id":199099}]`),
+	)
+	if err != nil {
+		t.Fatalf("new POST: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "resolution=merge-duplicates, return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+
+	_, stored := get(t, service, "/items?name=in.(mix199-refuse-auto,mix199-refuse-explicit)")
+	if string(stored) != "[]\n" {
+		t.Fatalf("refusal left rows: %s", stored)
 	}
 }
 
