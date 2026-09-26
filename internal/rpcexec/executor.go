@@ -76,16 +76,20 @@ func (s *Service) buildValidator(intent Intent) func(any) error {
 	}
 	return func(result any) error {
 		set, tabular := rowSetResult(result)
-		if needSingular && tabular && len(set) != 1 {
-			return SingularObjectRefusal{RowCount: len(set)}
-		}
 		if needRowSet && !tabular {
 			return RowSetFeaturesRefusal{}
 		}
 		if !tabular {
 			return nil
 		}
-		return shapeRepresentation(set, intent.Query)
+		rowCount, err := validateRepresentation(set, intent.Query)
+		if err != nil {
+			return err
+		}
+		if needSingular && rowCount != 1 {
+			return SingularObjectRefusal{RowCount: rowCount}
+		}
+		return nil
 	}
 }
 
@@ -127,12 +131,17 @@ func rowSetResult(result any) ([]rows.Row, bool) {
 	return set, true
 }
 
-func shapeRepresentation(set []rows.Row, query readquery.Query) error {
-	if _, err := readquery.Shape(set, query); err != nil {
-		return err
+// validateRepresentation applies filters and pagination for the singular row
+// count and checks projection before the routine transaction commits.
+func validateRepresentation(set []rows.Row, query readquery.Query) (int, error) {
+	shaped, err := readquery.Shape(set, query)
+	if err != nil {
+		return 0, err
 	}
-	_, err := readquery.Project(set, query)
-	return err
+	if _, err := readquery.Project(set, query); err != nil {
+		return 0, err
+	}
+	return len(shaped.Rows), nil
 }
 
 func missingRequiredArgument(routine schemacache.RoutineFact, args map[string]any) (string, bool) {

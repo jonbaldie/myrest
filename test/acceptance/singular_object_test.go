@@ -2,6 +2,7 @@ package acceptance_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -66,6 +67,16 @@ func assertSingularRefusal(t *testing.T, response *http.Response, body []byte) {
 	failure := apitest.AssertEnvelope(t, response, body, http.StatusNotAcceptable, "PGRST116")
 	if !strings.Contains(failure.Message, "single JSON object") {
 		t.Fatalf("message = %q, want the singular-object refusal", failure.Message)
+	}
+}
+
+// assertSingularRefusalCount checks the row count in a PGRST116 response.
+func assertSingularRefusalCount(t *testing.T, response *http.Response, body []byte, rowCount int) {
+	t.Helper()
+
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusNotAcceptable, "PGRST116")
+	if want := fmt.Sprintf("The result contains %d rows", rowCount); failure.Details != want {
+		t.Fatalf("details = %v, want %q", failure.Details, want)
 	}
 }
 
@@ -222,6 +233,74 @@ func TestRPCSingularRefusalOnZeroRows(t *testing.T) {
 	assertSingularRefusal(t, response, body)
 }
 
+// A row-set RPC applies its filter before checking a singular representation.
+func TestRPCSingularUsesFilteredRowSet(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	headers := http.Header{}
+	headers.Set("Accept", "application/vnd.pgrst.object+json")
+	response, body := apitest.Do(
+		t, http.MethodGet,
+		service.URL()+"/rpc/list_items?id=eq.1",
+		headers,
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if got := response.Header.Get("Content-Type"); got != "application/vnd.pgrst.object+json" {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	if want := `{"id":1,"name":"alpha"}` + "\n"; string(body) != want {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+// A row-set RPC applies its limit and offset before checking a singular representation.
+func TestRPCSingularUsesPagination(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	for _, test := range []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "limit", path: "/rpc/list_items?limit=1", want: `{"id":1,"name":"alpha"}` + "\n"},
+		{name: "offset and limit", path: "/rpc/list_items?offset=1&limit=1", want: `{"id":2,"name":"beta"}` + "\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response, body := doWrite(
+				t, http.MethodPost, service.URL()+test.path,
+				`{}`, rpcObjectHeaders(),
+			)
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+			}
+			if string(body) != test.want {
+				t.Fatalf("body = %s, want %s", body, test.want)
+			}
+		})
+	}
+}
+
+// Singular refusals report the row count after the RPC filter has run.
+func TestRPCSingularRefusalReportsFilteredRowCount(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	_, _ = apitest.PostJSON(t, service.URL()+"/items", `{"name":"rpc-singular-198"}`)
+
+	response, body := doWrite(
+		t, http.MethodPost, service.URL()+"/rpc/list_items?id=lte.2",
+		`{}`, rpcObjectHeaders(),
+	)
+	assertSingularRefusalCount(t, response, body, 2)
+
+	response, body = doWrite(
+		t, http.MethodPost, service.URL()+"/rpc/list_items?id=eq.999999",
+		`{}`, rpcObjectHeaders(),
+	)
+	assertSingularRefusalCount(t, response, body, 0)
+}
+
 // A write or tabular RPC that yields exactly one row with the singular Accept
 // commits and answers the single JSON object.
 func TestSingularWriteCommitsOneRow(t *testing.T) {
@@ -286,4 +365,3 @@ func TestSingularWriteCommitsOneRow(t *testing.T) {
 		t.Fatalf("RPC body = %s, want %s", body, want)
 	}
 }
-

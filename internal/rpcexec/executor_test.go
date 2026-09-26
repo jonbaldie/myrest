@@ -430,6 +430,40 @@ func TestExecuteSingularObjectTwoRowsRefused(t *testing.T) {
 	}
 }
 
+func TestExecuteSingularObjectCountsAfterFiltering(t *testing.T) {
+	t.Parallel()
+
+	caller := &spyCaller{result: []rows.Row{
+		{Columns: []string{"id", "name"}, Values: []any{int64(1), "alpha"}},
+		{Columns: []string{"id", "name"}, Values: []any{int64(2), "beta"}},
+	}}
+	exec := rpcexec.New(caller, config.TxEndCommit)
+
+	routine := schemacache.RoutineFact{
+		ID:   schemacache.RoutineID{Database: "shop", Name: "list_items"},
+		Kind: "PROCEDURE",
+	}
+
+	intent := rpcexec.Intent{
+		Routine:        routine,
+		Role:           "myrest_anon",
+		Args:           map[string]any{},
+		CallMode:       rpcexec.CallModePost,
+		Representation: rpcexec.RepresentationSingularObject,
+		Query: readquery.Query{
+			Filters: []readquery.Filter{{Column: "id", Op: readquery.OpEq, Value: "1"}},
+		},
+	}
+
+	outcome, err := exec.Execute(context.Background(), intent)
+	if err != nil {
+		t.Fatalf("expected one shaped row to satisfy singular representation, got %v", err)
+	}
+	if outcome.Kind != rpcexec.ResultKindRowSet || len(outcome.Rows) != 2 {
+		t.Fatalf("outcome = %+v, want the raw two-row RPC result", outcome)
+	}
+}
+
 func TestExecuteRowSetFeaturesOnScalarRefused(t *testing.T) {
 	t.Parallel()
 
@@ -693,9 +727,9 @@ func TestExecuteParameterModesAndOrdinals(t *testing.T) {
 		ID:   schemacache.RoutineID{Database: "shop", Name: "mixed_params"},
 		Kind: "PROCEDURE",
 		Parameters: []schemacache.ParameterFact{
-			{Ordinal: 0, DataType: "bigint"}, // return param, ignored
-			{Name: "", Mode: "IN", Ordinal: 1}, // empty name, ignored
-			{Name: "out_p", Mode: "OUT", Ordinal: 2}, // OUT param, ignored
+			{Ordinal: 0, DataType: "bigint"},             // return param, ignored
+			{Name: "", Mode: "IN", Ordinal: 1},           // empty name, ignored
+			{Name: "out_p", Mode: "OUT", Ordinal: 2},     // OUT param, ignored
 			{Name: "inout_p", Mode: "INOUT", Ordinal: 3}, // INOUT param, required
 		},
 	}
