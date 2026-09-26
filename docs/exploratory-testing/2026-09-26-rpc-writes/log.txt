@@ -1,0 +1,1020 @@
+### POST /rpc/add_them -H Content-Type: application/json -d {"a":2,"b":3}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:46:21 GMT
+Content-Length: 2
+
+5
+
+### GET /rpc/add_them?a=2&b=3 
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:46:21 GMT
+Content-Length: 2
+
+5
+
+### GET /rpc/add_them?a=2 
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:46:21 GMT
+Content-Length: 131
+
+{"code":"PGRST202","message":"Could not find the function myrest_fixture.add_them in the schema cache","details":null,"hint":null}
+
+### GET /rpc/add_them?a=x&b=3 
+HTTP/1.1 500 Internal Server Error
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:46:21 GMT
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+### POST /rpc/add_them -H Content-Type: application/json -d {"a":"2","b":3}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:46:22 GMT
+Content-Length: 2
+
+5
+
+### POST /rpc/add_them -H Content-Type: application/json -d {"a":9223372036854775807,"b":1}
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:46:22 GMT
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+### POST /rpc/item_count 
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:46:22 GMT
+Content-Length: 2
+
+2
+
+### POST /rpc/ping 
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:46:22 GMT
+Content-Length: 3
+
+{}
+
+### POST /rpc/echo_name -H Content-Type: application/json -d {"src":null}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:46:22 GMT
+Content-Length: 13
+
+{"dst":null}
+
+### POST /rpc/bump_label -H Content-Type: application/json -d {"label":"x"}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:46:22 GMT
+Content-Length: 15
+
+{"label":"x!"}
+
+### HEAD /rpc/add_them?a=1&b=1 
+
+
+### POST /rpc/add_them -H Content-Type: application/json -d {"a":9007199254740993,"b":0}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:48:38 GMT
+Content-Length: 17
+
+9007199254740992
+
+### GET /rpc/add_them?a=9007199254740993&b=0 
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:48:38 GMT
+Content-Length: 17
+
+9007199254740993
+
+### POST /rpc/echo_name -H Content-Type: application/json -d {"src":9007199254740993}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:48:38 GMT
+Content-Length: 31
+
+{"dst":"9.007199254740992e15"}
+
+### POST /rpc/echo_name -H Content-Type: application/json -d {"src":0.1}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:48:38 GMT
+Content-Length: 14
+
+{"dst":"0.1"}
+
+### POST /rpc/echo_name -H Content-Type: application/json -d {"src":1e2}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:48:38 GMT
+Content-Length: 14
+
+{"dst":"100"}
+
+### POST /rpc/echo_name -H Content-Type: application/json -d {"src":true}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:48:38 GMT
+Content-Length: 12
+
+{"dst":"1"}
+
+### POST /rpc/echo_name -H Content-Type: application/json -d {"src":{"k":1}}
+HTTP/1.1 500 Internal Server Error
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:48:39 GMT
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+### POST /items -H Content-Type: application/json -H Prefer: return=representation -d {"id":9007199254740993,"name":"big"}
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /items?id=eq.9007199254740992
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:48:51 GMT
+Content-Length: 52
+
+[{"id":9007199254740992,"name":"big","name_len":3}]
+
+### GET /items?id=eq.9007199254740993 
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:48:51 GMT
+Content-Length: 3
+
+[]
+
+### GET /items?id=gte.9007199254740990 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:48:51 GMT
+Content-Length: 52
+
+[{"id":9007199254740992,"name":"big","name_len":3}]
+
+### PATCH /profiles?id=eq.1 -H Content-Type: application/json -H Prefer: return=representation -d {"meta":{"n":9007199254740993}}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:48:51 GMT
+Content-Length: 41
+
+[{"id":1,"meta":{"n":9007199254740992}}]
+
+### GET /profiles?id=eq.1&select=meta 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:48:51 GMT
+Content-Length: 34
+
+[{"meta":{"n":9007199254740992}}]
+
+### GET /rpc/list_items?id=gt.1&order=id.desc&limit=5 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:49:07 GMT
+Content-Length: 62
+
+[{"id":9007199254740992,"name":"big"},{"id":2,"name":"beta"}]
+
+### POST /rpc/list_items?select=name -H Content-Type: application/json -d {}
+HTTP/1.1 200 OK
+Content-Range: 0-2/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:49:07 GMT
+Content-Length: 50
+
+[{"name":"alpha"},{"name":"beta"},{"name":"big"}]
+
+### GET /rpc/list_items -H Accept: text/csv
+HTTP/1.1 200 OK
+Content-Range: 0-2/*
+Content-Type: text/csv; charset=utf-8
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:49:07 GMT
+Content-Length: 44
+
+id,name
+1,alpha
+2,beta
+9007199254740992,big
+
+### GET /rpc/list_items -H Prefer: count=exact -H Range: 0-0
+HTTP/1.1 206 Partial Content
+Content-Range: 0-0/3
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:49:07 GMT
+Content-Length: 26
+
+[{"id":1,"name":"alpha"}]
+
+### GET /rpc/list_items?select=id,orders(id) 
+HTTP/1.1 200 OK
+Content-Range: 0-2/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:49:08 GMT
+Content-Length: 105
+
+[{"id":1,"orders":[{"id":1},{"id":2}]},{"id":2,"orders":[{"id":3}]},{"id":9007199254740992,"orders":[]}]
+
+### POST /rpc/write_marker -H Prefer: tx=rollback
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: tx=rollback
+Date: Sat, 26 Sep 2026 00:49:08 GMT
+Content-Length: 3
+
+{}
+
+### GET /addresses?label=eq.rpc-write&select=id 
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:49:08 GMT
+Content-Length: 3
+
+[]
+
+### POST /rpc/write_marker 
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:08 GMT
+Content-Length: 3
+
+{}
+
+### GET /addresses?label=eq.rpc-write&select=id 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:49:08 GMT
+Content-Length: 11
+
+[{"id":4}]
+
+### POST /rpc/mark_and_list?id=eq.1 -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:08 GMT
+Content-Length: 132
+
+{"code":"PGRST116","message":"Cannot coerce the result to a single JSON object","details":"The result contains 3 rows","hint":null}
+
+### POST /rpc/mark_and_list?id=eq.99 -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:08 GMT
+Content-Length: 132
+
+{"code":"PGRST116","message":"Cannot coerce the result to a single JSON object","details":"The result contains 3 rows","hint":null}
+
+### GET /addresses?label=eq.rpc-rollback&select=id 
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:49:08 GMT
+Content-Length: 3
+
+[]
+
+### POST /rpc/add_them -H Content-Type: application/x-www-form-urlencoded -d a=1&b=2
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:08 GMT
+Content-Length: 89
+
+{"code":"PGRST100","message":"Could not parse the JSON body","details":null,"hint":null}
+
+### POST /rpc/add_them -H Content-Type: application/json -d {"a":1,"b":2,"c":3}
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:08 GMT
+Content-Length: 131
+
+{"code":"PGRST202","message":"Could not find the function myrest_fixture.add_them in the schema cache","details":null,"hint":null}
+
+### POST /rpc/does_not_exist 
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:08 GMT
+Content-Length: 137
+
+{"code":"PGRST202","message":"Could not find the function myrest_fixture.does_not_exist in the schema cache","details":null,"hint":null}
+
+### POST /rpc/secret_count 
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:08 GMT
+Content-Length: 135
+
+{"code":"PGRST202","message":"Could not find the function myrest_fixture.secret_count in the schema cache","details":null,"hint":null}
+
+### GET /rpc/add_them?a=1&b=2 -H Accept: text/csv
+HTTP/1.1 415 Unsupported Media Type
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:08 GMT
+Content-Length: 109
+
+{"code":"PGRST107","message":"None of these media types are available: text/csv","details":null,"hint":null}
+
+### GET /rpc/list_items?id=eq.1 -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:14 GMT
+Content-Length: 132
+
+{"code":"PGRST116","message":"Cannot coerce the result to a single JSON object","details":"The result contains 3 rows","hint":null}
+
+### POST /rpc/list_items?id=eq.1 -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:14 GMT
+Content-Length: 132
+
+{"code":"PGRST116","message":"Cannot coerce the result to a single JSON object","details":"The result contains 3 rows","hint":null}
+
+### POST /rpc/list_items?id=eq.1 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:49:14 GMT
+Content-Length: 26
+
+[{"id":1,"name":"alpha"}]
+
+### POST /rpc/mark_and_list?id=eq.1 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:49:14 GMT
+Content-Length: 26
+
+[{"id":1,"name":"alpha"}]
+
+### POST /rpc/list_items?limit=1 -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:14 GMT
+Content-Length: 132
+
+{"code":"PGRST116","message":"Cannot coerce the result to a single JSON object","details":"The result contains 3 rows","hint":null}
+
+### GET /items?id=eq.1 -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/vnd.pgrst.object+json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:49:14 GMT
+Content-Length: 37
+
+{"id":1,"name":"alpha","name_len":5}
+
+### GET /rpc/list_one_item -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/vnd.pgrst.object+json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:49:14 GMT
+Content-Length: 24
+
+{"id":1,"name":"alpha"}
+
+### GET /et_notes 
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:38 GMT
+Content-Length: 130
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.et_notes' in the schema cache","details":null,"hint":null}
+
+### POST /rpc/et_echo_json -H Content-Type: application/json -d {"doc":{"k":1}}
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:38 GMT
+Content-Length: 135
+
+{"code":"PGRST202","message":"Could not find the function myrest_fixture.et_echo_json in the schema cache","details":null,"hint":null}
+
+### GET /et_notes 
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:41 GMT
+Content-Length: 130
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.et_notes' in the schema cache","details":null,"hint":null}
+
+### POST /et_notes -H Content-Type: application/json -H Prefer: return=representation -d {"body":"a","amount":12345678901234567890.1234567891}
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:41 GMT
+Content-Length: 130
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.et_notes' in the schema cache","details":null,"hint":null}
+
+### POST /rpc/et_echo_json -H Content-Type: application/json -d {"doc":{"k":1}}
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:41 GMT
+Content-Length: 135
+
+{"code":"PGRST202","message":"Could not find the function myrest_fixture.et_echo_json in the schema cache","details":null,"hint":null}
+
+### POST /rpc/et_echo_json -H Content-Type: application/json -d {"doc":"{\"k\":1}"}
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:41 GMT
+Content-Length: 135
+
+{"code":"PGRST202","message":"Could not find the function myrest_fixture.et_echo_json in the schema cache","details":null,"hint":null}
+
+### POST /rpc/et_echo_json -H Content-Type: application/json -d {"doc":[1,2]}
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:41 GMT
+Content-Length: 135
+
+{"code":"PGRST202","message":"Could not find the function myrest_fixture.et_echo_json in the schema cache","details":null,"hint":null}
+
+### GET /et_notes 
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:49:58 GMT
+Content-Length: 130
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.et_notes' in the schema cache","details":null,"hint":null}
+
+### GET /et_notes 
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:50:00 GMT
+Content-Length: 3
+
+[]
+
+### POST /et_notes -H Content-Type: application/json -H Prefer: return=representation -d {"body":"a","amount":12345678901234567890.1234567891}
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /et_notes?id=eq.1
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:50:00 GMT
+Content-Length: 63
+
+[{"id":1,"body":"a","amount":12345678901234567000.0000000000}]
+
+### POST /rpc/et_echo_json -H Content-Type: application/json -d {"doc":{"k":1}}
+HTTP/1.1 500 Internal Server Error
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:50:01 GMT
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+### POST /rpc/et_echo_json -H Content-Type: application/json -d {"doc":"{\"k\":1}"}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:50:01 GMT
+Content-Length: 22
+
+{"back":"{\"k\": 1}"}
+
+### POST /rpc/et_echo_json -H Content-Type: application/json -d {"doc":[1,2]}
+HTTP/1.1 500 Internal Server Error
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:50:01 GMT
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+### GET /et_notes 
+HTTP/1.1 403 Forbidden
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:50:10 GMT
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+### GET /et_notes 
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:50:12 GMT
+Content-Length: 130
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.et_notes' in the schema cache","details":null,"hint":null}
+
+### GET / 
+HTTP/1.1 200 OK
+Content-Type: application/openapi+json
+Date: Sat, 26 Sep 2026 00:50:12 GMT
+Transfer-Encoding: chunked
+
+{"basePath":"/","host":"127.0.0.1:3111","info":{"description":"This is a dynamic API generated by myrest","title":"myrest API","version":"1.0"},"paths":{"/":{"get":{"produces":["application/openapi+json","application/json"],"responses":{"200":{"description":"OK"}},"summary":"OpenAPI description (this document)","tags":["Introspection"]}},"/addresses":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/colors":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/deliveries":{"get":{"responses":{"200":{"description":"OK"}}}},"/employees":{"get":{"responses":{"200":{"description":"OK"}}}},"/item_tags":{"get":{"responses":{"200":{"description":"OK"}}}},"/items":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/items_stats":{"get":{"responses":{"200":{"description":"OK"}}}},"/items_view":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/loose_notes":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/null_records":{"get":{"responses":{"200":{"description":"OK"}}}},"/orders":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/pre_request_log":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/profiles":{"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/quoted_values":{"get":{"responses":{"200":{"description":"OK"}}}},"/rpc/add_them":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/before_request":{"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/before_request_fail":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/bump_label":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/echo_name":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/et_echo_json":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/item_count":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_items":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_missing_items":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_null_records":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_one_item":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/mark_and_list":{"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/ping":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/write_marker":{"post":{"responses":{"201":{"description":"Created"}}}},"/stock_lines":{"get":{"responses":{"200":{"description":"OK"}}}},"/stock_moves":{"get":{"responses":{"200":{"description":"OK"}}}},"/tags":{"get":{"responses":{"200":{"description":"OK"}}}}},"schemes":["http"],"swagger":"2.0"}
+
+### POST /items -H Content-Type: application/json -H Prefer: return=representation -d [{"name":"c1"},{"name":"c2","id":500}]
+HTTP/1.1 201 Created
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:50:23 GMT
+Content-Length: 51
+
+[{"id":9007199254740993,"name":"c1","name_len":2}]
+
+### POST /items -H Content-Type: application/json -H Prefer: return=representation,resolution=merge-duplicates -d [{"id":500,"name":"c2-merged"},{"id":501,"name":"new501"}]
+HTTP/1.1 201 Created
+Content-Type: application/json
+Preference-Applied: return=representation, resolution=merge-duplicates
+Date: Sat, 26 Sep 2026 00:50:24 GMT
+Content-Length: 85
+
+[{"id":500,"name":"c2-merged","name_len":9},{"id":501,"name":"new501","name_len":6}]
+
+### PUT /items?id=eq.600 -H Content-Type: application/json -d {"id":600,"name":"put600"}
+HTTP/1.1 201 Created
+Date: Sat, 26 Sep 2026 00:50:24 GMT
+Content-Length: 0
+
+
+### PUT /items?id=eq.600 -H Content-Type: application/json -d {"id":600,"name":"put600b"}
+HTTP/1.1 204 No Content
+Date: Sat, 26 Sep 2026 00:50:24 GMT
+
+
+### GET /items?id=gte.500&id=lt.1000 
+HTTP/1.1 200 OK
+Content-Range: 0-2/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:50:24 GMT
+Content-Length: 126
+
+[{"id":500,"name":"c2-merged","name_len":9},{"id":501,"name":"new501","name_len":6},{"id":600,"name":"put600b","name_len":7}]
+
+### PATCH /items?id=eq.600 -H Content-Type: application/json -H Prefer: return=representation -d {"id":601}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:50:24 GMT
+Content-Length: 3
+
+[]
+
+### PATCH /items?id=eq.601 -H Content-Type: application/json -H Prefer: return=representation -d {"name":"renamed"}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:50:24 GMT
+Content-Length: 43
+
+[{"id":601,"name":"renamed","name_len":7}]
+
+### DELETE /items?id=in.(500,501,601) -H Prefer: return=representation
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:50:24 GMT
+Content-Length: 126
+
+[{"id":500,"name":"c2-merged","name_len":9},{"id":501,"name":"new501","name_len":6},{"id":601,"name":"renamed","name_len":7}]
+
+### POST /items -H Content-Type: text/csv -d name
+csv1
+csv2
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:50:24 GMT
+Content-Length: 89
+
+{"code":"PGRST102","message":"Could not parse the JSON body","details":null,"hint":null}
+
+### POST /items -H Content-Type: application/json -d []
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:50:24 GMT
+Content-Length: 76
+
+{"code":"PGRST102","message":"Empty JSON array","details":null,"hint":null}
+
+### PATCH /items?id=eq.1 -H Content-Type: application/json -d {}
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:50:24 GMT
+Content-Length: 70
+
+{"code":"PGRST102","message":"Empty body","details":null,"hint":null}
+
+### GET /items?id=in.(700,701) 
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:50:38 GMT
+Content-Length: 3
+
+[]
+
+### POST /items -H Content-Type: application/json -H Prefer: return=representation -d [{"name":"m1"},{"name":"m2","id":700}]
+HTTP/1.1 201 Created
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:50:38 GMT
+Content-Length: 51
+
+[{"id":9007199254740995,"name":"m1","name_len":2}]
+
+### GET /items?name=in.(m1,m2) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:50:38 GMT
+Content-Length: 87
+
+[{"id":700,"name":"m2","name_len":2},{"id":9007199254740995,"name":"m1","name_len":2}]
+
+### POST /items -H Content-Type: application/json -H Prefer: return=representation -d [{"name":"n1","id":701},{"name":"n2"}]
+HTTP/1.1 201 Created
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:50:38 GMT
+Content-Length: 51
+
+[{"id":9007199254740997,"name":"n2","name_len":2}]
+
+### GET /items?name=in.(n1,n2) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:50:38 GMT
+Content-Length: 87
+
+[{"id":701,"name":"n1","name_len":2},{"id":9007199254740997,"name":"n2","name_len":2}]
+
+### POST /items -H Content-Type: application/json -H Prefer: return=representation -d {"id":9007199254740993,"name":"big"}
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /items?id=eq.9007199254740992
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:51:19 GMT
+Content-Length: 52
+
+[{"id":9007199254740992,"name":"big","name_len":3}]
+
+### GET /items?id=eq.9007199254740993 
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:51:19 GMT
+Content-Length: 3
+
+[]
+
+### POST /rpc/add_them -H Content-Type: application/json -d {"a":9007199254740993,"b":0}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:51:19 GMT
+Content-Length: 17
+
+9007199254740992
+
+### GET /rpc/add_them?a=9007199254740993&b=0 
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:51:19 GMT
+Content-Length: 17
+
+9007199254740993
+
+### GET /rpc/list_items?id=eq.1 
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:51:23 GMT
+Content-Length: 133
+
+{"code":"PGRST202","message":"Could not find the function myrest_fixture.list_items in the schema cache","details":null,"hint":null}
+
+### GET /rpc/list_items?id=eq.1 -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:51:23 GMT
+Content-Length: 133
+
+{"code":"PGRST202","message":"Could not find the function myrest_fixture.list_items in the schema cache","details":null,"hint":null}
+
+### GET /items?id=eq.1 -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/vnd.pgrst.object+json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:51:23 GMT
+Content-Length: 37
+
+{"id":1,"name":"alpha","name_len":5}
+
+### POST /items -H Content-Type: application/json -H Prefer: return=representation -d [{"name":"x"},{"name":"y","id":50}]
+HTTP/1.1 201 Created
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:51:27 GMT
+Content-Length: 35
+
+[{"id":3,"name":"x","name_len":1}]
+
+### GET /items?name=in.(x,y) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:51:27 GMT
+Content-Length: 69
+
+[{"id":3,"name":"x","name_len":1},{"id":50,"name":"y","name_len":1}]
+
+### PATCH /items?id=eq.2 -H Content-Type: application/json -H Prefer: return=representation -d {"id":20}
+HTTP/1.1 409 Conflict
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:51:31 GMT
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+### GET /items?id=in.(2,20) 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:51:32 GMT
+Content-Length: 38
+
+[{"id":2,"name":"beta","name_len":4}]
+
+### POST /items -H Content-Type: application/json -H Prefer: return=representation -d {"id":9007199254740993,"name":"big"}
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /items?id=eq.9007199254740992
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:52:00 GMT
+Content-Length: 52
+
+[{"id":9007199254740992,"name":"big","name_len":3}]
+
+### GET /items?id=eq.9007199254740993 
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:52:00 GMT
+Content-Length: 3
+
+[]
+
+### POST /rpc/add_them -H Content-Type: application/json -d {"a":9007199254740993,"b":0}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:52:00 GMT
+Content-Length: 17
+
+9007199254740992
+
+### GET /rpc/add_them?a=9007199254740993&b=0 
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:52:00 GMT
+Content-Length: 17
+
+9007199254740993
+
+### GET /rpc/list_items?id=eq.1 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:52:06 GMT
+Content-Length: 26
+
+[{"id":1,"name":"alpha"}]
+
+### GET /rpc/list_items?id=eq.1 -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:52:06 GMT
+Content-Length: 132
+
+{"code":"PGRST116","message":"Cannot coerce the result to a single JSON object","details":"The result contains 2 rows","hint":null}
+
+### GET /items?id=eq.1 -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/vnd.pgrst.object+json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:52:06 GMT
+Content-Length: 37
+
+{"id":1,"name":"alpha","name_len":5}
+
+### POST /items -H Content-Type: application/json -H Prefer: return=representation -d [{"name":"x"},{"name":"y","id":50}]
+HTTP/1.1 201 Created
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:52:12 GMT
+Content-Length: 35
+
+[{"id":3,"name":"x","name_len":1}]
+
+### GET /items?name=in.(x,y) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:52:12 GMT
+Content-Length: 69
+
+[{"id":3,"name":"x","name_len":1},{"id":50,"name":"y","name_len":1}]
+
+### POST /items -H Content-Type: application/json -d {"id":10,"name":"ten"}
+HTTP/1.1 201 Created
+Date: Sat, 26 Sep 2026 00:52:17 GMT
+Content-Length: 0
+
+
+### PATCH /items?id=eq.10 -H Content-Type: application/json -H Prefer: return=representation -d {"id":20}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:52:17 GMT
+Content-Length: 3
+
+[]
+
+### GET /items?id=in.(10,20) 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:52:17 GMT
+Content-Length: 38
+
+[{"id":20,"name":"ten","name_len":3}]
+
+### POST /items -H Content-Type: application/json -H Prefer: return=representation -d {"id":9007199254740993,"name":"big"}
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /items?id=eq.9007199254740992
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:52:38 GMT
+Content-Length: 52
+
+[{"id":9007199254740992,"name":"big","name_len":3}]
+
+### GET /items?id=eq.9007199254740993 
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:52:38 GMT
+Content-Length: 3
+
+[]
+
+### POST /rpc/add_them -H Content-Type: application/json -d {"a":9007199254740993,"b":0}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:52:38 GMT
+Content-Length: 17
+
+9007199254740992
+
+### GET /rpc/add_them?a=9007199254740993&b=0 
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:52:38 GMT
+Content-Length: 17
+
+9007199254740993
+
+### GET /rpc/list_items?id=eq.1 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:52:45 GMT
+Content-Length: 26
+
+[{"id":1,"name":"alpha"}]
+
+### GET /rpc/list_items?id=eq.1 -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:52:45 GMT
+Content-Length: 132
+
+{"code":"PGRST116","message":"Cannot coerce the result to a single JSON object","details":"The result contains 2 rows","hint":null}
+
+### GET /items?id=eq.1 -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/vnd.pgrst.object+json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:52:45 GMT
+Content-Length: 37
+
+{"id":1,"name":"alpha","name_len":5}
+
+### POST /items -H Content-Type: application/json -H Prefer: return=representation -d [{"name":"x"},{"name":"y","id":50}]
+HTTP/1.1 201 Created
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:52:50 GMT
+Content-Length: 35
+
+[{"id":3,"name":"x","name_len":1}]
+
+### GET /items?name=in.(x,y) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:52:50 GMT
+Content-Length: 69
+
+[{"id":3,"name":"x","name_len":1},{"id":50,"name":"y","name_len":1}]
+
+### POST /items -H Content-Type: application/json -d {"id":10,"name":"ten"}
+HTTP/1.1 201 Created
+Date: Sat, 26 Sep 2026 00:52:56 GMT
+Content-Length: 0
+
+
+### PATCH /items?id=eq.10 -H Content-Type: application/json -H Prefer: return=representation -d {"id":20}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:52:56 GMT
+Content-Length: 3
+
+[]
+
+### GET /items?id=in.(10,20) 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 26 Sep 2026 00:52:56 GMT
+Content-Length: 38
+
+[{"id":20,"name":"ten","name_len":3}]
+
+### POST /rpc/et_echo_json -H Content-Type: application/json -d {"doc":{"k":1}}
+HTTP/1.1 500 Internal Server Error
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:53:03 GMT
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+### POST /rpc/et_echo_json -H Content-Type: application/json -d {"doc":"{\"k\":1}"}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 26 Sep 2026 00:53:03 GMT
+Content-Length: 22
+
+{"back":"{\"k\": 1}"}
+
+### PATCH /profiles?id=eq.1 -H Content-Type: application/json -H Prefer: return=representation -d {"meta":{"k":1}}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 26 Sep 2026 00:53:04 GMT
+Content-Length: 26
+
+[{"id":1,"meta":{"k":1}}]
+

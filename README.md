@@ -227,6 +227,8 @@ Start with these documents:
 - [Writes](docs/write.md)
 - [RPC behavior](docs/rpc-procedures.md)
 - [Media types and Prefer values](docs/media-types-and-prefer.md)
+- [Exploratory testing report (2026-09-19)](docs/exploratory-testing/2026-09-19-api.md)
+- [Exploratory testing report (2026-09-26): RPC and writes](docs/exploratory-testing/2026-09-26-rpc-writes.md)
 
 ## Development
 
