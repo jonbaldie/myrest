@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -187,7 +188,7 @@ func TestPostRPCFunctionWithNamedJSONArgsSucceeds(t *testing.T) {
 	if source.routine.ID.Name != "add_them" {
 		t.Errorf("routine = %v, want add_them", source.routine.ID)
 	}
-	if source.args["a"] != float64(1) || source.args["b"] != float64(2) {
+	if source.args["a"] != json.Number("1") || source.args["b"] != json.Number("2") {
 		t.Errorf("args = %#v, want a=1 b=2", source.args)
 	}
 	if !source.stoppable {
@@ -646,3 +647,38 @@ func TestHeadRPCScalarRoutineReturnsNoBody(t *testing.T) {
 		t.Fatalf("Content-Length = %q, want no payload bytes", length)
 	}
 }
+
+// Issue #197: POST /rpc arguments must keep number precision as json.Number.
+func TestPostRPCJSONNumberPrecision(t *testing.T) {
+	t.Parallel()
+
+	source := &caller{body: int64(42)}
+	service := serveRPC(t, source)
+
+	t.Run("POST /rpc preserves large integer arguments", func(t *testing.T) {
+		response, _ := apitest.PostJSON(
+			t,
+			service.URL()+"/rpc/add_them",
+			`{"a":9007199254740993,"b":0}`,
+		)
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
+		}
+		a, ok := source.args["a"].(json.Number)
+		if !ok || a.String() != "9007199254740993" {
+			t.Fatalf("source.args[a] = %#v, want json.Number 9007199254740993", source.args["a"])
+		}
+	})
+
+	t.Run("POST /rpc rejects trailing garbage in body", func(t *testing.T) {
+		response, _ := apitest.PostJSON(
+			t,
+			service.URL()+"/rpc/add_them",
+			`{"a":1,"b":2}{"extra":3}`,
+		)
+		if response.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusBadRequest)
+		}
+	})
+}
+

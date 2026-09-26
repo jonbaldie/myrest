@@ -612,6 +612,8 @@ func keyFilterValue(value any) string {
 	switch typed := value.(type) {
 	case float64:
 		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case json.Number:
+		return typed.String()
 	default:
 		return fmt.Sprint(typed)
 	}

@@ -262,6 +262,13 @@ CREATE TABLE null_records (
 
 INSERT INTO null_records (label) VALUES ('null'), (NULL), ('other');
 
+-- Decimal precision fixtures (issue #197).
+CREATE TABLE measurements (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  amount DECIMAL(30, 10) NOT NULL,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 -- Write preference fixtures: DEFAULT column and a table with no primary key.
 CREATE TABLE colors (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -334,6 +341,7 @@ GRANT EXECUTE ON PROCEDURE myrest_fixture.mark_and_list TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.list_null_records TO 'myrest_anon';
 GRANT INSERT ON myrest_fixture.addresses TO 'myrest_anon';
 GRANT SELECT, INSERT, DELETE ON myrest_fixture.pre_request_log TO 'myrest_anon';
+GRANT SELECT, INSERT, UPDATE, DELETE ON myrest_fixture.measurements TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.before_request TO 'myrest_anon';
 GRANT EXECUTE ON PROCEDURE myrest_fixture.before_request_fail TO 'myrest_anon';
 GRANT SHOW_ROUTINE ON *.* TO 'authenticator'@'%';
