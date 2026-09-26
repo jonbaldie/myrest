@@ -82,7 +82,7 @@ rows inside the write transaction. That is honest only for these shapes:
 | Write shape | Honest when | How |
 | --- | --- | --- |
 | `POST` + `return=representation` | Table has a `PRIMARY KEY` and the role holds `SELECT` | Insert, resolve primary-key values (payload or auto-increment `LastInsertId`), `SELECT` by those keys |
-| `PATCH` + `return=representation` | Table has a `PRIMARY KEY` and the role holds `SELECT` | `SELECT` primary keys that match the filter, update, `SELECT` by those keys |
+| `PATCH` + `return=representation` | Table has a `PRIMARY KEY` and the role holds `SELECT` | `SELECT` primary keys that match the filter, update, `SELECT` by those keys (with primary key changes from the patch applied) |
 | `DELETE` + `return=representation` | Role holds `SELECT` | `SELECT` matching rows, then delete; primary key not required |
 
 Outside that subset myrest refuses with `MYREST001` and does not write. Typical

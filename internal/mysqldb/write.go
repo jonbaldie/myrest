@@ -188,17 +188,42 @@ func updateRows(
 	if err != nil {
 		return writequery.Result{}, err
 	}
-	result.Keys = keys
 	if options.ReturnRepresentation {
-		result.Rows, err = selectByKeys(ctx, tx, table, options.PrimaryKey, keys)
+		updatedKeys := updatedKeysWithPatch(keys, patch, options.PrimaryKey)
+		result.Keys = updatedKeys
+		result.Rows, err = selectByKeys(ctx, tx, table, options.PrimaryKey, updatedKeys)
 		if err != nil {
 			return writequery.Result{}, err
+		}
+		if len(result.Rows) != len(updatedKeys) {
+			return writequery.Result{}, readquery.UnsupportedFeature{
+				Message: "Prefer return=representation cannot return affected rows honestly",
+			}
 		}
 		if err := validateUnit(options, result); err != nil {
 			return writequery.Result{}, err
 		}
+	} else {
+		result.Keys = keys
 	}
 	return result, nil
+}
+
+func updatedKeysWithPatch(keys []map[string]any, patch map[string]any, primaryKey []string) []map[string]any {
+	updated := make([]map[string]any, len(keys))
+	for i, key := range keys {
+		newKey := make(map[string]any, len(key))
+		for k, v := range key {
+			newKey[k] = v
+		}
+		for _, col := range primaryKey {
+			if val, ok := patch[col]; ok {
+				newKey[col] = val
+			}
+		}
+		updated[i] = newKey
+	}
+	return updated
 }
 
 func deleteRows(

@@ -432,3 +432,45 @@ func TestCheckMaxAffected(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdatedKeysWithPatch(t *testing.T) {
+	t.Parallel()
+
+	keys := []map[string]any{
+		{"id": 10, "name": "ten"},
+	}
+	patch := map[string]any{
+		"id":   20,
+		"name": "twenty",
+	}
+	updated := updatedKeysWithPatch(keys, patch, []string{"id"})
+	if len(updated) != 1 {
+		t.Fatalf("len(updated) = %d, want 1", len(updated))
+	}
+	if got := updated[0]["id"]; got != 20 {
+		t.Fatalf("updated id = %v, want 20", got)
+	}
+
+	// Composite primary key: only primary key columns in patch are updated.
+	compKeys := []map[string]any{
+		{"dept": "eng", "emp_id": 1, "note": "old"},
+	}
+	compPatch := map[string]any{
+		"dept": "product",
+		"note": "new",
+	}
+	compUpdated := updatedKeysWithPatch(compKeys, compPatch, []string{"dept", "emp_id"})
+	if got := compUpdated[0]["dept"]; got != "product" {
+		t.Fatalf("updated dept = %v, want product", got)
+	}
+	if got := compUpdated[0]["emp_id"]; got != 1 {
+		t.Fatalf("updated emp_id = %v, want 1", got)
+	}
+
+	// Patch without primary key columns leaves keys unchanged.
+	noPkPatch := map[string]any{"name": "changed"}
+	noPkUpdated := updatedKeysWithPatch(keys, noPkPatch, []string{"id"})
+	if got := noPkUpdated[0]["id"]; got != 10 {
+		t.Fatalf("updated id = %v, want 10", got)
+	}
+}

@@ -1241,6 +1241,37 @@ func TestPreferReturnRepresentationWithoutPrimaryKeyRefuses(t *testing.T) {
 	}
 }
 
+// Issue #195: A failed re-read during PATCH with return=representation refuses with MYREST001.
+func TestPatchFailedReReadRefuses(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{
+		failure: readquery.UnsupportedFeature{
+			Message: "Prefer return=representation cannot return affected rows honestly",
+		},
+	}
+	request, err := http.NewRequest(
+		http.MethodPatch,
+		serveWrite(t, &reader{}, sink).URL()+"/items?id=eq.10",
+		strings.NewReader(`{"id":20}`),
+	)
+	if err != nil {
+		t.Fatalf("new PATCH: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+}
+
 // write-010: Prefer missing=default reaches the writer.
 func TestPreferMissingDefault(t *testing.T) {
 	t.Parallel()

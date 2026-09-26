@@ -549,6 +549,85 @@ func TestPreferReturnRepresentationOverMySQL(t *testing.T) {
 	}
 }
 
+// Issue #195: PATCH that changes the primary key returns the row under return=representation.
+func TestPatchChangesPrimaryKeyReturnRepresentationOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	response, body := apitest.PostJSON(t, service.URL()+"/items", `{"id":10195,"name":"ten"}`)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("POST status = %d; body = %s", response.StatusCode, body)
+	}
+
+	request, err := http.NewRequest(
+		http.MethodPatch,
+		service.URL()+"/items?id=eq.10195",
+		strings.NewReader(`{"id":10196}`),
+	)
+	if err != nil {
+		t.Fatalf("new PATCH: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err = io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("PATCH status = %d; body = %s", response.StatusCode, body)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "return=representation" {
+		t.Fatalf("Preference-Applied = %q, want return=representation", got)
+	}
+	if string(body) == "[]\n" || string(body) == "[]" {
+		t.Fatalf("PATCH body is empty: %s", body)
+	}
+	if !strings.Contains(string(body), `"id":10196`) || !strings.Contains(string(body), `"name":"ten"`) {
+		t.Fatalf("PATCH body missing updated row: %s", body)
+	}
+
+	// Verify old key no longer exists and new key exists.
+	_, body = get(t, service, "/items?id=eq.10195")
+	if string(body) != "[]\n" {
+		t.Fatalf("old key still exists: %s", body)
+	}
+	_, body = get(t, service, "/items?id=eq.10196")
+	if !strings.Contains(string(body), `"name":"ten"`) {
+		t.Fatalf("new key not found: %s", body)
+	}
+
+	// PATCH that does not change primary key preserves return=representation behavior.
+	request, err = http.NewRequest(
+		http.MethodPatch,
+		service.URL()+"/items?id=eq.10196",
+		strings.NewReader(`{"name":"twenty"}`),
+	)
+	if err != nil {
+		t.Fatalf("new PATCH: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Prefer", "return=representation")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	body, err = io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("PATCH non-key status = %d; body = %s", response.StatusCode, body)
+	}
+	if !strings.Contains(string(body), `"name":"twenty"`) || !strings.Contains(string(body), `"id":10196`) {
+		t.Fatalf("PATCH non-key body = %s", body)
+	}
+}
+
 // write-011: return=representation with a nested select over a cache
 // relationship nests the related rows.
 func TestPreferReturnRepresentationWithEmbedOverMySQL(t *testing.T) {
