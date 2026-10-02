@@ -690,30 +690,34 @@ func TestExecuteRowSetFeaturesInvalidProjection(t *testing.T) {
 	}
 }
 
-func TestExecuteSingularObjectNonTabularResult(t *testing.T) {
+// Issue #217: a row-only representation refuses a non-tabular result inside
+// the routine unit, so the refused unit does not commit.
+func TestExecuteRowOnlyRepresentationNonTabularResultRefused(t *testing.T) {
 	t.Parallel()
 
-	caller := &spyCaller{result: int64(100)}
-	exec := rpcexec.New(caller, config.TxEndCommit)
+	for _, constraint := range []rpcexec.RepresentationConstraint{
+		rpcexec.RepresentationSingularObject,
+		rpcexec.RepresentationTabular,
+	} {
+		caller := &spyCaller{result: int64(100)}
+		exec := rpcexec.New(caller, config.TxEndCommit)
 
-	routine := testFunction()
-	intent := rpcexec.Intent{
-		Routine:        routine,
-		Role:           "myrest_anon",
-		Args:           map[string]any{"a": float64(1), "b": float64(2)},
-		CallMode:       rpcexec.CallModePost,
-		Representation: rpcexec.RepresentationSingularObject,
-	}
+		intent := rpcexec.Intent{
+			Routine:        testFunction(),
+			Role:           "myrest_anon",
+			Args:           map[string]any{"a": float64(1), "b": float64(2)},
+			CallMode:       rpcexec.CallModePost,
+			Representation: constraint,
+		}
 
-	outcome, err := exec.Execute(context.Background(), intent)
-	if err != nil {
-		t.Fatalf("expected success, got %v", err)
-	}
-	if caller.options.Validate == nil {
-		t.Fatal("expected non-nil Validate when singular representation requested")
-	}
-	if outcome.Kind != rpcexec.ResultKindScalar {
-		t.Fatalf("outcome.Kind = %v, want %v", outcome.Kind, rpcexec.ResultKindScalar)
+		_, err := exec.Execute(context.Background(), intent)
+		var refusal rpcexec.NonTabularRepresentationRefusal
+		if !errors.As(err, &refusal) {
+			t.Fatalf("constraint %v: expected NonTabularRepresentationRefusal, got %T: %v", constraint, err, err)
+		}
+		if caller.options.Validate == nil {
+			t.Fatalf("constraint %v: expected non-nil Validate", constraint)
+		}
 	}
 }
 

@@ -69,28 +69,52 @@ func (s *Service) Execute(ctx context.Context, intent Intent) (Outcome, error) {
 }
 
 func (s *Service) buildValidator(intent Intent) func(any) error {
-	needSingular := intent.Representation == RepresentationSingularObject
-	needRowSet := readquery.HasRowSetFeatures(intent.Query)
-	if !needSingular && !needRowSet {
+	check := representationCheck{
+		singular: intent.Representation == RepresentationSingularObject,
+		tabular:  intent.Representation != RepresentationDefault,
+		rowSet:   readquery.HasRowSetFeatures(intent.Query),
+		query:    intent.Query,
+	}
+	if !check.tabular && !check.rowSet {
 		return nil
 	}
-	return func(result any) error {
-		set, tabular := rowSetResult(result)
-		if needRowSet && !tabular {
-			return RowSetFeaturesRefusal{}
-		}
-		if !tabular {
-			return nil
-		}
-		rowCount, err := validateRepresentation(set, intent.Query)
-		if err != nil {
-			return err
-		}
-		if needSingular && rowCount != 1 {
-			return SingularObjectRefusal{RowCount: rowCount}
-		}
-		return nil
+	return check.validate
+}
+
+// representationCheck validates a routine result inside the routine unit
+// against the requested representation and row-set query features.
+type representationCheck struct {
+	singular bool
+	tabular  bool
+	rowSet   bool
+	query    readquery.Query
+}
+
+func (c representationCheck) validate(result any) error {
+	set, tabular := rowSetResult(result)
+	if !tabular {
+		return c.refuseNonTabular()
 	}
+	rowCount, err := validateRepresentation(set, c.query)
+	if err != nil {
+		return err
+	}
+	if c.singular && rowCount != 1 {
+		return SingularObjectRefusal{RowCount: rowCount}
+	}
+	return nil
+}
+
+// refuseNonTabular refuses a non-tabular result when row-set features or a
+// row-only representation were requested (issues #178 and #217).
+func (c representationCheck) refuseNonTabular() error {
+	if c.rowSet {
+		return RowSetFeaturesRefusal{}
+	}
+	if c.tabular {
+		return NonTabularRepresentationRefusal{}
+	}
+	return nil
 }
 
 func (s *Service) discriminateOutcome(

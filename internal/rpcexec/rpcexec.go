@@ -31,6 +31,8 @@ const (
 	RepresentationDefault RepresentationConstraint = iota
 	// RepresentationSingularObject indicates application/vnd.pgrst.object+json.
 	RepresentationSingularObject
+	// RepresentationTabular indicates a row-only media type such as text/csv.
+	RepresentationTabular
 )
 
 // ResultKind identifies the kind of result produced by a routine.
@@ -138,3 +140,11 @@ func (RowSetFeaturesRefusal) Error() string {
 	return "Filter, order, pagination, and embed need a row-set RPC result"
 }
 
+// NonTabularRepresentationRefusal reports that a row-only representation
+// (CSV or a singular JSON object) was requested but the routine result was
+// not a row set.
+type NonTabularRepresentationRefusal struct{}
+
+func (NonTabularRepresentationRefusal) Error() string {
+	return "The requested representation needs a row-set RPC result"
+}
