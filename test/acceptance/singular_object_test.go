@@ -365,3 +365,36 @@ func TestSingularWriteCommitsOneRow(t *testing.T) {
 		t.Fatalf("RPC body = %s, want %s", body, want)
 	}
 }
+
+// Issue #217: a mutating non-tabular RPC with a row-only Accept (CSV or the
+// singular object) refuses 415 PGRST107 and rolls the routine back.
+func TestRPCNonTabularAcceptRefusalRollsBackTheRoutine(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	for _, accept := range []string{"text/csv", "application/vnd.pgrst.object+json"} {
+		before := countRPCWriteMarkers(t, service)
+
+		headers := http.Header{}
+		headers.Set("Content-Type", "application/json")
+		headers.Set("Accept", accept)
+		response, body := doWrite(
+			t, http.MethodPost, service.URL()+"/rpc/write_marker", `{}`, headers,
+		)
+		apitest.AssertEnvelope(t, response, body, http.StatusUnsupportedMediaType, "PGRST107")
+
+		if after := countRPCWriteMarkers(t, service); after != before {
+			t.Fatalf("Accept %s: markers = %d, want %d; the refused routine kept its side effect", accept, after, before)
+		}
+	}
+}
+
+// countRPCWriteMarkers counts the addresses that write_marker inserts.
+func countRPCWriteMarkers(t *testing.T, service *httpapi.Service) int {
+	t.Helper()
+
+	response, body := get(t, service, "/addresses?label=eq.rpc-write")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("marker read-back status = %d; body = %s", response.StatusCode, body)
+	}
+	return len(decodeRows(t, body))
+}

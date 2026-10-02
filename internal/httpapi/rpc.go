@@ -127,8 +127,11 @@ func (s *Service) invokeRoutine(
 	}
 
 	var reprConstraint rpcexec.RepresentationConstraint
-	if repr.kind == representationJSONObject {
+	switch repr.kind {
+	case representationJSONObject:
 		reprConstraint = rpcexec.RepresentationSingularObject
+	case representationCSV:
+		reprConstraint = rpcexec.RepresentationTabular
 	}
 
 	outcome, err := s.executor.Execute(
@@ -145,7 +148,7 @@ func (s *Service) invokeRoutine(
 	)
 	if err != nil {
 		s.log.Printf("myrest: rpc %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		writeRPCCallFailure(writer, asked, err)
+		writeRPCCallFailure(writer, request, asked, err)
 		return
 	}
 
@@ -166,7 +169,12 @@ func (s *Service) invokeRoutine(
 	writeScalarRPC(writer, request, repr, outcome.Data)
 }
 
-func writeRPCCallFailure(writer http.ResponseWriter, asked schemacache.RoutineID, err error) {
+func writeRPCCallFailure(
+	writer http.ResponseWriter,
+	request *http.Request,
+	asked schemacache.RoutineID,
+	err error,
+) {
 	var mismatch rpcexec.SignatureMismatch
 	if errors.As(err, &mismatch) {
 		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
@@ -185,6 +193,13 @@ func writeRPCCallFailure(writer http.ResponseWriter, asked schemacache.RoutineID
 	var refusal rpcexec.SingularObjectRefusal
 	if errors.As(err, &refusal) {
 		writeSingularObjectFailure(writer, refusal.RowCount)
+		return
+	}
+	var nonTabular rpcexec.NonTabularRepresentationRefusal
+	if errors.As(err, &nonTabular) {
+		writeUnsupportedMedia(writer, &unsupportedMediaError{
+			offered: acceptMediaTypes(request.Header.Values("Accept")),
+		})
 		return
 	}
 	var rowSet rpcexec.RowSetFeaturesRefusal

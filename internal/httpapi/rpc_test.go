@@ -682,3 +682,33 @@ func TestPostRPCJSONNumberPrecision(t *testing.T) {
 	})
 }
 
+// Issue #217: a mutating non-tabular RPC that refuses the Accept media type
+// must not commit the routine unit.
+func TestPostRPCNonTabularAcceptRefusalDoesNotCommit(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		path   string
+		body   string
+		result any
+	}{
+		{path: "/rpc/write_marker", body: `{}`, result: map[string]any{}},
+		{path: "/rpc/add_them", body: `{"a":1,"b":2}`, result: int64(3)},
+	}
+	for _, accept := range []string{"text/csv", "application/vnd.pgrst.object+json"} {
+		for _, test := range cases {
+			source := &caller{body: test.result}
+			response, body := doWriteWithHeaders(
+				t, http.MethodPost, serveRPC(t, source).URL()+test.path,
+				test.body, map[string]string{
+					"Content-Type": "application/json",
+					"Accept":       accept,
+				},
+			)
+			apitest.AssertEnvelope(t, response, body, http.StatusUnsupportedMediaType, "PGRST107")
+			if source.committed {
+				t.Fatalf("%s with Accept %s: the refused RPC unit committed", test.path, accept)
+			}
+		}
+	}
+}

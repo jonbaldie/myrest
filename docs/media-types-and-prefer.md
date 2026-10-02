@@ -30,7 +30,10 @@ resolution / all-rows (`write-007`–`write-010`). Prefer `tx=` lives in
 | Any other `Accept` value | **not supported** | Refuses with `PGRST107` and names the offered types. | `repr-007` |
 
 A claimed media type that myrest does not serve for that path (for example
-`text/csv` on a scalar **RPC** body) also refuses with `PGRST107`.
+`text/csv` on a scalar **RPC** body) also refuses with `PGRST107`. For RPC,
+`text/csv` and `application/vnd.pgrst.object+json` need a row-set result. A
+scalar or non-tabular routine result refuses inside the routine unit, so the
+refused call rolls back the side effects of the routine (issue #217).
 
 ## Request body media types
 
