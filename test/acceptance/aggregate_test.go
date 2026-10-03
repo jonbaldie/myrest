@@ -104,6 +104,55 @@ func TestAggregateInsideEmbedOverMySQL(t *testing.T) {
 	}
 }
 
+// read-012: aggregates inside many-to-many embeds group all related rows for each parent.
+func TestAggregateInsideManyToManyEmbedOverMySQL(t *testing.T) {
+	service := serveWithAggregates(t, "myrest_fixture")
+
+	t.Run("count", func(t *testing.T) {
+		response, body := get(t, service, "/items?select=id,tags(count())")
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d body = %s", response.StatusCode, body)
+		}
+		want := `[{"id":1,"tags":[{"count":2}]},{"id":2,"tags":[{"count":1}]}]`
+		if string(body) != want+"\n" {
+			t.Fatalf("body = %s, want %s", body, want)
+		}
+	})
+
+	t.Run("reverse sum", func(t *testing.T) {
+		response, body := get(t, service, "/tags?select=id,items(id.sum())")
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d body = %s", response.StatusCode, body)
+		}
+		want := `[{"id":1,"items":[{"sum":3}]},{"id":2,"items":[{"sum":1}]}]`
+		if string(body) != want+"\n" {
+			t.Fatalf("body = %s, want %s", body, want)
+		}
+	})
+
+	t.Run("grouped aggregate", func(t *testing.T) {
+		response, body := get(t, service, "/items?select=id,tags(name,count())&tags.order=name.asc")
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d body = %s", response.StatusCode, body)
+		}
+		want := `[{"id":1,"tags":[{"name":"cold","count":1},{"name":"hot","count":1}]},{"id":2,"tags":[{"name":"hot","count":1}]}]`
+		if string(body) != want+"\n" {
+			t.Fatalf("body = %s, want %s", body, want)
+		}
+	})
+
+	t.Run("filtered empty", func(t *testing.T) {
+		response, body := get(t, service, "/items?select=id,tags(count())&tags.name=eq.missing")
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d body = %s", response.StatusCode, body)
+		}
+		want := `[{"id":1,"tags":[]},{"id":2,"tags":[]}]`
+		if string(body) != want+"\n" {
+			t.Fatalf("body = %s, want %s", body, want)
+		}
+	})
+}
+
 // read-012 also covers grouping by an embedded resource.
 func TestAggregateGroupedByEmbedOverMySQL(t *testing.T) {
 	response, body := get(

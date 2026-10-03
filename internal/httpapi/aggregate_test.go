@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"errors"
 	"net/http"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/rows"
+	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
 // Seam under test: the HTTP API boundary for aggregate reads.
@@ -115,6 +117,140 @@ func TestAggregateInsideEmbedWhenEnabled(t *testing.T) {
 	want := `[{"name":"alpha","orders":[{"count":2}]}]`
 	if string(body) != want+"\n" {
 		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+func manyToManyCache() *schemacache.Cache {
+	items := schemacache.TableID{Database: "shop", Name: "items"}
+	tags := schemacache.TableID{Database: "shop", Name: "tags"}
+	itemTags := schemacache.TableID{Database: "shop", Name: "item_tags"}
+	return schemacache.Build(schemacache.Catalog{
+		Tables: []schemacache.TableID{items, tags, itemTags},
+		Columns: []schemacache.ColumnFact{
+			{Table: items, Name: "id"},
+			{Table: tags, Name: "id"},
+			{Table: tags, Name: "name"},
+			{Table: itemTags, Name: "item_id"},
+			{Table: itemTags, Name: "tag_id"},
+		},
+		Keys: []schemacache.KeyFact{
+			{Table: items, Name: "PRIMARY", Kind: "PRIMARY", Columns: []string{"id"}},
+			{Table: tags, Name: "PRIMARY", Kind: "PRIMARY", Columns: []string{"id"}},
+			{Table: itemTags, Name: "PRIMARY", Kind: "PRIMARY", Columns: []string{"item_id", "tag_id"}},
+		},
+		ForeignKeys: []schemacache.ForeignKeyFact{
+			{Name: "item_tags_item", Table: itemTags, Columns: []string{"item_id"}, ReferencedTable: items, ReferencedColumns: []string{"id"}},
+			{Name: "item_tags_tag", Table: itemTags, Columns: []string{"tag_id"}, ReferencedTable: tags, ReferencedColumns: []string{"id"}},
+		},
+		Selects: []schemacache.SelectFact{
+			{Role: "myrest_anon", Table: items},
+			{Role: "myrest_anon", Table: tags},
+			{Role: "myrest_anon", Table: itemTags},
+		},
+	})
+}
+
+func serveManyToMany(t *testing.T, source httpapi.Reader) *httpapi.Service {
+	t.Helper()
+	service, err := httpapi.Listen(httpapi.Options{
+		Addr:     "127.0.0.1:0",
+		Settings: aggregatesOn(),
+		Cache:    manyToManyCache(),
+		Reader:   source,
+	})
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	go func() { _ = service.Serve() }()
+	t.Cleanup(func() { _ = service.Close() })
+	return service
+}
+
+// read-012: a many-to-many aggregate query keeps each parent's target scope.
+func TestAggregateInsideManyToManyEmbedUsesParentScope(t *testing.T) {
+	t.Parallel()
+
+	source := &multiReader{answers: []readAnswer{
+		{rows: []rows.Row{
+			{Columns: []string{"id"}, Values: []any{int64(1)}},
+			{Columns: []string{"id"}, Values: []any{int64(2)}},
+		}},
+		{rows: []rows.Row{
+			{Columns: []string{"item_id", "tag_id"}, Values: []any{int64(1), int64(1)}},
+			{Columns: []string{"item_id", "tag_id"}, Values: []any{int64(1), int64(2)}},
+			{Columns: []string{"item_id", "tag_id"}, Values: []any{int64(2), int64(1)}},
+		}},
+		{rows: []rows.Row{{Columns: []string{"count", "_myrest_aggregate_presence"}, Values: []any{int64(2), int64(2)}}}},
+		{rows: []rows.Row{{Columns: []string{"count", "_myrest_aggregate_presence"}, Values: []any{int64(1), int64(1)}}}},
+	}}
+	service := serveManyToMany(t, source)
+
+	response, body := get(t, service, "/items?select=id,tags(count())")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d body = %s", response.StatusCode, body)
+	}
+	want := `[{"id":1,"tags":[{"count":2}]},{"id":2,"tags":[{"count":1}]}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+	if len(source.seen) != 4 {
+		t.Fatalf("reader calls = %d, want 4", len(source.seen))
+	}
+	for i, query := range source.seen[2:] {
+		if len(query.Filters) != 1 || query.Filters[0].Column != "id" || query.Filters[0].Op != readquery.OpIn || len(query.Filters[0].Values) == 0 {
+			t.Fatalf("aggregate query filters = %#v", query.Filters)
+		}
+		if i == 0 && (len(query.Filters[0].Values) != 2 || query.Filters[0].Values[0] != "1" || query.Filters[0].Values[1] != "2") {
+			t.Fatalf("item 1 target keys = %#v", query.Filters[0].Values)
+		}
+		if i == 1 && (len(query.Filters[0].Values) != 1 || query.Filters[0].Values[0] != "1") {
+			t.Fatalf("item 2 target keys = %#v", query.Filters[0].Values)
+		}
+		foundPresence := false
+		for _, column := range query.Columns {
+			if column.Name == "id" && column.Agg == "" {
+				t.Fatalf("aggregate query selected target id: %#v", query.Columns)
+			}
+			if column.Alias == "_myrest_aggregate_presence" && column.Agg == readquery.AggCount {
+				foundPresence = true
+			}
+		}
+		if !foundPresence {
+			t.Fatalf("aggregate query has no presence count: %#v", query.Columns)
+		}
+	}
+}
+
+func TestAggregateInsideManyToManyReturnsEmptyForNoMatches(t *testing.T) {
+	t.Parallel()
+
+	source := &multiReader{answers: []readAnswer{
+		{rows: []rows.Row{{Columns: []string{"id"}, Values: []any{int64(1)}}}},
+		{rows: []rows.Row{{Columns: []string{"item_id", "tag_id"}, Values: []any{int64(1), int64(1)}}}},
+		{rows: []rows.Row{{Columns: []string{"count", "_myrest_aggregate_presence"}, Values: []any{int64(0), int64(0)}}}},
+	}}
+	service := serveManyToMany(t, source)
+
+	response, body := get(t, service, "/items?select=id,tags(count())&tags.name=eq.missing")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d body = %s", response.StatusCode, body)
+	}
+	if want := `[{"id":1,"tags":[]}]`; string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+func TestAggregateInsideManyToManyPropagatesReadFailure(t *testing.T) {
+	t.Parallel()
+
+	source := &multiReader{answers: []readAnswer{
+		{rows: []rows.Row{{Columns: []string{"id"}, Values: []any{int64(1)}}}},
+		{rows: []rows.Row{{Columns: []string{"item_id", "tag_id"}, Values: []any{int64(1), int64(1)}}}},
+		{err: errors.New("read failed")},
+	}}
+	response, body := get(t, serveManyToMany(t, source), "/items?select=id,tags(count())")
+	if response.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status = %d body = %s, want %d", response.StatusCode, body, http.StatusInternalServerError)
 	}
 }
 

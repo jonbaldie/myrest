@@ -273,6 +273,61 @@ func TestGroupManyToMany(t *testing.T) {
 	}
 }
 
+func TestManyToManyTargetKeysGroupByParent(t *testing.T) {
+	t.Parallel()
+
+	relationship := schemacache.Relationship{
+		JoinOriginColumns: []string{"item_id"},
+		JoinTargetColumns: []string{"tag_id"},
+	}
+	links := []rows.Row{
+		{Columns: []string{"item_id", "tag_id"}, Values: []any{int64(1), int64(7)}},
+		{Columns: []string{"item_id", "tag_id"}, Values: []any{int64(1), int64(8)}},
+		{Columns: []string{"item_id", "tag_id"}, Values: []any{int64(1), int64(7)}},
+		{Columns: []string{"item_id", "tag_id"}, Values: []any{int64(2), int64(7)}},
+		{Columns: []string{"tag_id"}, Values: []any{int64(9)}},
+		{Columns: []string{"item_id"}, Values: []any{int64(3)}},
+	}
+
+	got := manyToManyTargetKeysByParent(links, relationship)
+	if len(got) != 2 {
+		t.Fatalf("parent target keys = %#v", got)
+	}
+	if len(got["1"]) != 2 || stringifyValue(got["1"][1][0]) != "8" {
+		t.Fatalf("item 1 target keys = %#v", got["1"])
+	}
+	if len(got["2"]) != 1 || stringifyValue(got["2"][0][0]) != "7" {
+		t.Fatalf("item 2 target keys = %#v", got["2"])
+	}
+}
+
+func TestAggregatePresenceAvoidsNameCollisionAndDropsEmptyGroups(t *testing.T) {
+	t.Parallel()
+
+	query, name := addAggregatePresence(readquery.Query{
+		Columns: []readquery.Column{
+			{Name: "amount", Agg: readquery.AggSum},
+			{Alias: "_myrest_aggregate_presence"},
+		},
+	})
+	if name != "_myrest_aggregate_presence_" {
+		t.Fatalf("presence column name = %q", name)
+	}
+	last := query.Columns[len(query.Columns)-1]
+	if last.Agg != readquery.AggCount || last.Alias != name {
+		t.Fatalf("presence column = %#v", last)
+	}
+
+	got := rowsWithAggregatePresence([]rows.Row{
+		{Columns: []string{name}, Values: []any{int64(0)}},
+		{Columns: []string{name}, Values: []any{[]byte("0")}},
+		{Columns: []string{name}, Values: []any{int64(2)}},
+	}, name)
+	if len(got) != 1 || got[0].Values[0] != int64(2) {
+		t.Fatalf("rows with presence = %#v", got)
+	}
+}
+
 func TestAttachGroupedEmbedsEmptyChildren(t *testing.T) {
 	t.Parallel()
 
