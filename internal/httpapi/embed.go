@@ -321,30 +321,49 @@ func (s *Service) nestManyToMany(
 	embed plannedEmbed,
 ) ([]rows.Row, error) {
 	parentKeys := uniqueKeyTuples(parentRows, embed.relationship.OriginColumns)
-	related, parentsByTarget, err := s.loadManyToMany(ctx, role, embed, parentKeys)
+	links, err := s.loadManyToManyLinks(ctx, role, embed, parentKeys)
 	if err != nil {
 		return nil, err
+	}
+	if hasAggregateColumn(embed.ask.Columns) {
+		grouped, err := s.readManyToManyAggregates(ctx, role, parentRows, embed, links)
+		if err != nil {
+			return nil, err
+		}
+		return attachGroupedEmbeds(parentRows, embed, grouped), nil
+	}
+
+	targetKeys := uniqueKeyTuples(links, embed.relationship.JoinTargetColumns)
+	related, err := s.readByKeys(ctx, role, embed, embed.relationship.TargetColumns, targetKeys)
+	if err != nil {
+		return nil, err
+	}
+	parentsByTarget := map[string][]string{}
+	for _, link := range links {
+		parentKey := rowKey(link, embed.relationship.JoinOriginColumns)
+		targetKey := rowKey(link, embed.relationship.JoinTargetColumns)
+		parentsByTarget[targetKey] = append(parentsByTarget[targetKey], parentKey)
 	}
 	grouped := groupManyToMany(related, parentsByTarget, embed.relationship.TargetColumns)
 	return attachGroupedEmbeds(parentRows, embed, grouped), nil
 }
 
-func (s *Service) loadManyToMany(
+func (s *Service) loadManyToManyLinks(
 	ctx context.Context,
 	role schemacache.Role,
 	embed plannedEmbed,
 	parentKeys [][]any,
-) ([]rows.Row, map[string][]string, error) {
+) ([]rows.Row, error) {
 	joinTable, found := s.cache.Resource(role, embed.relationship.JoinTable)
 	if !found {
-		return nil, nil, schemacache.RelationshipMissing{
+		return nil, schemacache.RelationshipMissing{
 			Origin: embed.relationship.Origin,
 			Target: embed.ask.Resource,
 		}
 	}
 	joinFilters, joinGroups, ok := keyCondition(embed.relationship.JoinOriginColumns, parentKeys)
 	if !ok {
-		return nil, nil, nil
+		return nil, nil
 	}
 	joinQuery := readquery.Query{
 		SelectAll: true,
@@ -357,20 +376,70 @@ func (s *Service) loadManyToMany(
 	}
 	joinRead, err := s.reader.Read(ctx, role, joinTable, joinQuery)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	targetKeys := uniqueKeyTuples(joinRead.Rows, embed.relationship.JoinTargetColumns)
-	related, err := s.readByKeys(ctx, role, embed, embed.relationship.TargetColumns, targetKeys)
-	if err != nil {
-		return nil, nil, err
+	return joinRead.Rows, nil
+}
+
+func hasAggregateColumn(columns []readquery.Column) bool {
+	for _, column := range columns {
+		if column.Agg != "" {
+			return true
+		}
 	}
-	parentsByTarget := map[string][]string{}
-	for _, link := range joinRead.Rows {
-		parentKey := rowKey(link, embed.relationship.JoinOriginColumns)
-		targetKey := rowKey(link, embed.relationship.JoinTargetColumns)
-		parentsByTarget[targetKey] = append(parentsByTarget[targetKey], parentKey)
+	return false
+}
+
+// readManyToManyAggregates reads each parent's targets in one scope. A single
+// batch groups by target keys, not by the parent that owns each target.
+func (s *Service) readManyToManyAggregates(
+	ctx context.Context,
+	role schemacache.Role,
+	parentRows []rows.Row,
+	embed plannedEmbed,
+	links []rows.Row,
+) (map[string][]rows.Row, error) {
+	keysByParent := manyToManyTargetKeysByParent(links, embed.relationship)
+	grouped := map[string][]rows.Row{}
+	for _, parent := range parentRows {
+		parentKey := rowKey(parent, embed.relationship.OriginColumns)
+		aggregates, err := s.readByKeysForAggregate(
+			ctx,
+			role,
+			embed,
+			embed.relationship.TargetColumns,
+			keysByParent[parentKey],
+		)
+		if err != nil {
+			return nil, err
+		}
+		grouped[parentKey] = aggregates
 	}
-	return related, parentsByTarget, nil
+	return grouped, nil
+}
+
+func manyToManyTargetKeysByParent(
+	links []rows.Row,
+	relationship schemacache.Relationship,
+) map[string][][]any {
+	keys := map[string][][]any{}
+	seen := map[string]map[string]bool{}
+	for _, link := range links {
+		parentKey := rowKey(link, relationship.JoinOriginColumns)
+		targetKey := rowKey(link, relationship.JoinTargetColumns)
+		if parentKey == "" || targetKey == "" {
+			continue
+		}
+		if seen[parentKey] == nil {
+			seen[parentKey] = map[string]bool{}
+		}
+		if seen[parentKey][targetKey] {
+			continue
+		}
+		seen[parentKey][targetKey] = true
+		keys[parentKey] = append(keys[parentKey], rowValues(link, relationship.JoinTargetColumns))
+	}
+	return keys
 }
 
 func groupManyToMany(
@@ -413,6 +482,29 @@ func (s *Service) readByKeys(
 	keyColumns []string,
 	keys [][]any,
 ) ([]rows.Row, error) {
+	return s.readByKeysAndEmbeds(ctx, role, embed, keyColumns, keys, true)
+}
+
+// readByKeysForAggregate keeps the target keys out of the selected columns.
+// The caller already knows the parent scope, so target keys would split groups.
+func (s *Service) readByKeysForAggregate(
+	ctx context.Context,
+	role schemacache.Role,
+	embed plannedEmbed,
+	keyColumns []string,
+	keys [][]any,
+) ([]rows.Row, error) {
+	return s.readByKeysAndEmbeds(ctx, role, embed, keyColumns, keys, false)
+}
+
+func (s *Service) readByKeysAndEmbeds(
+	ctx context.Context,
+	role schemacache.Role,
+	embed plannedEmbed,
+	keyColumns []string,
+	keys [][]any,
+	injectKeyColumns bool,
+) ([]rows.Row, error) {
 	keyFilters, keyGroups, ok := keyCondition(keyColumns, keys)
 	if !ok {
 		return nil, nil
@@ -428,18 +520,70 @@ func (s *Service) readByKeys(
 	}
 	childPlan := embed.children
 	query, injected := withJoinColumns(embed.target, query, childPlan)
-	query, _ = ensureColumns(embed.target, query, keyColumns)
+	presenceColumn := ""
+	if injectKeyColumns {
+		query, _ = ensureColumns(embed.target, query, keyColumns)
+	} else {
+		query, presenceColumn = addAggregatePresence(query)
+	}
 	read, err := s.reader.Read(ctx, role, embed.target, query)
 	if err != nil {
 		return nil, err
+	}
+	if presenceColumn != "" {
+		read.Rows = rowsWithAggregatePresence(read.Rows, presenceColumn)
+		read.Rows = dropInjectedColumns(read.Rows, []string{presenceColumn})
 	}
 	nested, err := s.nestEmbeds(ctx, role, embed.target, read.Rows, childPlan)
 	if err != nil {
 		return nil, err
 	}
-	// Keep key columns for grouping; projectEmbedRow drops them for the client.
-	// withJoinColumns may list the same names for a nested embed — do not drop them.
-	return dropInjectedColumns(nested, exceptNames(injected, keyColumns)), nil
+	// Key columns let the caller map each ordinary child row to its parent.
+	// An aggregate read already has its parent scope, so do not add those keys.
+	if injectKeyColumns {
+		return dropInjectedColumns(nested, exceptNames(injected, keyColumns)), nil
+	}
+	return dropInjectedColumns(nested, injected), nil
+}
+
+func addAggregatePresence(query readquery.Query) (readquery.Query, string) {
+	name := "_myrest_aggregate_presence"
+	for {
+		used := false
+		for _, column := range query.Columns {
+			if column.ResultName() == name {
+				used = true
+				break
+			}
+		}
+		if !used {
+			break
+		}
+		name += "_"
+	}
+	query.Columns = append(query.Columns, readquery.Column{Alias: name, Agg: readquery.AggCount})
+	return query, name
+}
+
+func rowsWithAggregatePresence(read []rows.Row, column string) []rows.Row {
+	present := make([]rows.Row, 0, len(read))
+	for _, row := range read {
+		value := columnValue(row, column)
+		var raw string
+		switch typed := value.(type) {
+		case []byte:
+			raw = string(typed)
+		case string:
+			raw = typed
+		default:
+			raw = fmt.Sprint(value)
+		}
+		if raw == "0" {
+			continue
+		}
+		present = append(present, row)
+	}
+	return present
 }
 
 func exceptNames(names, keep []string) []string {

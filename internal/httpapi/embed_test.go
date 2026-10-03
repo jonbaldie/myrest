@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -121,6 +122,35 @@ func TestEmbedOneToManyUsesReaderRows(t *testing.T) {
 	}
 }
 
+func TestEmbedManyToManyKeepsTargetKeyForMapping(t *testing.T) {
+	t.Parallel()
+
+	source := &multiReader{answers: []readAnswer{
+		{rows: []rows.Row{{Columns: []string{"id"}, Values: []any{int64(1)}}}},
+		{rows: []rows.Row{{Columns: []string{"item_id", "tag_id"}, Values: []any{int64(1), int64(7)}}}},
+		{rows: []rows.Row{{Columns: []string{"id", "name"}, Values: []any{int64(7), "hot"}}}},
+	}}
+	response, body := get(t, serveManyToMany(t, source), "/items?select=id,tags(name)")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d body = %s", response.StatusCode, body)
+	}
+	if want := `[{"id":1,"tags":[{"name":"hot"}]}]`; string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+	if len(source.seen) != 3 {
+		t.Fatalf("reader calls = %d, want 3", len(source.seen))
+	}
+	foundTargetKey := false
+	for _, column := range source.seen[2].Columns {
+		if column.Name == "id" && column.Agg == "" {
+			foundTargetKey = true
+		}
+	}
+	if !foundTargetKey {
+		t.Fatalf("target query columns = %#v, want id for mapping", source.seen[2].Columns)
+	}
+}
+
 func TestEmbedAmbiguousRelationshipAtHTTP(t *testing.T) {
 	t.Parallel()
 
@@ -197,11 +227,14 @@ type multiReader struct {
 }
 
 func (r *multiReader) Read(
-	_ context.Context,
+	ctx context.Context,
 	_ schemacache.Role,
 	_ schemacache.Table,
 	query readquery.Query,
 ) (readquery.Result, error) {
+	if ctx == nil {
+		return readquery.Result{}, errors.New("read has no context")
+	}
 	r.seen = append(r.seen, query)
 	if r.calls >= len(r.answers) {
 		return readquery.Result{Rows: []rows.Row{}}, nil
