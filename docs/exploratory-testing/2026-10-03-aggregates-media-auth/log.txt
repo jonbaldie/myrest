@@ -1,0 +1,1630 @@
+### GET /secrets -H Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoibXlyZXN0X3VzZXIifQ.dAsDxcFE_G3y0tcRZ3oC3Px8slIAwIghFq0kvELuhZw
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:50:03 GMT
+Content-Length: 34
+
+[{"id":1,"payload":"top-secret"}]
+
+### GET /orders?select=item_id,count()&order=count().desc 
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:50:10 GMT
+Content-Length: 85
+
+{"code":"PGRST204","message":"column not found: count()","details":null,"hint":null}
+
+### GET /orders?select=item_id,count()&order=item_id.desc 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:50:14 GMT
+Content-Length: 50
+
+[{"item_id":2,"count":1},{"item_id":1,"count":2}]
+
+### GET /orders?select=item_id,count()&item_id=eq.1 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:50:16 GMT
+Content-Length: 26
+
+[{"item_id":1,"count":2}]
+
+### GET /stock_moves?select=qty.sum(),qty.avg(),count()&id=lt.0 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:50:20 GMT
+Content-Length: 36
+
+[{"sum":null,"avg":null,"count":0}]
+
+### GET /stock_moves?select=sku,qty.sum(),count()&id=lt.0 
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:50:23 GMT
+Content-Length: 3
+
+[]
+
+### GET /stock_moves?select=sku,qty.sum()&order=sku.asc -H Prefer: count=exact
+HTTP/1.1 200 OK
+Content-Range: 0-1/2
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:50:25 GMT
+Content-Length: 45
+
+[{"sku":"aa","sum":19},{"sku":"bb","sum":7}]
+
+### GET /stock_moves?select=sku,qty.sum()&order=sku.asc&limit=1&offset=1 -H Prefer: count=exact
+HTTP/1.1 206 Partial Content
+Content-Range: 1-1/2
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:50:28 GMT
+Content-Length: 23
+
+[{"sku":"bb","sum":7}]
+
+### GET /items?select=count() -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/vnd.pgrst.object+json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:50:33 GMT
+Content-Length: 12
+
+{"count":2}
+
+### GET /stock_moves?select=sku,qty.sum() -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 406 Not Acceptable
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:50:37 GMT
+Content-Length: 132
+
+{"code":"PGRST116","message":"Cannot coerce the result to a single JSON object","details":"The result contains 2 rows","hint":null}
+
+### GET /items?select=count() -H Accept: text/csv
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: text/csv; charset=utf-8
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:50:40 GMT
+Content-Length: 8
+
+count
+2
+
+### GET /items_view?select=count() 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:50:41 GMT
+Content-Length: 14
+
+[{"count":2}]
+
+### GET /items_stats 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:50:44 GMT
+Content-Length: 14
+
+[{"total":2}]
+
+### GET /items_stats?select=total.sum() 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:50:47 GMT
+Content-Length: 12
+
+[{"sum":2}]
+
+### GET /items?select=name,orders(count())&order=name.asc 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:50:51 GMT
+Content-Length: 81
+
+[{"name":"alpha","orders":[{"count":2}]},{"name":"beta","orders":[{"count":1}]}]
+
+### GET /items?select=name,...orders(count()) 
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:50:53 GMT
+Content-Length: 152
+
+{"code":"PGRST127","message":"Feature not implemented","details":"Aggregates are not implemented for one-to-many or many-to-many spreads.","hint":null}
+
+### GET /orders?select=items(name),count() 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:50:56 GMT
+Content-Length: 75
+
+[{"count":2,"items":{"name":"alpha"}},{"count":1,"items":{"name":"beta"}}]
+
+### GET /items?select=name.min(),name.max() 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:51:01 GMT
+Content-Length: 31
+
+[{"min":"alpha","max":"beta"}]
+
+### GET /items?select=name.sum() 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:51:04 GMT
+Content-Length: 12
+
+[{"sum":0}]
+
+### GET /items?select=fake_col.count() 
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:51:08 GMT
+Content-Length: 86
+
+{"code":"PGRST204","message":"column not found: fake_col","details":null,"hint":null}
+
+### GET /items?select=id.stddev() 
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:51:10 GMT
+Content-Length: 127
+
+{"code":"MYREST001","message":"PostgREST row computed-field features are not available with MySQL","details":null,"hint":null}
+
+### POST /items_stats -H Content-Type: application/json -d {"total":10}
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:51:13 GMT
+Content-Length: 86
+
+{"code":"MYREST001","message":"The view is not updatable","details":null,"hint":null}
+
+### POST /items_view -H Content-Type: application/json -H Prefer: return=representation -d {"name":"from_view"}
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:51:16 GMT
+Content-Length: 142
+
+{"code":"MYREST001","message":"Prefer return=representation needs a primary key to return inserted rows honestly","details":null,"hint":null}
+
+### POST /items_view -H Content-Type: application/json -d {"name":"from_view"}
+HTTP/1.1 201 Created
+Date: Sat, 03 Oct 2026 00:51:19 GMT
+Content-Length: 0
+
+
+### GET /items_view?name=eq.from_view 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:51:21 GMT
+Content-Length: 30
+
+[{"id":3,"name":"from_view"}]
+
+### PATCH /items_view?name=eq.from_view -H Content-Type: application/json -d {"name":"updated_view"}
+HTTP/1.1 204 No Content
+Date: Sat, 03 Oct 2026 00:51:23 GMT
+
+
+### DELETE /items_view?name=eq.updated_view 
+HTTP/1.1 204 No Content
+Date: Sat, 03 Oct 2026 00:51:26 GMT
+
+
+### GET /items_view?name=eq.updated_view 
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:51:29 GMT
+Content-Length: 3
+
+[]
+
+### GET /items -H Accept: application/vnd.pgrst.array+json
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/vnd.pgrst.array+json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:51:31 GMT
+Content-Length: 75
+
+[{"id":1,"name":"alpha","name_len":5},{"id":2,"name":"beta","name_len":4}]
+
+### GET /items -H Accept: application/vnd.pgrst.array
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/vnd.pgrst.array+json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:51:31 GMT
+Content-Length: 75
+
+[{"id":1,"name":"alpha","name_len":5},{"id":2,"name":"beta","name_len":4}]
+
+### GET /items?id=eq.1 -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/vnd.pgrst.object+json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:51:34 GMT
+Content-Length: 37
+
+{"id":1,"name":"alpha","name_len":5}
+
+### GET /items?id=eq.1 -H Accept: application/vnd.pgrst.object
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/vnd.pgrst.object+json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:51:34 GMT
+Content-Length: 37
+
+{"id":1,"name":"alpha","name_len":5}
+
+### GET /quoted_values -H Accept: text/csv
+HTTP/1.1 200 OK
+Content-Range: 0-2/*
+Content-Type: text/csv; charset=utf-8
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:51:38 GMT
+Content-Length: 40
+
+id,value
+1,alpha
+2,"a,b"
+3,"say ""hi"""
+
+### GET /null_records -H Accept: text/csv
+HTTP/1.1 200 OK
+Content-Range: 0-2/*
+Content-Type: text/csv; charset=utf-8
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:51:40 GMT
+Content-Length: 27
+
+id,label
+1,null
+2,
+3,other
+
+### GET /profiles -H Accept: text/csv
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: text/csv; charset=utf-8
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:51:43 GMT
+Content-Length: 185
+
+id,meta
+1,"{""tag"":""Alpha"",""phones"":[{""number"":""917-929-5745""}],""blood_type"":""A-""}"
+2,"{""tag"":""Beta"",""phones"":[{""number"":""512-446-4988""}],""blood_type"":""O+""}"
+
+### GET /items?id=lt.0 -H Accept: text/csv
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: text/csv; charset=utf-8
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:51:47 GMT
+Content-Length: 0
+
+
+### GET /items?id=lt.0&select=id,name -H Accept: text/csv
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: text/csv; charset=utf-8
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:51:47 GMT
+Content-Length: 8
+
+id,name
+
+### GET /items -H Accept: application/geo+json
+HTTP/1.1 415 Unsupported Media Type
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:51:50 GMT
+Content-Length: 121
+
+{"code":"PGRST107","message":"None of these media types are available: application/geo+json","details":null,"hint":null}
+
+### GET /items -H Accept: application/vnd.pgrst.plan
+HTTP/1.1 415 Unsupported Media Type
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:51:50 GMT
+Content-Length: 127
+
+{"code":"PGRST107","message":"None of these media types are available: application/vnd.pgrst.plan","details":null,"hint":null}
+
+### GET /items -H Accept: application/xml
+HTTP/1.1 415 Unsupported Media Type
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:51:50 GMT
+Content-Length: 116
+
+{"code":"PGRST107","message":"None of these media types are available: application/xml","details":null,"hint":null}
+
+### POST /items -H Content-Type: text/csv -d id,name\n10,csv_item
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:51:56 GMT
+Content-Length: 89
+
+{"code":"PGRST102","message":"Could not parse the JSON body","details":null,"hint":null}
+
+### POST /items -H Content-Type: application/x-www-form-urlencoded -d name=form_item
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:51:56 GMT
+Content-Length: 89
+
+{"code":"PGRST102","message":"Could not parse the JSON body","details":null,"hint":null}
+
+### GET /items -H Prefer: timezone=UTC
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:51:58 GMT
+Content-Length: 104
+
+{"code":"MYREST001","message":"Prefer timezone is not available with MySQL","details":null,"hint":null}
+
+### POST /items -H Content-Type: application/json -H Prefer: handling=strict,unknown=preference -d {"name":"test_unknown_pref"}
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:52:00 GMT
+Content-Length: 143
+
+{"code":"PGRST122","message":"Invalid preferences given with handling=strict","details":"Invalid preferences: unknown=preference","hint":null}
+
+### POST /items -H Content-Type: application/json -H Prefer: handling=lenient,unknown=preference -d {"name":"lenient_pref"}
+HTTP/1.1 201 Created
+Date: Sat, 03 Oct 2026 00:52:03 GMT
+Content-Length: 0
+
+
+### DELETE /items?name=eq.lenient_pref 
+HTTP/1.1 204 No Content
+Date: Sat, 03 Oct 2026 00:52:06 GMT
+
+
+### POST /items -H Content-Type: application/json -H Prefer: return=headers-only -d {"name":"headers_only_item"}
+HTTP/1.1 201 Created
+Location: /items?id=eq.5
+Preference-Applied: return=headers-only
+Date: Sat, 03 Oct 2026 00:52:09 GMT
+Content-Length: 0
+
+
+### DELETE /items?id=eq.5 
+HTTP/1.1 204 No Content
+Date: Sat, 03 Oct 2026 00:52:12 GMT
+
+
+### POST /colors -H Content-Type: application/json -d {"name":"red"}
+HTTP/1.1 201 Created
+Date: Sat, 03 Oct 2026 00:52:17 GMT
+Content-Length: 0
+
+
+### GET /colors?name=eq.red 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:52:19 GMT
+Content-Length: 39
+
+[{"id":1,"name":"red","tone":"plain"}]
+
+### POST /colors -H Content-Type: application/json -d [{"name":"green","tone":"dark"},{"name":"blue"}]
+HTTP/1.1 409 Conflict
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:52:22 GMT
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+### POST /colors -H Content-Type: application/json -H Prefer: missing=default -d [{"name":"green","tone":"dark"},{"name":"blue"}]
+HTTP/1.1 201 Created
+Preference-Applied: missing=default
+Date: Sat, 03 Oct 2026 00:52:26 GMT
+Content-Length: 0
+
+
+### GET /colors?name=in.(green,blue)&order=name.asc 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:52:28 GMT
+Content-Length: 78
+
+[{"id":5,"name":"blue","tone":"plain"},{"id":4,"name":"green","tone":"dark"}]
+
+### DELETE /colors?id=gt.0 -H Prefer: all-rows
+HTTP/1.1 204 No Content
+Date: Sat, 03 Oct 2026 00:52:32 GMT
+
+
+### PATCH /items?id=gt.0 -H Content-Type: application/json -H Prefer: max-affected=1,handling=strict -d {"name":"modified"}
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:52:35 GMT
+Content-Length: 137
+
+{"code":"PGRST124","message":"Query result exceeds max-affected preference constraint","details":"The query affects 2 rows","hint":null}
+
+### GET /items 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:52:37 GMT
+Content-Length: 75
+
+[{"id":1,"name":"alpha","name_len":5},{"id":2,"name":"beta","name_len":4}]
+
+### PATCH /items?id=gt.0 -H Content-Type: application/json -H Prefer: max-affected=1,handling=lenient,tx=rollback -d {"name":"modified"}
+HTTP/1.1 204 No Content
+Preference-Applied: tx=rollback
+Date: Sat, 03 Oct 2026 00:52:41 GMT
+
+
+### GET /items 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:52:44 GMT
+Content-Length: 75
+
+[{"id":1,"name":"alpha","name_len":5},{"id":2,"name":"beta","name_len":4}]
+
+### POST /items -H Content-Type: application/json -d {"id":1,"name":"gamma"}
+HTTP/1.1 409 Conflict
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:52:47 GMT
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+### POST /items -H Content-Type: application/json -H Prefer: resolution=ignore-duplicates -d {"id":1,"name":"gamma"}
+HTTP/1.1 201 Created
+Preference-Applied: resolution=ignore-duplicates
+Date: Sat, 03 Oct 2026 00:52:51 GMT
+Content-Length: 0
+
+
+### GET /items?id=eq.1 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:52:53 GMT
+Content-Length: 39
+
+[{"id":1,"name":"alpha","name_len":5}]
+
+### POST /items -H Content-Type: application/json -H Prefer: resolution=merge-duplicates -d {"id":1,"name":"gamma"}
+HTTP/1.1 201 Created
+Preference-Applied: resolution=merge-duplicates
+Date: Sat, 03 Oct 2026 00:52:55 GMT
+Content-Length: 0
+
+
+### GET /items?id=eq.1 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:52:57 GMT
+Content-Length: 39
+
+[{"id":1,"name":"gamma","name_len":5}]
+
+### PATCH /items?id=eq.1 -H Content-Type: application/json -d {"name":"alpha"}
+HTTP/1.1 204 No Content
+Date: Sat, 03 Oct 2026 00:53:00 GMT
+
+
+### PUT /items?id=eq.100 -H Content-Type: application/json -d {"id":100,"name":"new_put"}
+HTTP/1.1 201 Created
+Date: Sat, 03 Oct 2026 00:53:04 GMT
+Content-Length: 0
+
+
+### PUT /items?id=eq.100 -H Content-Type: application/json -d {"id":100,"name":"updated_put"}
+HTTP/1.1 204 No Content
+Date: Sat, 03 Oct 2026 00:53:04 GMT
+
+
+### PUT /items?id=eq.100 -H Content-Type: application/json -d {"id":999,"name":"mismatched"}
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:53:04 GMT
+Content-Length: 122
+
+{"code":"PGRST105","message":"PUT filters must name all and only primary key columns with eq","details":null,"hint":null}
+
+### PUT /items?name=eq.foo -H Content-Type: application/json -d {"name":"foo"}
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:53:04 GMT
+Content-Length: 122
+
+{"code":"PGRST105","message":"PUT filters must name all and only primary key columns with eq","details":null,"hint":null}
+
+### DELETE /items?id=eq.100 
+HTTP/1.1 204 No Content
+Date: Sat, 03 Oct 2026 00:53:07 GMT
+
+
+### POST /items -H Content-Type: application/json -H Prefer: return=representation -d {"id":100,"name":"rep_item"}
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /items?id=eq.100
+Preference-Applied: return=representation
+Date: Sat, 03 Oct 2026 00:53:10 GMT
+Content-Length: 44
+
+[{"id":100,"name":"rep_item","name_len":8}]
+
+### PATCH /items?id=eq.100 -H Content-Type: application/json -H Prefer: return=representation -d {"name":"rep_updated"}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 03 Oct 2026 00:53:10 GMT
+Content-Length: 48
+
+[{"id":100,"name":"rep_updated","name_len":11}]
+
+### DELETE /items?id=eq.100 -H Prefer: return=representation
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 03 Oct 2026 00:53:10 GMT
+Content-Length: 48
+
+[{"id":100,"name":"rep_updated","name_len":11}]
+
+### PATCH /items?id=gt.0 -H Content-Type: application/json -H Accept: application/vnd.pgrst.object+json -H Prefer: return=representation -d {"name":"singular_fail"}
+HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:53:14 GMT
+Content-Length: 132
+
+{"code":"PGRST116","message":"Cannot coerce the result to a single JSON object","details":"The result contains 2 rows","hint":null}
+
+### GET /items 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:53:33 GMT
+Content-Length: 75
+
+[{"id":1,"name":"alpha","name_len":5},{"id":2,"name":"beta","name_len":4}]
+
+### PATCH /items?id=eq.1 -H Content-Type: application/json -H Accept: application/vnd.pgrst.object+json -H Prefer: return=representation -d {"name":"singular_ok"}
+HTTP/1.1 200 OK
+Content-Type: application/vnd.pgrst.object+json
+Preference-Applied: return=representation
+Date: Sat, 03 Oct 2026 00:53:40 GMT
+Content-Length: 44
+
+{"id":1,"name":"singular_ok","name_len":11}
+
+### PATCH /items?id=eq.1 -H Content-Type: application/json -d {"name":"alpha"}
+HTTP/1.1 204 No Content
+Date: Sat, 03 Oct 2026 00:53:46 GMT
+
+
+### DELETE /items?id=eq.999 -H Accept: application/vnd.pgrst.object+json -H Prefer: return=representation
+HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:53:50 GMT
+Content-Length: 132
+
+{"code":"PGRST116","message":"Cannot coerce the result to a single JSON object","details":"The result contains 0 rows","hint":null}
+
+### DELETE /loose_notes 
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:53:53 GMT
+Content-Length: 107
+
+{"code":"PGRST100","message":"PATCH/DELETE needs a filter or Prefer: all-rows","details":null,"hint":null}
+
+### PATCH /loose_notes -H Content-Type: application/json -d {"body":"test"}
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:53:53 GMT
+Content-Length: 107
+
+{"code":"PGRST100","message":"PATCH/DELETE needs a filter or Prefer: all-rows","details":null,"hint":null}
+
+### DELETE /loose_notes -H Prefer: all-rows
+HTTP/1.1 204 No Content
+Date: Sat, 03 Oct 2026 00:53:53 GMT
+
+
+### GET /secrets 
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:53:58 GMT
+Content-Length: 129
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.secrets' in the schema cache","details":null,"hint":null}
+
+### GET /locked_view 
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:54:02 GMT
+Content-Length: 133
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.locked_view' in the schema cache","details":null,"hint":null}
+
+### GET /locked_view -H Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoibXlyZXN0X3VzZXIifQ.dAsDxcFE_G3y0tcRZ3oC3Px8slIAwIghFq0kvELuhZw
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:54:03 GMT
+Content-Length: 49
+
+[{"id":1,"name":"alpha"},{"id":2,"name":"beta"}]
+
+### GET /items -H Authorization: Bearer not-a-jwt
+HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+Www-Authenticate: Bearer error="invalid_token", error_description="Expected 3 parts in JWT; got 1"
+Date: Sat, 03 Oct 2026 00:54:07 GMT
+Content-Length: 90
+
+{"code":"PGRST301","message":"Expected 3 parts in JWT; got 1","details":null,"hint":null}
+
+### GET /items -H Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoibXlyZXN0X3VzZXIifQ.T6EqDmk5AWD884UvoGTy-mJMEQxyXWFQ8PrCXWzusMM
+HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+Www-Authenticate: Bearer error="invalid_token", error_description="JWT cryptographic operation failed"
+Date: Sat, 03 Oct 2026 00:54:07 GMT
+Content-Length: 94
+
+{"code":"PGRST301","message":"JWT cryptographic operation failed","details":null,"hint":null}
+
+### GET /items -H Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjEwMDAwMDAwMDAsInJvbGUiOiJteXJlc3RfdXNlciJ9.DCFmFeacP49UELS4p9J4X8NkLpjJ2-VnxFU94awsriA
+HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+Www-Authenticate: Bearer error="invalid_token", error_description="JWT expired"
+Date: Sat, 03 Oct 2026 00:54:07 GMT
+Content-Length: 71
+
+{"code":"PGRST303","message":"JWT expired","details":null,"hint":null}
+
+### GET /items -H Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYmYiOjIwMDAwMDAwMDAsInJvbGUiOiJteXJlc3RfdXNlciJ9.MOnoWW2_5Ww3X8tMKU05jXmI-Rxw-bew4H-6ucmP-yg
+HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+Www-Authenticate: Bearer error="invalid_token", error_description="JWT not yet valid"
+Date: Sat, 03 Oct 2026 00:54:08 GMT
+Content-Length: 77
+
+{"code":"PGRST303","message":"JWT not yet valid","details":null,"hint":null}
+
+### GET /items -H Authorization: Bearer 
+HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+Www-Authenticate: Bearer error="invalid_token", error_description="Empty JWT is sent in Authorization header"
+Date: Sat, 03 Oct 2026 00:54:08 GMT
+Content-Length: 101
+
+{"code":"PGRST301","message":"Empty JWT is sent in Authorization header","details":null,"hint":null}
+
+### GET /items -H Authorization: Basic dXNlcjpwYXNz
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:54:08 GMT
+Content-Length: 102
+
+{"code":"MYREST001","message":"Only Bearer JWT credentials are supported","details":null,"hint":null}
+
+### GET /items -H Prefer: row-security
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:54:11 GMT
+Content-Length: 116
+
+{"code":"MYREST001","message":"Postgres row-level security is not available with MySQL","details":null,"hint":null}
+
+### GET /items -H Prefer: jwt-claims
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:54:11 GMT
+Content-Length: 125
+
+{"code":"MYREST001","message":"Request GUCs and request.jwt.claims are not available with MySQL","details":null,"hint":null}
+
+### GET /items -H Origin: http://example.com
+HTTP/1.1 200 OK
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Origin: http://example.com
+Access-Control-Expose-Headers: Content-Encoding, Content-Location, Content-Range, Content-Type, Date, Location, Server, Transfer-Encoding, Range-Unit
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:54:15 GMT
+Content-Length: 75
+
+[{"id":1,"name":"alpha","name_len":5},{"id":2,"name":"beta","name_len":4}]
+
+### GET /items -H Origin: http://evil.com
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:54:15 GMT
+Content-Length: 75
+
+[{"id":1,"name":"alpha","name_len":5},{"id":2,"name":"beta","name_len":4}]
+
+### OPTIONS /items -H Origin: http://example.com -H Access-Control-Request-Method: POST
+HTTP/1.1 200 OK
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Headers: Authorization, Accept, Accept-Language, Content-Language
+Access-Control-Allow-Methods: GET, POST, PATCH, PUT, DELETE, OPTIONS, HEAD
+Access-Control-Allow-Origin: http://example.com
+Access-Control-Max-Age: 86400
+Date: Sat, 03 Oct 2026 00:54:15 GMT
+Content-Length: 0
+
+
+### OPTIONS /items -H Origin: http://evil.com -H Access-Control-Request-Method: POST
+HTTP/1.1 200 OK
+Allow: OPTIONS,GET,HEAD,POST,PUT,PATCH,DELETE
+Date: Sat, 03 Oct 2026 00:54:15 GMT
+Content-Length: 0
+
+
+### GET /profiles?select=meta->>blood_type,count() 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:54:18 GMT
+Content-Length: 62
+
+[{"blood_type":"A-","count":1},{"blood_type":"O+","count":1}]
+
+### GET /rpc/list_items?select=count() 
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:54:27 GMT
+Content-Length: 78
+
+{"code":"PGRST204","message":"column not found: ","details":null,"hint":null}
+
+### GET /rpc/list_items?select=id.max() 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:54:27 GMT
+Content-Length: 20
+
+[{"id":1},{"id":2}]
+
+### GET /rpc/list_items?select=id.sum() 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:54:32 GMT
+Content-Length: 20
+
+[{"id":1},{"id":2}]
+
+### GET /profiles?select=id,meta->tag,meta->>tag 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:55:13 GMT
+Content-Length: 74
+
+[{"id":1,"tag":"Alpha","tag":"Alpha"},{"id":2,"tag":"Beta","tag":"Beta"}]
+
+### GET /profiles?select=id,meta->phones->0->number 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:55:13 GMT
+Content-Length: 68
+
+[{"id":1,"number":"917-929-5745"},{"id":2,"number":"512-446-4988"}]
+
+### GET /profiles?select=id,meta->phones->0->>number 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:55:13 GMT
+Content-Length: 68
+
+[{"id":1,"number":"917-929-5745"},{"id":2,"number":"512-446-4988"}]
+
+### GET /profiles?meta->phones->0->>number=eq.917-929-5745 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:55:13 GMT
+Content-Length: 89
+
+[{"id":1,"meta":{"tag":"Alpha","phones":[{"number":"917-929-5745"}],"blood_type":"A-"}}]
+
+### GET /profiles?select=id,meta->phones 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:55:16 GMT
+Content-Length: 94
+
+[{"id":1,"phones":[{"number":"917-929-5745"}]},{"id":2,"phones":[{"number":"512-446-4988"}]}]
+
+### GET /null_records?label=isdistinct.null 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:55:19 GMT
+Content-Length: 51
+
+[{"id":1,"label":"null"},{"id":3,"label":"other"}]
+
+### GET /null_records?label=isnotdistinct.null 
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:55:19 GMT
+Content-Length: 133
+
+{"code":"PGRST100","message":"filter operator 'isnotdistinct' is not a supported ordinary-read operator","details":null,"hint":null}
+
+### GET /null_records?label=not.isdistinct.null 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:55:24 GMT
+Content-Length: 24
+
+[{"id":2,"label":null}]
+
+### GET /items -H Accept-Profile: myrest_fixture
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:55:28 GMT
+Content-Length: 75
+
+[{"id":1,"name":"alpha","name_len":5},{"id":2,"name":"beta","name_len":4}]
+
+### GET /items -H Accept-Profile: unknown_db
+HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:55:28 GMT
+Content-Length: 115
+
+{"code":"PGRST106","message":"The schema must be one of the following: myrest_fixture","details":null,"hint":null}
+
+### POST /items -H Content-Profile: unknown_db -H Content-Type: application/json -d {"name":"prof"}
+HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:55:28 GMT
+Content-Length: 115
+
+{"code":"PGRST106","message":"The schema must be one of the following: myrest_fixture","details":null,"hint":null}
+
+### GET /items -H Content-Profile: unknown_db
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:55:31 GMT
+Content-Length: 75
+
+[{"id":1,"name":"alpha","name_len":5},{"id":2,"name":"beta","name_len":4}]
+
+### POST /items -H Accept-Profile: unknown_db -H Prefer: return=representation -H Content-Type: application/json -d {"name":"prof_test"}
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /items?id=eq.101
+Preference-Applied: return=representation
+Date: Sat, 03 Oct 2026 00:55:39 GMT
+Content-Length: 45
+
+[{"id":101,"name":"prof_test","name_len":9}]
+
+### DELETE /items?id=eq.101 
+HTTP/1.1 204 No Content
+Date: Sat, 03 Oct 2026 00:55:42 GMT
+
+
+### GET /orders?select=id,items(count()) 
+HTTP/1.1 200 OK
+Content-Range: 0-2/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:56:07 GMT
+Content-Length: 89
+
+[{"id":1,"items":{"count":1}},{"id":2,"items":{"count":1}},{"id":3,"items":{"count":1}}]
+
+### GET /items?select=id,tags(count()) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:56:25 GMT
+Content-Length: 74
+
+[{"id":1,"tags":[{"count":1},{"count":1}]},{"id":2,"tags":[{"count":1}]}]
+
+### GET /items?select=id,tags(name,count()) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:56:53 GMT
+Content-Length: 114
+
+[{"id":1,"tags":[{"name":"hot","count":1},{"name":"cold","count":1}]},{"id":2,"tags":[{"name":"hot","count":1}]}]
+
+### GET /tags?select=id,items(count()) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:56:56 GMT
+Content-Length: 76
+
+[{"id":1,"items":[{"count":1},{"count":1}]},{"id":2,"items":[{"count":1}]}]
+
+### GET /tags?select=id,items(id.sum()) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:56:59 GMT
+Content-Length: 70
+
+[{"id":1,"items":[{"sum":1},{"sum":2}]},{"id":2,"items":[{"sum":1}]}]
+
+### GET /items?select=name,orders(count()) -H Prefer: count=exact
+HTTP/1.1 200 OK
+Content-Range: 0-1/2
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:57:12 GMT
+Content-Length: 81
+
+[{"name":"alpha","orders":[{"count":2}]},{"name":"beta","orders":[{"count":1}]}]
+
+### GET /items?select=name,orders(id) -H Accept: text/csv
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: text/csv; charset=utf-8
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:57:15 GMT
+Content-Length: 64
+
+name,orders
+alpha,"[{""id"":1},{""id"":2}]"
+beta,"[{""id"":3}]"
+
+### GET /loose_notes -H Accept: application/vnd.pgrst.object+json
+HTTP/1.1 406 Not Acceptable
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:57:19 GMT
+Content-Length: 132
+
+{"code":"PGRST116","message":"Cannot coerce the result to a single JSON object","details":"The result contains 0 rows","hint":null}
+
+### POST /loose_notes -H Content-Type: application/json -H Prefer: return=representation -d {"body":"note1"}
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:57:22 GMT
+Content-Length: 142
+
+{"code":"MYREST001","message":"Prefer return=representation needs a primary key to return inserted rows honestly","details":null,"hint":null}
+
+### POST /loose_notes -H Content-Type: application/json -d {"body":"test_note"}
+HTTP/1.1 201 Created
+Date: Sat, 03 Oct 2026 00:57:30 GMT
+Content-Length: 0
+
+
+### PATCH /loose_notes?body=eq.test_note -H Content-Type: application/json -H Prefer: return=representation -d {"body":"updated_note"}
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:57:30 GMT
+Content-Length: 141
+
+{"code":"MYREST001","message":"Prefer return=representation needs a primary key to return updated rows honestly","details":null,"hint":null}
+
+### DELETE /loose_notes?body=eq.test_note -H Prefer: return=representation
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 03 Oct 2026 00:57:30 GMT
+Content-Length: 23
+
+[{"body":"test_note"}]
+
+### POST /loose_notes -H Content-Type: application/json -H Prefer: return=headers-only -d {"body":"no_pk_headers_only"}
+HTTP/1.1 201 Created
+Preference-Applied: return=headers-only
+Date: Sat, 03 Oct 2026 00:57:34 GMT
+Content-Length: 0
+
+
+### DELETE /loose_notes -H Prefer: all-rows
+HTTP/1.1 204 No Content
+Date: Sat, 03 Oct 2026 00:57:36 GMT
+
+
+### GET /orders?select=item_id,orders_count:count()&order=orders_count.asc 
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:57:39 GMT
+Content-Length: 90
+
+{"code":"PGRST204","message":"column not found: orders_count","details":null,"hint":null}
+
+### GET /loose_notes -H Prefer: count=exact
+HTTP/1.1 200 OK
+Content-Range: */0
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:57:44 GMT
+Content-Length: 3
+
+[]
+
+### PATCH /items?id=eq.999 -H Content-Type: application/json -H Prefer: return=representation -d {"name":"none"}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 03 Oct 2026 00:57:48 GMT
+Content-Length: 3
+
+[]
+
+### DELETE /items?id=eq.999 -H Prefer: return=representation
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 03 Oct 2026 00:57:56 GMT
+Content-Length: 3
+
+[]
+
+### POST /items -H Content-Type: application/json -H Prefer: tx=rollback -d {"name":"rollback_item"}
+HTTP/1.1 201 Created
+Preference-Applied: tx=rollback
+Date: Sat, 03 Oct 2026 00:57:59 GMT
+Content-Length: 0
+
+
+### GET /items?name=eq.rollback_item 
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:57:59 GMT
+Content-Length: 3
+
+[]
+
+### POST /items -H Content-Type: application/json -H Prefer: tx=commit -d {"name":"commit_item"}
+HTTP/1.1 201 Created
+Preference-Applied: tx=commit
+Date: Sat, 03 Oct 2026 00:58:02 GMT
+Content-Length: 0
+
+
+### GET /items?name=eq.commit_item 
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:58:02 GMT
+Content-Length: 48
+
+[{"id":103,"name":"commit_item","name_len":11}]
+
+### DELETE /items?id=eq.103 
+HTTP/1.1 204 No Content
+Date: Sat, 03 Oct 2026 00:58:05 GMT
+
+
+### POST /items -H Content-Type: application/json -H Prefer: tx=commit,tx=rollback -d {"name":"conflict_tx"}
+HTTP/1.1 201 Created
+Preference-Applied: tx=rollback
+Date: Sat, 03 Oct 2026 00:58:09 GMT
+Content-Length: 0
+
+
+### GET /items?name=eq.conflict_tx 
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:58:09 GMT
+Content-Length: 3
+
+[]
+
+### POST /rpc/secret_count -H Content-Type: application/json -d {}
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:58:12 GMT
+Content-Length: 135
+
+{"code":"PGRST202","message":"Could not find the function myrest_fixture.secret_count in the schema cache","details":null,"hint":null}
+
+### GET /rpc/secret_count 
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:58:12 GMT
+Content-Length: 135
+
+{"code":"PGRST202","message":"Could not find the function myrest_fixture.secret_count in the schema cache","details":null,"hint":null}
+
+### GET /rpc/secret_count -H Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoibXlyZXN0X3VzZXIifQ.dAsDxcFE_G3y0tcRZ3oC3Px8slIAwIghFq0kvELuhZw
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:58:16 GMT
+Content-Length: 135
+
+{"code":"PGRST202","message":"Could not find the function myrest_fixture.secret_count in the schema cache","details":null,"hint":null}
+
+### GET /rpc/secret_count -H Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoibXlyZXN0X3VzZXIifQ.dAsDxcFE_G3y0tcRZ3oC3Px8slIAwIghFq0kvELuhZw
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:58:21 GMT
+Content-Length: 3
+
+99
+
+### GET /rpc/secret_count 
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:58:21 GMT
+Content-Length: 135
+
+{"code":"PGRST202","message":"Could not find the function myrest_fixture.secret_count in the schema cache","details":null,"hint":null}
+
+### GET /rpc/secret_count -H Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoibXlyZXN0X3VzZXIifQ.dAsDxcFE_G3y0tcRZ3oC3Px8slIAwIghFq0kvELuhZw
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:58:25 GMT
+Content-Length: 135
+
+{"code":"PGRST202","message":"Could not find the function myrest_fixture.secret_count in the schema cache","details":null,"hint":null}
+
+### GET /items?select=count() 
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:58:32 GMT
+Content-Length: 101
+
+{"code":"PGRST123","message":"Use of aggregate functions is not allowed","details":null,"hint":null}
+
+### GET /items?select=name,orders(count()) 
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:58:32 GMT
+Content-Length: 101
+
+{"code":"PGRST123","message":"Use of aggregate functions is not allowed","details":null,"hint":null}
+
+### GET /orders?select=items(name),count() 
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:58:32 GMT
+Content-Length: 101
+
+{"code":"PGRST123","message":"Use of aggregate functions is not allowed","details":null,"hint":null}
+
+### GET /orders?select=item_id,count()&order=item_id.asc -H Accept: text/csv
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: text/csv; charset=utf-8
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:59:05 GMT
+Content-Length: 22
+
+item_id,count
+1,2
+2,1
+
+### GET /orders?select=item_id,count()&item_id=eq.1 -H Prefer: count=exact
+HTTP/1.1 200 OK
+Content-Range: 0-0/1
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:59:08 GMT
+Content-Length: 26
+
+[{"item_id":1,"count":2}]
+
+### POST /items -H Content-Type: application/json -H Prefer: return=representation,tx=rollback -d {"name":"rollback_rep"}
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /items?id=eq.3
+Preference-Applied: return=representation, tx=rollback
+Date: Sat, 03 Oct 2026 00:59:12 GMT
+Content-Length: 47
+
+[{"id":3,"name":"rollback_rep","name_len":12}]
+
+### GET /items?name=eq.rollback_rep 
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:59:12 GMT
+Content-Length: 3
+
+[]
+
+### PUT /items?id=eq.100 -H Content-Type: application/json -H Prefer: tx=rollback -d {"id":100,"name":"put_rollback"}
+HTTP/1.1 201 Created
+Preference-Applied: tx=rollback
+Date: Sat, 03 Oct 2026 00:59:20 GMT
+Content-Length: 0
+
+
+### GET /items?id=eq.100 
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:59:20 GMT
+Content-Length: 3
+
+[]
+
+### GET /items?order=name.desc,id.asc 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 00:59:25 GMT
+Content-Length: 75
+
+[{"id":2,"name":"beta","name_len":4},{"id":1,"name":"alpha","name_len":5}]
+
+### PATCH /items?id=eq.1 -H Content-Type: application/json -H Prefer: return=headers-only -d {"name":"alpha"}
+HTTP/1.1 204 No Content
+Preference-Applied: return=headers-only
+Date: Sat, 03 Oct 2026 00:59:30 GMT
+
+
+### DELETE /items?id=eq.999 -H Prefer: return=headers-only
+HTTP/1.1 204 No Content
+Preference-Applied: return=headers-only
+Date: Sat, 03 Oct 2026 00:59:30 GMT
+
+
+### PATCH /items?id=eq.1 -H Content-Type: application/json -H Prefer: return=representation -H Accept: text/csv -d {"name":"alpha"}
+HTTP/1.1 200 OK
+Content-Type: text/csv; charset=utf-8
+Preference-Applied: return=representation
+Date: Sat, 03 Oct 2026 00:59:39 GMT
+Content-Length: 27
+
+id,name,name_len
+1,alpha,5
+
+### PATCH /items?id=eq.1 -H Content-Type: application/json -H Prefer: return=representation -H Accept: application/vnd.pgrst.array+json -d {"name":"alpha"}
+HTTP/1.1 200 OK
+Content-Type: application/vnd.pgrst.array+json
+Preference-Applied: return=representation
+Date: Sat, 03 Oct 2026 00:59:42 GMT
+Content-Length: 39
+
+[{"id":1,"name":"alpha","name_len":5}]
+
+### OPTIONS /orders 
+HTTP/1.1 200 OK
+Allow: OPTIONS,GET,HEAD,POST,PUT
+Date: Sat, 03 Oct 2026 00:59:45 GMT
+Content-Length: 0
+
+
+### OPTIONS /locked_view 
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:59:48 GMT
+Content-Length: 133
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.locked_view' in the schema cache","details":null,"hint":null}
+
+### OPTIONS /locked_view -H Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoibXlyZXN0X3VzZXIifQ.dAsDxcFE_G3y0tcRZ3oC3Px8slIAwIghFq0kvELuhZw
+HTTP/1.1 200 OK
+Allow: OPTIONS,GET,HEAD
+Date: Sat, 03 Oct 2026 00:59:48 GMT
+Content-Length: 0
+
+
+### OPTIONS / 
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 00:59:52 GMT
+Content-Length: 108
+
+{"code":"MYREST003","message":"The requested path and method are not available","details":null,"hint":null}
+
+### OPTIONS / -H Origin: http://example.com -H Access-Control-Request-Method: GET
+HTTP/1.1 200 OK
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Headers: Authorization, Accept, Accept-Language, Content-Language
+Access-Control-Allow-Methods: GET, POST, PATCH, PUT, DELETE, OPTIONS, HEAD
+Access-Control-Allow-Origin: http://example.com
+Access-Control-Max-Age: 86400
+Date: Sat, 03 Oct 2026 00:59:52 GMT
+Content-Length: 0
+
+
+### GET /items?select=name,orders(count(),id.min(),id.max())&order=name.asc 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 01:00:04 GMT
+Content-Length: 113
+
+[{"name":"alpha","orders":[{"count":2,"min":1,"max":2}]},{"name":"beta","orders":[{"count":1,"min":3,"max":3}]}]
+
+### GET /employees?select=name,employees!manager_id(count())&order=id.asc 
+HTTP/1.1 200 OK
+Content-Range: 0-3/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 01:00:11 GMT
+Content-Length: 145
+
+[{"name":"ada","employees":[{"count":2}]},{"name":"bob","employees":[{"count":1}]},{"name":"carl","employees":[]},{"name":"dee","employees":[]}]
+
+### POST /colors -H Content-Type: application/json -d {"name":"purple"}
+HTTP/1.1 201 Created
+Date: Sat, 03 Oct 2026 01:00:14 GMT
+Content-Length: 0
+
+
+### DELETE /colors?name=eq.purple -H Prefer: return=representation -H Accept: text/csv
+HTTP/1.1 200 OK
+Content-Type: text/csv; charset=utf-8
+Preference-Applied: return=representation
+Date: Sat, 03 Oct 2026 01:00:14 GMT
+Content-Length: 28
+
+id,name,tone
+1,purple,plain
+
+### GET /items?select=id,tags(count()) -H Prefer: count=exact
+HTTP/1.1 200 OK
+Content-Range: 0-1/2
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 01:00:36 GMT
+Content-Length: 74
+
+[{"id":1,"tags":[{"count":1},{"count":1}]},{"id":2,"tags":[{"count":1}]}]
+
+### GET /items?select=id,tags(count())&tags.name=eq.hot 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 01:00:40 GMT
+Content-Length: 62
+
+[{"id":1,"tags":[{"count":1}]},{"id":2,"tags":[{"count":1}]}]
+
+### GET /items?select=id,tags(count())&tags.name=eq.cold 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 01:00:45 GMT
+Content-Length: 51
+
+[{"id":1,"tags":[{"count":1}]},{"id":2,"tags":[]}]
+
+### PATCH /items?id=eq.1 -H Content-Type: application/json -H Prefer: missing=default -d {"name":"alpha"}
+HTTP/1.1 204 No Content
+Date: Sat, 03 Oct 2026 01:01:09 GMT
+
+
+### PATCH /items?id=eq.1 -H Content-Type: application/json -H Prefer: missing=default,handling=strict -d {"name":"alpha"}
+HTTP/1.1 204 No Content
+Preference-Applied: handling=strict
+Date: Sat, 03 Oct 2026 01:01:13 GMT
+
+
+### PATCH /items?id=eq.1 -H Content-Type: application/json -H Prefer: resolution=merge-duplicates,handling=strict -d {"name":"alpha"}
+HTTP/1.1 204 No Content
+Preference-Applied: handling=strict
+Date: Sat, 03 Oct 2026 01:01:18 GMT
+
+
+### GET /items?limit=-1 
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 01:01:26 GMT
+Content-Length: 96
+
+{"code":"PGRST100","message":"limit must be a non-negative integer","details":null,"hint":null}
+
+### GET /items?offset=-1 
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 01:01:26 GMT
+Content-Length: 97
+
+{"code":"PGRST100","message":"offset must be a non-negative integer","details":null,"hint":null}
+
+### GET /items?limit=abc 
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 03 Oct 2026 01:01:30 GMT
+Content-Length: 96
+
+{"code":"PGRST100","message":"limit must be a non-negative integer","details":null,"hint":null}
+
+### GET /items -H Range: 0-0
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 01:01:33 GMT
+Content-Length: 39
+
+[{"id":1,"name":"alpha","name_len":5}]
+
+### GET /items -H Range: 100-200
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 01:01:37 GMT
+Content-Length: 3
+
+[]
+
+### GET /items -H Range: items=0-0
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 01:01:43 GMT
+Content-Length: 75
+
+[{"id":1,"name":"alpha","name_len":5},{"id":2,"name":"beta","name_len":4}]
+
+### GET /items?select=id,tags(count()) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 01:02:20 GMT
+Content-Length: 74
+
+[{"id":1,"tags":[{"count":1},{"count":1}]},{"id":2,"tags":[{"count":1}]}]
+
+### GET /tags?select=id,items(count()) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 01:02:20 GMT
+Content-Length: 76
+
+[{"id":1,"items":[{"count":1},{"count":1}]},{"id":2,"items":[{"count":1}]}]
+
+### GET /tags?select=id,items(id.sum()) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 01:02:20 GMT
+Content-Length: 70
+
+[{"id":1,"items":[{"sum":1},{"sum":2}]},{"id":2,"items":[{"sum":1}]}]
+
+### GET /items?select=name,orders(count())&order=name.asc 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 01:02:20 GMT
+Content-Length: 81
+
+[{"name":"alpha","orders":[{"count":2}]},{"name":"beta","orders":[{"count":1}]}]
+
+### GET /items?select=id,tags(count()) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 01:02:37 GMT
+Content-Length: 74
+
+[{"id":1,"tags":[{"count":1},{"count":1}]},{"id":2,"tags":[{"count":1}]}]
+
+### GET /tags?select=id,items(count()) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 01:02:37 GMT
+Content-Length: 76
+
+[{"id":1,"items":[{"count":1},{"count":1}]},{"id":2,"items":[{"count":1}]}]
+
+### GET /tags?select=id,items(id.sum()) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 01:02:37 GMT
+Content-Length: 70
+
+[{"id":1,"items":[{"sum":1},{"sum":2}]},{"id":2,"items":[{"sum":1}]}]
+
+### GET /items?select=name,orders(count())&order=name.asc 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 03 Oct 2026 01:02:37 GMT
+Content-Length: 81
+
+[{"name":"alpha","orders":[{"count":2}]},{"name":"beta","orders":[{"count":1}]}]
+

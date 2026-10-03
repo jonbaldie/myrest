@@ -1,0 +1,36 @@
+===== A: many-to-many embed with count() aggregate
+2026/10/03 02:02:17 myrest listening on http://127.0.0.1:3111 (databases=myrest_fixture)
+### GET /items?select=id,tags(count()) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+
+[{"id":1,"tags":[{"count":1},{"count":1}]},{"id":2,"tags":[{"count":1}]}]
+
+### GET /tags?select=id,items(count()) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+
+[{"id":1,"items":[{"count":1},{"count":1}]},{"id":2,"items":[{"count":1}]}]
+
+===== A: many-to-many embed with sum() aggregate
+### GET /tags?select=id,items(id.sum()) 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+
+[{"id":1,"items":[{"sum":1},{"sum":2}]},{"id":2,"items":[{"sum":1}]}]
+
+===== Comparison: one-to-many embed with count() aggregate
+### GET /items?select=name,orders(count())&order=name.asc 
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+
+[{"name":"alpha","orders":[{"count":2}]},{"name":"beta","orders":[{"count":1}]}]
+
