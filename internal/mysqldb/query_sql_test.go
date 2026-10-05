@@ -58,7 +58,7 @@ func TestBuildSelectIsDistinctQuotedNullStaysLiteral(t *testing.T) {
 		{raw: `isdistinct.null`, sql: "SELECT `id`, `name` FROM `shop`.`items` WHERE NOT (`name` <=> ?)", arg: nil},
 	}
 	for _, c := range cases {
-		query, err := readquery.Parse(url.Values{"name": []string{c.raw}}, nil)
+		query, err := readquery.Parse(url.Values{"name": []string{c.raw}}, readquery.CountNone)
 		if err != nil {
 			t.Fatalf("Parse %s: %v", c.raw, err)
 		}

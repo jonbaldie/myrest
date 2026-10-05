@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jonbaldie/myrest/internal/config"
+	"github.com/jonbaldie/myrest/internal/prefer"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/representation"
 	"github.com/jonbaldie/myrest/internal/schemacache"
@@ -40,8 +41,8 @@ const msgInvalidRange = "Requested range not satisfiable"
 // database role in the schema cache, and reads under the ordinary-read query.
 // Accept-Profile selects the database; with no header the table comes from
 // the default database.
-func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
-	role, ok := s.requestRole(writer, request)
+func (s *Service) readTable(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
+	role, ok := s.requestRole(writer, request, preferences)
 	if !ok {
 		return
 	}
@@ -52,13 +53,8 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	query, err := parseReadQuery(request, s.settings.DB.MaxRows)
-	if err != nil {
-		writeQueryFailure(writer, err)
-		return
-	}
-	if readquery.HasAggregates(query) && !s.settings.DB.AggregatesEnabled {
-		writeFailure(writer, http.StatusBadRequest, codeAggregatesDisabled, msgAggregatesDisabled)
+	query, ok := s.admitReadQuery(writer, request, preferences)
+	if !ok {
 		return
 	}
 	table, ok := s.admitReadResource(writer, requested)
@@ -77,6 +73,29 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	writeRead(writer, request.Method == http.MethodHead, query, read, repr)
+}
+
+// admitReadQuery parses the read query and refuses it in the stable order: a
+// query failure, then an invalid Prefer under handling=strict, then aggregates
+// when they are off.
+func (s *Service) admitReadQuery(
+	writer http.ResponseWriter,
+	request *http.Request,
+	preferences prefer.Preferences,
+) (readquery.Query, bool) {
+	query, err := parseReadQuery(request, preferences.Count, s.settings.DB.MaxRows)
+	if err != nil {
+		writeQueryFailure(writer, err)
+		return readquery.Query{}, false
+	}
+	if refuseInvalidPrefer(writer, preferences, prefer.SurfaceRead) {
+		return readquery.Query{}, false
+	}
+	if readquery.HasAggregates(query) && !s.settings.DB.AggregatesEnabled {
+		writeFailure(writer, http.StatusBadRequest, codeAggregatesDisabled, msgAggregatesDisabled)
+		return readquery.Query{}, false
+	}
+	return query, true
 }
 
 func (s *Service) readWithEmbeds(
@@ -132,12 +151,16 @@ func requestQuery(request *http.Request) (url.Values, error) {
 	return url.ParseQuery(request.URL.RawQuery)
 }
 
-func parseReadQuery(request *http.Request, maxRows config.RowLimit) (readquery.Query, error) {
+func parseReadQuery(
+	request *http.Request,
+	count readquery.CountMode,
+	maxRows config.RowLimit,
+) (readquery.Query, error) {
 	values, err := requestQuery(request)
 	if err != nil {
 		return readquery.Query{}, err
 	}
-	query, err := readquery.Parse(values, request.Header.Values("Prefer"))
+	query, err := readquery.Parse(values, count)
 	if err != nil {
 		return readquery.Query{}, err
 	}

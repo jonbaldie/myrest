@@ -41,6 +41,9 @@ Also full match on this path:
   ignored, and `limit=0` keeps its meaning and bypasses the window.
 - `HEAD` with the same read intent and no body
 - `Prefer: count=exact` with an exact total in `Content-Range`
+- `Prefer: handling=strict`: an unknown or invalid Prefer token refuses with
+  `PGRST122`, as on writes and RPC. `count=planned` and `count=estimated`
+  keep their `MYREST001` refusal. A read sends no `Preference-Applied`.
 - `db-max-rows` as a hard row cap
 
 A method stays available only when the active **database role** holds the

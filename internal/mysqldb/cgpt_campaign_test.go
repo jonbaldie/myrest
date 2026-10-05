@@ -88,7 +88,7 @@ func TestCGPTSQL(t *testing.T) {
 		if op == "in" {
 			raw = "in.(" + value + ")"
 		}
-		query, err := readquery.Parse(url.Values{column: {raw}}, nil)
+		query, err := readquery.Parse(url.Values{column: {raw}}, readquery.CountNone)
 		if err != nil {
 			skips++
 			continue
@@ -102,10 +102,10 @@ func TestCGPTSQL(t *testing.T) {
 			}
 			continue
 		}
-		control, err := readquery.Parse(url.Values{column: {strings.Replace(raw, value, "control", 1)}}, nil)
+		control, err := readquery.Parse(url.Values{column: {strings.Replace(raw, value, "control", 1)}}, readquery.CountNone)
 		if err != nil {
 			// in-list rewrite can fail; compare against a fixed control instead.
-			control, err = readquery.Parse(url.Values{"name": {"eq.control"}}, nil)
+			control, err = readquery.Parse(url.Values{"name": {"eq.control"}}, readquery.CountNone)
 			if err != nil {
 				t.Fatal(err)
 			}

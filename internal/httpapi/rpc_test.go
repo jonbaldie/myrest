@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -710,5 +711,47 @@ func TestPostRPCNonTabularAcceptRefusalDoesNotCommit(t *testing.T) {
 				t.Fatalf("%s with Accept %s: the refused RPC unit committed", test.path, accept)
 			}
 		}
+	}
+}
+
+// RPC shares the parsed Prefer header: handling=strict refuses invalid
+// tokens on GET and POST before the routine runs.
+func TestRPCPreferHandlingStrictRefusesInvalid(t *testing.T) {
+	t.Parallel()
+
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		t.Run(method, func(t *testing.T) {
+			t.Parallel()
+			source := &caller{body: int64(3)}
+			url := serveRPC(t, source).URL() + "/rpc/add_them?a=1&b=2"
+			var payload io.Reader
+			if method == http.MethodPost {
+				url = strings.TrimSuffix(url, "?a=1&b=2")
+				payload = strings.NewReader(`{"a":1,"b":2}`)
+			}
+			request, err := http.NewRequest(method, url, payload)
+			if err != nil {
+				t.Fatalf("new request: %v", err)
+			}
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Prefer", "handling=strict, bogus=1")
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				t.Fatalf("%s: %v", method, err)
+			}
+			t.Cleanup(func() { _ = response.Body.Close() })
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+
+			envelope := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST122")
+			if envelope.Details != "Invalid preferences: bogus=1" {
+				t.Fatalf("details = %q", envelope.Details)
+			}
+			if source.role != "" {
+				t.Fatal("routine must not run")
+			}
+		})
 	}
 }

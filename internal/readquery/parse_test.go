@@ -12,7 +12,7 @@ import (
 func TestParseSelectColumnsAndAlias(t *testing.T) {
 	t.Parallel()
 
-	query, err := readquery.Parse(url.Values{"select": []string{"id,fullName:name"}}, nil)
+	query, err := readquery.Parse(url.Values{"select": []string{"id,fullName:name"}}, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestParseEqFilterAndOrderLimitOffset(t *testing.T) {
 		"limit":  []string{"1"},
 		"offset": []string{"0"},
 	}
-	query, err := readquery.Parse(values, nil)
+	query, err := readquery.Parse(values, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestParseEqFilterAndOrderLimitOffset(t *testing.T) {
 func TestParsePreferCountExact(t *testing.T) {
 	t.Parallel()
 
-	query, err := readquery.Parse(url.Values{}, []string{"count=exact"})
+	query, err := readquery.Parse(url.Values{}, readquery.CountExact)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestParsePreferCountExact(t *testing.T) {
 func TestParseRejectsUnknownOperator(t *testing.T) {
 	t.Parallel()
 
-	_, err := readquery.Parse(url.Values{"name": []string{"bogus.alpha"}}, nil)
+	_, err := readquery.Parse(url.Values{"name": []string{"bogus.alpha"}}, readquery.CountNone)
 	if err == nil {
 		t.Fatal("Parse accepted an unknown operator")
 	}
@@ -79,7 +79,7 @@ func TestParseRejectsUnknownOperator(t *testing.T) {
 func TestParseRejectsExtraLogicalClosingParenthesis(t *testing.T) {
 	t.Parallel()
 
-	_, err := readquery.Parse(url.Values{"or": []string{"(id.eq.1))"}}, nil)
+	_, err := readquery.Parse(url.Values{"or": []string{"(id.eq.1))"}}, readquery.CountNone)
 	if err == nil {
 		t.Fatal("Parse accepted an extra logical closing parenthesis")
 	}
@@ -88,7 +88,7 @@ func TestParseRejectsExtraLogicalClosingParenthesis(t *testing.T) {
 func TestParseRejectsExtraInClosingParenthesis(t *testing.T) {
 	t.Parallel()
 
-	_, err := readquery.Parse(url.Values{"id": []string{"in.(1))"}}, nil)
+	_, err := readquery.Parse(url.Values{"id": []string{"in.(1))"}}, readquery.CountNone)
 	if err == nil {
 		t.Fatal("Parse accepted an extra in-filter closing parenthesis")
 	}
@@ -97,7 +97,7 @@ func TestParseRejectsExtraInClosingParenthesis(t *testing.T) {
 func TestParseInListUnescapesQuotedDoubleQuote(t *testing.T) {
 	t.Parallel()
 
-	query, err := readquery.Parse(url.Values{"id": []string{`in.("a""b")`}}, nil)
+	query, err := readquery.Parse(url.Values{"id": []string{`in.("a""b")`}}, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestParseInListPreservesInvalidUTF8Bytes(t *testing.T) {
 	t.Parallel()
 
 	value := string([]byte{0xea})
-	query, err := readquery.Parse(url.Values{"id": []string{"in.(\"" + value + "\")"}}, nil)
+	query, err := readquery.Parse(url.Values{"id": []string{"in.(\"" + value + "\")"}}, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestParseInListPreservesInvalidUTF8Bytes(t *testing.T) {
 func TestParseAcceptsILikeAsPartialMatch(t *testing.T) {
 	t.Parallel()
 
-	query, err := readquery.Parse(url.Values{"name": []string{"ilike.ALPHA"}}, nil)
+	query, err := readquery.Parse(url.Values{"name": []string{"ilike.ALPHA"}}, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -134,7 +134,17 @@ func TestParseAcceptsILikeAsPartialMatch(t *testing.T) {
 func TestParseRefusesPreferCountPlanned(t *testing.T) {
 	t.Parallel()
 
-	_, err := readquery.Parse(url.Values{}, []string{"count=planned"})
+	_, err := readquery.Parse(url.Values{}, readquery.CountPlanned)
+	var failure readquery.ParseFailure
+	if err == nil || !errors.As(err, &failure) || !failure.Gap {
+		t.Fatalf("err = %v, want a gap ParseFailure", err)
+	}
+}
+
+func TestParseRefusesPreferCountEstimated(t *testing.T) {
+	t.Parallel()
+
+	_, err := readquery.Parse(url.Values{}, readquery.CountEstimated)
 	var failure readquery.ParseFailure
 	if err == nil || !errors.As(err, &failure) || !failure.Gap {
 		t.Fatalf("err = %v, want a gap ParseFailure", err)
@@ -165,7 +175,7 @@ func TestParseJSONPathRefusals(t *testing.T) {
 	t.Parallel()
 	cases := []string{`meta#>>{blood_type}`, `meta->"blood type"`, `meta->*`, `meta->>phones->0`}
 	for _, selectPart := range cases {
-		_, err := readquery.Parse(url.Values{"select": []string{selectPart}}, nil)
+		_, err := readquery.Parse(url.Values{"select": []string{selectPart}}, readquery.CountNone)
 		var failure readquery.ParseFailure
 		if err == nil || !errors.As(err, &failure) || !failure.Gap {
 			t.Fatalf("select %q err = %v, want gap", selectPart, err)
@@ -179,7 +189,7 @@ func TestParseJSONPathSelectAndFilter(t *testing.T) {
 		"select":            []string{"id,meta->>blood_type"},
 		"meta->>blood_type": []string{"eq.A-"},
 	}
-	query, err := readquery.Parse(values, nil)
+	query, err := readquery.Parse(values, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -198,7 +208,7 @@ func TestParseChainedJSONPathSelectFilterAndOrder(t *testing.T) {
 		"meta->phones->0->>number": []string{"eq.917-929-5745"},
 		"order":                    []string{"meta->phones->0->>number.desc"},
 	}
-	query, err := readquery.Parse(values, nil)
+	query, err := readquery.Parse(values, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -233,7 +243,7 @@ func TestParseTopLevelNegatedLogicalGroups(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			query, err := readquery.Parse(url.Values{test.key: []string{test.raw}}, nil)
+			query, err := readquery.Parse(url.Values{test.key: []string{test.raw}}, readquery.CountNone)
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
 			}
@@ -267,7 +277,7 @@ func TestParseRefusesEmptyLogicalGroups(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := readquery.Parse(url.Values{test.key: []string{test.raw}}, nil)
+			_, err := readquery.Parse(url.Values{test.key: []string{test.raw}}, readquery.CountNone)
 			var failure readquery.ParseFailure
 			if err == nil || !errors.As(err, &failure) || failure.Gap {
 				t.Fatalf("query %s=%s err = %v, want non-gap ParseFailure", test.key, test.raw, err)
@@ -279,7 +289,7 @@ func TestParseRefusesEmptyLogicalGroups(t *testing.T) {
 func TestParseStarPartWithEmbedRecordsSelectAll(t *testing.T) {
 	t.Parallel()
 
-	query, err := readquery.Parse(url.Values{"select": []string{"*,orders(id)"}}, nil)
+	query, err := readquery.Parse(url.Values{"select": []string{"*,orders(id)"}}, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -300,7 +310,7 @@ func TestParseStarPartWithEmbedRecordsSelectAll(t *testing.T) {
 func TestParseStarPartWithColumnKeepsExplicitSelect(t *testing.T) {
 	t.Parallel()
 
-	query, err := readquery.Parse(url.Values{"select": []string{"*,name"}}, nil)
+	query, err := readquery.Parse(url.Values{"select": []string{"*,name"}}, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -328,7 +338,7 @@ func TestParseRejectsUnknownIsValue(t *testing.T) {
 		{name: "unknown value in a group", key: "or", raw: "(id.is.bogus)"},
 	}
 	for _, test := range cases {
-		_, err := readquery.Parse(url.Values{test.key: []string{test.raw}}, nil)
+		_, err := readquery.Parse(url.Values{test.key: []string{test.raw}}, readquery.CountNone)
 		var failure readquery.ParseFailure
 		if err == nil || !errors.As(err, &failure) || failure.Gap {
 			t.Fatalf("query %s=%s err = %v, want a non-gap ParseFailure", test.key, test.raw, err)
@@ -340,7 +350,7 @@ func TestParseAcceptsDocumentedIsValues(t *testing.T) {
 	t.Parallel()
 
 	for _, value := range []string{"null", "not_null", "true", "false", "unknown"} {
-		query, err := readquery.Parse(url.Values{"id": {"is." + value}}, nil)
+		query, err := readquery.Parse(url.Values{"id": {"is." + value}}, readquery.CountNone)
 		if err != nil {
 			t.Fatalf("Parse is.%s: %v", value, err)
 		}
@@ -385,7 +395,7 @@ func TestParseQuotedScalarFilterValue(t *testing.T) {
 			if test.name == "json path filter" {
 				key = "meta->>tag"
 			}
-			query, err := readquery.Parse(url.Values{key: []string{test.raw}}, nil)
+			query, err := readquery.Parse(url.Values{key: []string{test.raw}}, readquery.CountNone)
 			if err != nil {
 				t.Fatalf("Parse %s: %v", test.raw, err)
 			}
@@ -402,7 +412,7 @@ func TestParseQuotedScalarFilterValue(t *testing.T) {
 func TestParseQuotedScalarValueInLogicalGroup(t *testing.T) {
 	t.Parallel()
 
-	query, err := readquery.Parse(url.Values{"or": []string{`(name.eq."a,b",name.eq.beta)`}}, nil)
+	query, err := readquery.Parse(url.Values{"or": []string{`(name.eq."a,b",name.eq.beta)`}}, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -420,7 +430,7 @@ func TestParseQuotedScalarValueOnEmbedFilter(t *testing.T) {
 	query, err := readquery.Parse(url.Values{
 		"select":    []string{"*,orders(id)"},
 		"orders.id": []string{`eq."a,b"`},
-	}, nil)
+	}, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -436,7 +446,7 @@ func TestParseQuotedScalarValueOnEmbedFilter(t *testing.T) {
 func TestParseInListKeepsQuotedElementRules(t *testing.T) {
 	t.Parallel()
 
-	query, err := readquery.Parse(url.Values{"name": []string{`in.("a,b",alpha)`}}, nil)
+	query, err := readquery.Parse(url.Values{"name": []string{`in.("a,b",alpha)`}}, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -470,7 +480,7 @@ func TestParseRejectsMalformedQuotedScalarValue(t *testing.T) {
 			if strings.HasPrefix(test.raw, "(") {
 				key = "or"
 			}
-			_, err := readquery.Parse(url.Values{key: []string{test.raw}}, nil)
+			_, err := readquery.Parse(url.Values{key: []string{test.raw}}, readquery.CountNone)
 			var failure readquery.ParseFailure
 			if err == nil || !errors.As(err, &failure) || failure.Gap {
 				t.Fatalf("query name=%s err = %v, want a non-gap ParseFailure", test.raw, err)
@@ -484,7 +494,7 @@ func TestParseRejectsMalformedQuotedScalarValue(t *testing.T) {
 func TestParseIsOperatorKeepsLiteralValidation(t *testing.T) {
 	t.Parallel()
 
-	_, err := readquery.Parse(url.Values{"id": []string{`is."null"`}}, nil)
+	_, err := readquery.Parse(url.Values{"id": []string{`is."null"`}}, readquery.CountNone)
 	var failure readquery.ParseFailure
 	if err == nil || !errors.As(err, &failure) || failure.Gap {
 		t.Fatalf("err = %v, want a non-gap ParseFailure", err)
@@ -516,7 +526,7 @@ func TestParseRetainsWhetherTheScalarValueWasQuoted(t *testing.T) {
 			if strings.HasPrefix(test.raw, "(") {
 				key = "or"
 			}
-			query, err := readquery.Parse(url.Values{key: []string{test.raw}}, nil)
+			query, err := readquery.Parse(url.Values{key: []string{test.raw}}, readquery.CountNone)
 			if err != nil {
 				t.Fatalf("Parse %s: %v", test.raw, err)
 			}

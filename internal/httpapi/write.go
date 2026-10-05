@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jonbaldie/myrest/internal/prefer"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/representation"
 	"github.com/jonbaldie/myrest/internal/rows"
@@ -77,12 +78,12 @@ const (
 // insertTable answers POST /<table>: one JSON object or a JSON array of objects.
 // Content-Profile selects the database; with no header the table comes from
 // the default database.
-func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request) {
-	role, asked, table, ok := s.lookupWriteTable(writer, request, "INSERT")
+func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
+	role, asked, table, ok := s.lookupWriteTable(writer, request, preferences, "INSERT")
 	if !ok {
 		return
 	}
-	prefer, ok := s.readWritePrefer(writer, request, writeKindInsert)
+	prefer, ok := s.readWritePrefer(writer, preferences, writeKindInsert)
 	if !ok {
 		return
 	}
@@ -179,11 +180,10 @@ func applyInsertResolution(
 	prefer *writePrefer,
 	options *writequery.Options,
 ) bool {
-	value, held := preferValue(request, "resolution")
-	if !held || value == "" {
+	if prefer.Resolution == "" && !prefer.BadResolution {
 		return true
 	}
-	resolution, ok := parseUpsertResolution(writer, request)
+	resolution, ok := parseUpsertResolution(writer, prefer.Preferences)
 	if !ok {
 		return false
 	}
@@ -198,27 +198,26 @@ func applyInsertResolution(
 	if resolution == UpsertIgnoreDuplicates {
 		options.OnDuplicate = writequery.DuplicateIgnored
 	}
-	prefer.applied = append(prefer.applied, appliedResolutionTokens(request)...)
+	prefer.applied = append(prefer.applied, appliedResolutionTokens(prefer.Preferences)...)
 	return true
 }
 
-func appliedResolutionTokens(request *http.Request) []string {
-	value, _ := preferValue(request, "resolution")
-	if value == "" {
+func appliedResolutionTokens(preferences prefer.Preferences) []string {
+	if preferences.Resolution == "" {
 		return nil
 	}
-	return []string{"resolution=" + strings.ToLower(value)}
+	return []string{"resolution=" + preferences.Resolution}
 }
 
 // patchTable answers PATCH /<table> with the ordinary-read filter surface.
 // Content-Profile selects the database; with no header the table comes from
 // the default database.
-func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) {
-	role, asked, table, ok := s.lookupWriteTable(writer, request, "UPDATE")
+func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
+	role, asked, table, ok := s.lookupWriteTable(writer, request, preferences, "UPDATE")
 	if !ok {
 		return
 	}
-	prefer, ok := s.readWritePrefer(writer, request, writeKindPatch)
+	prefer, ok := s.readWritePrefer(writer, preferences, writeKindPatch)
 	if !ok {
 		return
 	}
@@ -257,12 +256,12 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 // deleteTable answers DELETE /<table> with the ordinary-read filter surface.
 // Content-Profile selects the database; with no header the table comes from
 // the default database.
-func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request) {
-	role, asked, table, ok := s.lookupWriteTable(writer, request, "DELETE")
+func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
+	role, asked, table, ok := s.lookupWriteTable(writer, request, preferences, "DELETE")
 	if !ok {
 		return
 	}
-	prefer, ok := s.readWritePrefer(writer, request, writeKindDelete)
+	prefer, ok := s.readWritePrefer(writer, preferences, writeKindDelete)
 	if !ok {
 		return
 	}
@@ -298,16 +297,16 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 // Prefer resolution selects merge-duplicates (default) or ignore-duplicates.
 // Content-Profile selects the database; with no header the table comes from
 // the default database.
-func (s *Service) putTable(writer http.ResponseWriter, request *http.Request) {
-	prefer, ok := s.readWritePrefer(writer, request, writeKindPut)
+func (s *Service) putTable(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
+	prefer, ok := s.readWritePrefer(writer, preferences, writeKindPut)
 	if !ok {
 		return
 	}
-	resolution, ok := parseUpsertResolution(writer, request)
+	resolution, ok := parseUpsertResolution(writer, preferences)
 	if !ok {
 		return
 	}
-	role, asked, table, ok := s.lookupPutTable(writer, request, resolution)
+	role, asked, table, ok := s.lookupPutTable(writer, request, preferences, resolution)
 	if !ok {
 		return
 	}
@@ -334,7 +333,7 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request) {
 		s.writeWriteFailure(writer, err)
 		return
 	}
-	prefer.applied = append(prefer.applied, appliedResolutionTokens(request)...)
+	prefer.applied = append(prefer.applied, appliedResolutionTokens(prefer.Preferences)...)
 	setPreferenceApplied(writer, prefer)
 	if inserted {
 		writeMinimal(writer, http.StatusCreated)
@@ -343,18 +342,17 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request) {
 	writeMinimal(writer, http.StatusNoContent)
 }
 
-func (s *Service) readWritePrefer(writer http.ResponseWriter, request *http.Request, kind writeKind) (writePrefer, bool) {
-	prefer, err := parseWritePrefer(request.Header.Values("Prefer"), s.settings.DB.TxEnd, kind)
-	if err != nil {
-		var invalid invalidPreferError
-		if errors.As(err, &invalid) {
-			writeInvalidPrefer(writer, invalid)
-			return writePrefer{}, false
-		}
-		writeFailure(writer, http.StatusBadRequest, codeParseFailure, err.Error())
+// readWritePrefer refuses invalid preferences under handling=strict and
+// builds the write view of the parsed preferences.
+func (s *Service) readWritePrefer(
+	writer http.ResponseWriter,
+	preferences prefer.Preferences,
+	kind writeKind,
+) (writePrefer, bool) {
+	if refuseInvalidPrefer(writer, preferences, kind.surface()) {
 		return writePrefer{}, false
 	}
-	return prefer, true
+	return newWritePrefer(preferences, s.settings.DB.TxEnd, kind), true
 }
 
 // writeKind selects which honesty rules apply for return=representation and
@@ -366,10 +364,18 @@ const (
 	writeKindPatch
 	writeKindDelete
 	writeKindPut
-	// writeKindRPC marks the /rpc surface, which reuses the write Prefer
-	// parser for tx= only.
+	// writeKindRPC marks the /rpc surface, which applies the write
+	// preference tx= only.
 	writeKindRPC
 )
+
+// surface is the Prefer surface of the write kind.
+func (kind writeKind) surface() prefer.Surface {
+	if kind == writeKindRPC {
+		return prefer.SurfaceRPC
+	}
+	return prefer.SurfaceWrite
+}
 
 // honoursMaxAffected reports whether the write kind enforces Prefer
 // max-affected. Updates, deletes, and upserts refuse with PGRST124 when they
@@ -452,9 +458,10 @@ func representationLimitMessage(kind writeKind) string {
 func (s *Service) lookupPutTable(
 	writer http.ResponseWriter,
 	request *http.Request,
+	preferences prefer.Preferences,
 	resolution UpsertResolution,
 ) (schemacache.Role, schemacache.TableID, schemacache.Table, bool) {
-	role, asked, table, ok := s.lookupWriteTable(writer, request, "INSERT")
+	role, asked, table, ok := s.lookupWriteTable(writer, request, preferences, "INSERT")
 	if !ok {
 		return "", schemacache.TableID{}, schemacache.Table{}, false
 	}
@@ -502,17 +509,8 @@ func readPutRow(
 	return row, primaryKey, true
 }
 
-func parseUpsertResolution(writer http.ResponseWriter, request *http.Request) (UpsertResolution, bool) {
-	value, held := preferValue(request, "resolution")
-	if !held || value == "" {
-		return UpsertMergeDuplicates, true
-	}
-	switch strings.ToLower(value) {
-	case "merge-duplicates":
-		return UpsertMergeDuplicates, true
-	case "ignore-duplicates":
-		return UpsertIgnoreDuplicates, true
-	default:
+func parseUpsertResolution(writer http.ResponseWriter, preferences prefer.Preferences) (UpsertResolution, bool) {
+	if preferences.BadResolution {
 		writeFailure(
 			writer,
 			http.StatusBadRequest,
@@ -521,21 +519,10 @@ func parseUpsertResolution(writer http.ResponseWriter, request *http.Request) (U
 		)
 		return 0, false
 	}
-}
-
-func preferValue(request *http.Request, name string) (string, bool) {
-	for _, header := range request.Header.Values("Prefer") {
-		for _, part := range strings.Split(header, ",") {
-			key, value, found := strings.Cut(strings.TrimSpace(part), "=")
-			if !found {
-				continue
-			}
-			if strings.EqualFold(strings.TrimSpace(key), name) {
-				return strings.TrimSpace(value), true
-			}
-		}
+	if preferences.Resolution == prefer.ResolutionIgnoreDuplicates {
+		return UpsertIgnoreDuplicates, true
 	}
-	return "", false
+	return UpsertMergeDuplicates, true
 }
 
 func putPrimaryKeyValues(
@@ -643,9 +630,10 @@ func readPutObject(writer http.ResponseWriter, request *http.Request) (map[strin
 func (s *Service) lookupWriteTable(
 	writer http.ResponseWriter,
 	request *http.Request,
+	preferences prefer.Preferences,
 	privilege string,
 ) (schemacache.Role, schemacache.TableID, schemacache.Table, bool) {
-	role, ok := s.requestRole(writer, request)
+	role, ok := s.requestRole(writer, request, preferences)
 	if !ok {
 		return "", schemacache.TableID{}, schemacache.Table{}, false
 	}
@@ -688,7 +676,7 @@ func parseMutateQuery(request *http.Request) (readquery.Query, error) {
 	if err != nil {
 		return readquery.Query{}, err
 	}
-	return readquery.Parse(values, nil)
+	return readquery.Parse(values, readquery.CountNone)
 }
 
 func readInsertRows(writer http.ResponseWriter, request *http.Request) ([]map[string]any, bool) {

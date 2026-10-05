@@ -10,6 +10,7 @@ import (
 
 	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/jwt"
+	"github.com/jonbaldie/myrest/internal/prefer"
 	"github.com/jonbaldie/myrest/internal/rpcexec"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
@@ -88,17 +89,17 @@ func Listen(options Options) (*Service, error) {
 		log:      logger,
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", service.writeRoot)
-	mux.HandleFunc("GET /{table}", service.readTable)
-	mux.HandleFunc("HEAD /{table}", service.readTable)
-	mux.HandleFunc("POST /{table}", service.insertTable)
-	mux.HandleFunc("PATCH /{table}", service.patchTable)
-	mux.HandleFunc("PUT /{table}", service.putTable)
-	mux.HandleFunc("DELETE /{table}", service.deleteTable)
-	mux.HandleFunc("OPTIONS /{table}", service.optionsTable)
-	mux.HandleFunc("POST /rpc/{name}", service.callRoutine)
-	mux.HandleFunc("GET /rpc/{name}", service.getRoutine)
-	mux.HandleFunc("OPTIONS /rpc/{name}", service.optionsRoutine)
+	mux.HandleFunc("GET /{$}", withPrefer(service.writeRoot))
+	mux.HandleFunc("GET /{table}", withPrefer(service.readTable))
+	mux.HandleFunc("HEAD /{table}", withPrefer(service.readTable))
+	mux.HandleFunc("POST /{table}", withPrefer(service.insertTable))
+	mux.HandleFunc("PATCH /{table}", withPrefer(service.patchTable))
+	mux.HandleFunc("PUT /{table}", withPrefer(service.putTable))
+	mux.HandleFunc("DELETE /{table}", withPrefer(service.deleteTable))
+	mux.HandleFunc("OPTIONS /{table}", withPrefer(service.optionsTable))
+	mux.HandleFunc("POST /rpc/{name}", withPrefer(service.callRoutine))
+	mux.HandleFunc("GET /rpc/{name}", withPrefer(service.getRoutine))
+	mux.HandleFunc("OPTIONS /rpc/{name}", withPrefer(service.optionsRoutine))
 	mux.HandleFunc("/", writeNoHandler)
 	service.server = &http.Server{
 		Handler: withCORS(options.Settings.Server.CORSAllowedOrigins, mux),
@@ -107,6 +108,17 @@ func Listen(options Options) (*Service, error) {
 }
 
 // Serve accepts connections until Close is called.
+// preferHandler answers one route with the parsed Prefer header.
+type preferHandler func(http.ResponseWriter, *http.Request, prefer.Preferences)
+
+// withPrefer parses the Prefer header once per request, so every check of the
+// route reads the same preferences.
+func withPrefer(handler preferHandler) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		handler(writer, request, prefer.Parse(request.Header.Values("Prefer")))
+	}
+}
+
 func (s *Service) Serve() error {
 	return s.server.Serve(s.listener)
 }

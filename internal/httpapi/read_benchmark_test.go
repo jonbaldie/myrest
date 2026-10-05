@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/jonbaldie/myrest/internal/prefer"
 	"github.com/jonbaldie/myrest/internal/readquery"
 )
 
@@ -15,11 +16,11 @@ func BenchmarkParseOrdinaryReadQuery(b *testing.B) {
 	)
 	request.Header.Set("Prefer", "count=exact")
 	values := request.URL.Query()
-	prefer := request.Header.Values("Prefer")
+	count := prefer.Parse(request.Header.Values("Prefer")).Count
 
 	b.ReportAllocs()
 	for b.Loop() {
-		query, err := readquery.Parse(values, prefer)
+		query, err := readquery.Parse(values, count)
 		if err != nil {
 			b.Fatal(err)
 		}

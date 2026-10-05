@@ -113,7 +113,7 @@ this claim.
 | --- | --- | --- |
 | `missing=default` | **full match** | On `POST`, columns omitted from a row use the SQL `DEFAULT` instead of `NULL`. |
 | `max-affected=<n>` | **full match** | With `handling=strict`, a `PUT`, `PATCH`, or `DELETE` that would change more than `n` rows refuses with `PGRST124` and rolls back. `max-affected` is not an insert preference: `POST` writes normally, does not enforce the limit, and does not echo `max-affected` in `Preference-Applied`; a valid token stays known under `handling=strict`. Ignored under lenient handling. |
-| `handling=strict` | **full match** | Unknown or invalid Prefer tokens refuse with `PGRST122`. |
+| `handling=strict` | **full match** | Unknown or invalid Prefer tokens refuse with `PGRST122`. The same rule applies to table reads and RPC; see [Ordinary read](ordinary-read.md). |
 | `handling=lenient` (default) | **full match** | Unknown Prefer tokens are ignored. |
 
 ## Prefer: tx and transaction bounds
