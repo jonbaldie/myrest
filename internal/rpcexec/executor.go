@@ -7,6 +7,7 @@ import (
 
 	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/readquery"
+	"github.com/jonbaldie/myrest/internal/representation"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
@@ -70,12 +71,11 @@ func (s *Service) Execute(ctx context.Context, intent Intent) (Outcome, error) {
 
 func (s *Service) buildValidator(intent Intent) func(any) error {
 	check := representationCheck{
-		singular: intent.Representation == RepresentationSingularObject,
-		tabular:  intent.Representation != RepresentationDefault,
-		rowSet:   readquery.HasRowSetFeatures(intent.Query),
-		query:    intent.Query,
+		spec:   intent.Representation,
+		rowSet: readquery.HasRowSetFeatures(intent.Query),
+		query:  intent.Query,
 	}
-	if !check.tabular && !check.rowSet {
+	if !check.spec.RowOnly() && !check.rowSet {
 		return nil
 	}
 	return check.validate
@@ -84,10 +84,9 @@ func (s *Service) buildValidator(intent Intent) func(any) error {
 // representationCheck validates a routine result inside the routine unit
 // against the requested representation and row-set query features.
 type representationCheck struct {
-	singular bool
-	tabular  bool
-	rowSet   bool
-	query    readquery.Query
+	spec   representation.Spec
+	rowSet bool
+	query  readquery.Query
 }
 
 func (c representationCheck) validate(result any) error {
@@ -99,10 +98,7 @@ func (c representationCheck) validate(result any) error {
 	if err != nil {
 		return err
 	}
-	if c.singular && rowCount != 1 {
-		return SingularObjectRefusal{RowCount: rowCount}
-	}
-	return nil
+	return representation.ValidateCardinality(c.spec, rowCount)
 }
 
 // refuseNonTabular refuses a non-tabular result when row-set features or a
@@ -111,7 +107,7 @@ func (c representationCheck) refuseNonTabular() error {
 	if c.rowSet {
 		return RowSetFeaturesRefusal{}
 	}
-	if c.tabular {
+	if c.spec.RowOnly() {
 		return NonTabularRepresentationRefusal{}
 	}
 	return nil

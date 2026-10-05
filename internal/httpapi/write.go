@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/jonbaldie/myrest/internal/readquery"
+	"github.com/jonbaldie/myrest/internal/representation"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 	"github.com/jonbaldie/myrest/internal/writequery"
@@ -118,31 +119,20 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 	})
 }
 
-// singularObjectRefusal says a write or RPC unit that claims one JSON object
-// yielded a different row count. The unit answers 406 PGRST116 and rolls the
-// unit back (issue #175).
-type singularObjectRefusal struct {
-	RowCount int
-}
-
-func (e singularObjectRefusal) Error() string {
-	return fmt.Sprintf("the singular representation claimed one row, the unit held %d", e.RowCount)
-}
-
 // validateRepresentation builds the in-unit validation of one representation
 // write: a singular-object Accept needs exactly one row, and the client
 // select list must project. The unit runs it before commit, so a refusal
-// rolls the write back (issue #175).
+// (406 PGRST116 for the row count) rolls the write back (issue #175).
 func validateRepresentation(
 	query readquery.Query,
-	repr representation,
+	repr representation.Spec,
 ) func(writequery.Result) error {
-	if repr.kind != representationJSONObject && (query.SelectAll || len(query.Columns) == 0) {
+	if repr.Kind != representation.KindSingularObject && (query.SelectAll || len(query.Columns) == 0) {
 		return nil
 	}
 	return func(result writequery.Result) error {
-		if repr.kind == representationJSONObject && len(result.Rows) != 1 {
-			return singularObjectRefusal{RowCount: len(result.Rows)}
+		if err := representation.ValidateCardinality(repr, len(result.Rows)); err != nil {
+			return err
 		}
 		_, err := readquery.Project(result.Rows, query)
 		return err
@@ -156,9 +146,9 @@ func writeRepresentationPrecheck(
 	writer http.ResponseWriter,
 	request *http.Request,
 	prefer writePrefer,
-) (representation, bool) {
+) (representation.Spec, bool) {
 	if prefer.Return != returnRepresentation {
-		return representation{}, true
+		return representation.Spec{}, true
 	}
 	return requestRepresentation(writer, request)
 }
@@ -169,14 +159,14 @@ func readInsertRowsAndRepr(
 	writer http.ResponseWriter,
 	request *http.Request,
 	prefer writePrefer,
-) ([]map[string]any, representation, bool) {
+) ([]map[string]any, representation.Spec, bool) {
 	rows, ok := readInsertRows(writer, request)
 	if !ok {
-		return nil, representation{}, false
+		return nil, representation.Spec{}, false
 	}
 	repr, ok := writeRepresentationPrecheck(writer, request, prefer)
 	if !ok {
-		return nil, representation{}, false
+		return nil, representation.Spec{}, false
 	}
 	return rows, repr, true
 }
@@ -806,7 +796,7 @@ type writeOutcome struct {
 	Plan       []plannedEmbed
 	// Repr is the Accept negotiation the write checked before the write unit
 	// ran; the response reuses it instead of negotiating again.
-	Repr representation
+	Repr representation.Spec
 }
 
 // writeBound says whether PATCH/DELETE must have a filter or Prefer: all-rows.
@@ -980,7 +970,7 @@ func (s *Service) writeWriteFailure(writer http.ResponseWriter, err error) {
 		writeMaxAffected(writer, maxAffectedError{Affected: maxErr.Affected, Max: maxErr.Max})
 		return
 	}
-	var refusal singularObjectRefusal
+	var refusal representation.SingularObjectRefusal
 	if errors.As(err, &refusal) {
 		writeSingularObjectFailure(writer, refusal.RowCount)
 		return

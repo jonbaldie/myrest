@@ -44,6 +44,10 @@ _Avoid_: association, join path, inferred view link (when you mean a cache relat
 A call to an exposed database routine through the PostgREST-style function calling interface.
 _Avoid_: stored procedure endpoint, remote procedure (unless explaining the acronym)
 
+**Representation**:
+The response shape of row data that Accept negotiation selects: a JSON array, a singular JSON object (exactly one row), or CSV. Reads, writes with `Prefer: return=representation`, and **RPC** share one representation spec.
+_Avoid_: format, view, serializer (when you mean the negotiated response shape)
+
 **Database role**:
 The MySQL account (or role) selected for a request after authentication, used for privilege checks and execution.
 _Avoid_: user (when you mean the DB principal), JWT role claim (the claim names the role; it is not the role)

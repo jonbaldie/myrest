@@ -10,6 +10,7 @@ import (
 
 	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/readquery"
+	"github.com/jonbaldie/myrest/internal/representation"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
@@ -233,17 +234,17 @@ func writeRead(
 	head bool,
 	query readquery.Query,
 	read readquery.Result,
-	repr representation,
+	repr representation.Spec,
 ) {
 	writer.Header().Set("Range-Unit", "items")
 	writer.Header().Set("Content-Range", contentRange(query, read))
 	status := readStatus(query, read)
-	if repr.kind == representationJSONObject && len(read.Rows) != 1 {
+	if err := representation.ValidateCardinality(repr, len(read.Rows)); err != nil {
 		writeSingularObjectFailure(writer, len(read.Rows))
 		return
 	}
 	if head {
-		writer.Header().Set("Content-Type", repr.contentType)
+		writer.Header().Set("Content-Type", repr.ContentType)
 		writer.WriteHeader(status)
 		return
 	}
