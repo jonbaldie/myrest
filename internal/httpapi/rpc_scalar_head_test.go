@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/jonbaldie/myrest/internal/representation"
 )
 
 // writeScalarRPC must keep the GET headers but write no payload for HEAD,
@@ -11,7 +13,7 @@ import (
 func TestWriteScalarRPCSkipsBodyForHead(t *testing.T) {
 	t.Parallel()
 
-	repr := representation{kind: representationJSONArray, contentType: "application/json"}
+	repr := representation.Default()
 
 	get := httptest.NewRecorder()
 	writeScalarRPC(get, httptest.NewRequest(http.MethodGet, "/rpc/add_them", nil), repr, int64(3))

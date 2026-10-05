@@ -8,6 +8,7 @@ import (
 
 	"github.com/jonbaldie/myrest/internal/config"
 	"github.com/jonbaldie/myrest/internal/readquery"
+	"github.com/jonbaldie/myrest/internal/representation"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/rpcexec"
 	"github.com/jonbaldie/myrest/internal/schemacache"
@@ -351,7 +352,7 @@ func TestExecuteSingularObjectOneRowPasses(t *testing.T) {
 		Role:           "myrest_anon",
 		Args:           map[string]any{},
 		CallMode:       rpcexec.CallModePost,
-		Representation: rpcexec.RepresentationSingularObject,
+		Representation: representation.Spec{Kind: representation.KindSingularObject},
 	}
 
 	outcome, err := exec.Execute(context.Background(), intent)
@@ -379,14 +380,14 @@ func TestExecuteSingularObjectZeroRowsRefused(t *testing.T) {
 		Role:           "myrest_anon",
 		Args:           map[string]any{},
 		CallMode:       rpcexec.CallModePost,
-		Representation: rpcexec.RepresentationSingularObject,
+		Representation: representation.Spec{Kind: representation.KindSingularObject},
 	}
 
 	_, err := exec.Execute(context.Background(), intent)
 	if err == nil {
 		t.Fatal("expected SingularObjectRefusal, got nil")
 	}
-	var refusal rpcexec.SingularObjectRefusal
+	var refusal representation.SingularObjectRefusal
 	if !errors.As(err, &refusal) {
 		t.Fatalf("expected SingularObjectRefusal, got %T: %v", err, err)
 	}
@@ -414,14 +415,14 @@ func TestExecuteSingularObjectTwoRowsRefused(t *testing.T) {
 		Role:           "myrest_anon",
 		Args:           map[string]any{},
 		CallMode:       rpcexec.CallModePost,
-		Representation: rpcexec.RepresentationSingularObject,
+		Representation: representation.Spec{Kind: representation.KindSingularObject},
 	}
 
 	_, err := exec.Execute(context.Background(), intent)
 	if err == nil {
 		t.Fatal("expected SingularObjectRefusal, got nil")
 	}
-	var refusal rpcexec.SingularObjectRefusal
+	var refusal representation.SingularObjectRefusal
 	if !errors.As(err, &refusal) {
 		t.Fatalf("expected SingularObjectRefusal, got %T: %v", err, err)
 	}
@@ -449,7 +450,7 @@ func TestExecuteSingularObjectCountsAfterFiltering(t *testing.T) {
 		Role:           "myrest_anon",
 		Args:           map[string]any{},
 		CallMode:       rpcexec.CallModePost,
-		Representation: rpcexec.RepresentationSingularObject,
+		Representation: representation.Spec{Kind: representation.KindSingularObject},
 		Query: readquery.Query{
 			Filters: []readquery.Filter{{Column: "id", Op: readquery.OpEq, Value: "1"}},
 		},
@@ -695,9 +696,9 @@ func TestExecuteRowSetFeaturesInvalidProjection(t *testing.T) {
 func TestExecuteRowOnlyRepresentationNonTabularResultRefused(t *testing.T) {
 	t.Parallel()
 
-	for _, constraint := range []rpcexec.RepresentationConstraint{
-		rpcexec.RepresentationSingularObject,
-		rpcexec.RepresentationTabular,
+	for _, constraint := range []representation.Spec{
+		{Kind: representation.KindSingularObject},
+		{Kind: representation.KindCSV},
 	} {
 		caller := &spyCaller{result: int64(100)}
 		exec := rpcexec.New(caller, config.TxEndCommit)
@@ -780,11 +781,6 @@ func TestErrorStrings(t *testing.T) {
 	rsv := rpcexec.ReadSafetyViolation{}
 	if rsv.Error() != "Only a read-safe routine can be called with GET" {
 		t.Fatalf("unexpected error string: %s", rsv.Error())
-	}
-
-	sor := rpcexec.SingularObjectRefusal{RowCount: 5}
-	if sor.Error() != "The result contains 5 rows, while 1 was expected" {
-		t.Fatalf("unexpected error string: %s", sor.Error())
 	}
 
 	rsf := rpcexec.RowSetFeaturesRefusal{}

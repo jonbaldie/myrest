@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/jonbaldie/myrest/internal/readquery"
+	"github.com/jonbaldie/myrest/internal/representation"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
@@ -21,18 +22,6 @@ const (
 	CallModePost CallMode = iota
 	// CallModeGet indicates a GET routine call (e.g. GET /rpc/<name>).
 	CallModeGet
-)
-
-// RepresentationConstraint specifies representation constraints on the RPC call.
-type RepresentationConstraint int
-
-const (
-	// RepresentationDefault indicates default JSON representation.
-	RepresentationDefault RepresentationConstraint = iota
-	// RepresentationSingularObject indicates application/vnd.pgrst.object+json.
-	RepresentationSingularObject
-	// RepresentationTabular indicates a row-only media type such as text/csv.
-	RepresentationTabular
 )
 
 // ResultKind identifies the kind of result produced by a routine.
@@ -53,14 +42,16 @@ type TxOutcome struct {
 	PreferApplied bool
 }
 
-// Intent specifies everything needed to execute a routine.
+// Intent specifies everything needed to execute a routine. Representation
+// is the negotiated Accept representation; the zero Spec is the JSON array,
+// which constrains nothing.
 type Intent struct {
 	Routine        schemacache.RoutineFact
 	Role           schemacache.Role
 	Args           map[string]any
 	CallMode       CallMode
 	PreferTx       string
-	Representation RepresentationConstraint
+	Representation representation.Spec
 	Query          readquery.Query
 }
 
@@ -120,16 +111,6 @@ type ReadSafetyViolation struct{}
 
 func (ReadSafetyViolation) Error() string {
 	return "Only a read-safe routine can be called with GET"
-}
-
-// SingularObjectRefusal reports that a singular JSON object was requested
-// but the tabular result set contained zero or multiple rows.
-type SingularObjectRefusal struct {
-	RowCount int
-}
-
-func (e SingularObjectRefusal) Error() string {
-	return fmt.Sprintf("The result contains %d rows, while 1 was expected", e.RowCount)
 }
 
 // RowSetFeaturesRefusal reports that read query features (filter, order, range, embed)

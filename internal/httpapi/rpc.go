@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jonbaldie/myrest/internal/readquery"
+	"github.com/jonbaldie/myrest/internal/representation"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/rpcexec"
 	"github.com/jonbaldie/myrest/internal/schemacache"
@@ -126,14 +127,6 @@ func (s *Service) invokeRoutine(
 		return
 	}
 
-	var reprConstraint rpcexec.RepresentationConstraint
-	switch repr.kind {
-	case representationJSONObject:
-		reprConstraint = rpcexec.RepresentationSingularObject
-	case representationCSV:
-		reprConstraint = rpcexec.RepresentationTabular
-	}
-
 	outcome, err := s.executor.Execute(
 		request.Context(),
 		rpcexec.Intent{
@@ -142,7 +135,7 @@ func (s *Service) invokeRoutine(
 			Args:           args,
 			CallMode:       callMode,
 			PreferTx:       prefer.Tx,
-			Representation: reprConstraint,
+			Representation: repr,
 			Query:          query,
 		},
 	)
@@ -190,16 +183,14 @@ func writeRPCCallFailure(
 		)
 		return
 	}
-	var refusal rpcexec.SingularObjectRefusal
+	var refusal representation.SingularObjectRefusal
 	if errors.As(err, &refusal) {
 		writeSingularObjectFailure(writer, refusal.RowCount)
 		return
 	}
 	var nonTabular rpcexec.NonTabularRepresentationRefusal
 	if errors.As(err, &nonTabular) {
-		writeUnsupportedMedia(writer, &unsupportedMediaError{
-			offered: acceptMediaTypes(request.Header.Values("Accept")),
-		})
+		refuseRequestMedia(writer, request)
 		return
 	}
 	var rowSet rpcexec.RowSetFeaturesRefusal
@@ -223,18 +214,16 @@ func writeRPCCallFailure(
 func writeScalarRPC(
 	writer http.ResponseWriter,
 	request *http.Request,
-	repr representation,
+	repr representation.Spec,
 	result any,
 ) {
-	if repr.kind != representationJSONArray {
-		writeUnsupportedMedia(writer, &unsupportedMediaError{
-			offered: acceptMediaTypes(request.Header.Values("Accept")),
-		})
+	if repr.RowOnly() {
+		refuseRequestMedia(writer, request)
 		return
 	}
 	if request.Method == http.MethodHead {
 		// Keep the GET headers, but write no payload: HEAD has no body.
-		writer.Header().Set("Content-Type", mediaJSON)
+		writer.Header().Set("Content-Type", representation.MediaJSON)
 		writer.WriteHeader(http.StatusOK)
 		return
 	}
