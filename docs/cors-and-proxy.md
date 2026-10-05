@@ -2,7 +2,7 @@
 
 **Ticket:** [CORS origins and proxy header behaviour](https://github.com/jonbaldie/myrest/issues/45)  
 **Closes:** deferred item 3 of [Parent spec: myrest PostgREST parity over MySQL 8](https://github.com/jonbaldie/myrest/issues/20)  
-**Parity target:** PostgREST v14.16 (from `CONTEXT.md`)
+**Parity target:** PostgREST v14.16 (from `GLOSSARY.md`)
 
 This page states the wire contract and the **parity label** for each behaviour in this area. Proof lives at the HTTP API boundary.
 

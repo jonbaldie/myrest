@@ -14,7 +14,7 @@ Default triage labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-f
 
 ### Domain docs
 
-Single-context layout (`CONTEXT.md` + `docs/adr/` at repo root). See `docs/agents/domain.md`.
+Single-context layout (`GLOSSARY.md` + `docs/adr/` at repo root). See `docs/agents/domain.md`.
 
 ## Cursor Cloud specific instructions
 
