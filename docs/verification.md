@@ -2,7 +2,7 @@
 
 **Ticket:** [Verification roll-up: scenario index, gap list, and smoke set](https://github.com/jonbaldie/myrest/issues/48)
 **Closes:** [Parent spec: myrest PostgREST parity over MySQL 8](https://github.com/jonbaldie/myrest/issues/20) once Implementation done holds on the HTTP seam
-**Parity target:** PostgREST v14.16 (see `CONTEXT.md`)
+**Parity target:** PostgREST v14.16 (see `GLOSSARY.md`)
 
 A client author and an operator can read one accurate statement of what myrest
 supports, and one command proves it. This page is the Verification roll-up:

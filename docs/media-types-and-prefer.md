@@ -2,7 +2,7 @@
 
 **Ticket:** [Media types and the remaining Prefer values](https://github.com/jonbaldie/myrest/issues/46)  
 **Closes:** deferred item 2 of [Parent spec: myrest PostgREST parity over MySQL 8](https://github.com/jonbaldie/myrest/issues/20)  
-**Parity target:** PostgREST v14.16 (from `CONTEXT.md`)
+**Parity target:** PostgREST v14.16 (from `GLOSSARY.md`)
 
 This page is the repository label list for response media types beyond the
 locked JSON slice, and for Prefer values outside the locked write and count

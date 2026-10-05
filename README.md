@@ -254,4 +254,4 @@ The acceptance tests use a disposable `mysql:8.0` Docker container. Set
 `MYREST_MYSQL_HARNESS_PORT` to use an existing local MySQL test server instead.
 
 Architecture decisions are in [docs/adr](docs/adr). Domain terms are in
-[CONTEXT.md](CONTEXT.md).
+[GLOSSARY.md](GLOSSARY.md).

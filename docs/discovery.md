@@ -2,7 +2,7 @@
 
 **Ticket:** [Discovery: OPTIONS and OpenAPI from the schema cache](https://github.com/jonbaldie/myrest/issues/44)  
 **Closes:** deferred item 1 of [Parent spec: myrest PostgREST parity over MySQL 8](https://github.com/jonbaldie/myrest/issues/20)  
-**Parity target:** PostgREST v14.16 (from `CONTEXT.md`)
+**Parity target:** PostgREST v14.16 (from `GLOSSARY.md`)
 
 A client discovers the surface of myrest through `OPTIONS` and the OpenAPI
 document on `GET /`. Both take their input only from the **schema cache** and

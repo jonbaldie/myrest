@@ -9,9 +9,9 @@ A maintainer uses this process to watch upstream PostgREST, decide whether to mo
 
 The current **parity target** pin lives in one place only:
 
-**`CONTEXT.md` → Language → `Parity target`**
+**`GLOSSARY.md` → Language → `Parity target`**
 
-Read the version string from that entry. Every other mention in the repository (parent spec, ADRs, research notes, chapter prose) is a copy. When a copy disagrees with `CONTEXT.md`, `CONTEXT.md` wins until a pin-move pull request updates both.
+Read the version string from that entry. Every other mention in the repository (parent spec, ADRs, research notes, chapter prose) is a copy. When a copy disagrees with `GLOSSARY.md`, `GLOSSARY.md` wins until a pin-move pull request updates both.
 
 Do not treat GitHub “latest”, the PostgREST docs “stable” brand alone, or an unpinned phrase as the pin.
 
@@ -26,7 +26,7 @@ Check these sources when you consider a move (and on a regular maintainer cadenc
 | [PostgREST stable docs](https://docs.postgrest.org/en/stable/) | Documented HTTP behaviour for the release line |
 | Upstream changelog / release notes for the candidate tag | Client-visible contract changes (routes, query ops, Prefer, errors, auth wire) |
 
-A newer upstream release is a **watch signal**, not a pin move. Stay on the current pin until a recorded decision changes `CONTEXT.md`.
+A newer upstream release is a **watch signal**, not a pin move. Stay on the current pin until a recorded decision changes `GLOSSARY.md`.
 
 ## Evidence a pin move needs
 
@@ -42,7 +42,7 @@ Without that evidence, do not merge a pin change.
 
 ## What a pin move must re-label and re-verify
 
-Update the canonical pin in `CONTEXT.md` first in the same pull request. Then bring every binding artifact in line with the new **parity target**.
+Update the canonical pin in `GLOSSARY.md` first in the same pull request. Then bring every binding artifact in line with the new **parity target**.
 
 ### Must re-label (or explicitly confirm unchanged)
 
@@ -62,7 +62,7 @@ Update the canonical pin in `CONTEXT.md` first in the same pull request. Then br
 | Cross-area smoke set | Smoke scenarios still match the new pin’s claimed paths (or are updated in the same change) |
 | Copies of the pin string | Repository search for the old pin version finds only historical research notes that mark the old value as superseded |
 
-Research under `docs/research/` may keep the historical recommendation; add a one-line note that the live pin is `CONTEXT.md` when you touch those files for a move.
+Research under `docs/research/` may keep the historical recommendation; add a one-line note that the live pin is `GLOSSARY.md` when you touch those files for a move.
 
 ## Who decides and how it is recorded
 
@@ -73,7 +73,7 @@ Research under `docs/research/` may keep the historical recommendation; add a on
 
 **Record the decision** as a merged pull request that:
 
-1. Updates the **Parity target** entry in `CONTEXT.md` to the new pin.
+1. Updates the **Parity target** entry in `GLOSSARY.md` to the new pin.
 2. Completes the re-label and re-verify checklist in this document.
 3. States in the pull-request body: old pin → new pin, links to upstream evidence, and a summary of label / scenario / **gap list** changes.
 4. References this process and the parent spec deferred item it serves.
@@ -82,4 +82,4 @@ Optional: open or amend an ADR when the move changes a locked boundary already r
 
 ## Accidental moves
 
-Edits that change the pin string in `CONTEXT.md` without the evidence and checklist above are incomplete. Reviewers reject them. Mentions of a newer PostgREST release in issues or chat do not move the pin.
+Edits that change the pin string in `GLOSSARY.md` without the evidence and checklist above are incomplete. Reviewers reject them. Mentions of a newer PostgREST release in issues or chat do not move the pin.
