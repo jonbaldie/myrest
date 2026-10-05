@@ -48,7 +48,9 @@ func (s Spec) RowOnly() bool {
 	return s.Kind != KindJSONArray
 }
 
-// UnsupportedMedia says no offered Accept media type is claimed.
+// UnsupportedMedia says no offered Accept media type is claimed. Its message,
+// like the SingularObjectRefusal message, is the PostgREST wire text, so it
+// starts with a capital letter.
 type UnsupportedMedia struct {
 	Offered []string
 }

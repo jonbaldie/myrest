@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -20,9 +19,9 @@ const (
 // requestRepresentation negotiates Accept for row data or writes the refusal.
 func requestRepresentation(writer http.ResponseWriter, request *http.Request) (representation.Spec, bool) {
 	spec, err := representation.Negotiate(request.Header.Values("Accept"))
-	var refusal representation.UnsupportedMedia
-	if errors.As(err, &refusal) {
-		writeUnsupportedMedia(writer, refusal)
+	if err != nil {
+		// Negotiate refuses only with UnsupportedMedia for these headers.
+		refuseRequestMedia(writer, request)
 		return representation.Spec{}, false
 	}
 	return spec, true
