@@ -115,11 +115,11 @@ func writeMaxAffected(writer http.ResponseWriter, err maxAffectedError) {
 	)
 }
 
-func setPreferenceApplied(writer http.ResponseWriter, prefer writePrefer) {
-	if len(prefer.applied) == 0 {
+func setPreferenceApplied(writer http.ResponseWriter, written writePrefer) {
+	if len(written.applied) == 0 {
 		return
 	}
-	writer.Header().Set("Preference-Applied", strings.Join(prefer.applied, ", "))
+	writer.Header().Set("Preference-Applied", strings.Join(written.applied, ", "))
 }
 
 // setTxPreferenceApplied sets Preference-Applied only for an applied Prefer: tx=.

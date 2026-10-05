@@ -171,6 +171,7 @@ func TestParseValues(t *testing.T) {
 		{name: "decimal max-affected", headers: []string{"max-affected=19"}, want: prefer.Preferences{MaxAffected: &nineteen}},
 		{name: "spaces around name and value", headers: []string{" count = exact , return =  minimal "}, want: prefer.Preferences{Count: readquery.CountExact, Return: prefer.ReturnMinimal}},
 		{name: "bad tx", headers: []string{"tx=sideways"}, want: prefer.Preferences{}},
+		{name: "last resolution wins", headers: []string{"resolution=bogus, resolution=merge-duplicates"}, want: prefer.Preferences{Resolution: prefer.ResolutionMergeDuplicates}},
 		{name: "bad resolution", headers: []string{"resolution=bogus"}, want: prefer.Preferences{BadResolution: true}},
 		{name: "empty resolution", headers: []string{"resolution="}, want: prefer.Preferences{}},
 		{

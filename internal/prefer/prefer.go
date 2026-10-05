@@ -89,16 +89,30 @@ var knownNames = map[string]bool{
 	"count":        true,
 	"resolution":   true,
 	"tx":           true,
-	"row-security": true,
-	"jwt-claims":   true,
-	"timezone":     true,
+}
+
+// Auth names ask for Postgres-only features. They are known names: the auth
+// check refuses them with a stable message, not the strict rule.
+const (
+	nameRowSecurity = "row-security"
+	nameJWTClaims   = "jwt-claims"
+	nameTimezone    = "timezone"
+)
+
+var authNames = map[string]bool{nameRowSecurity: true, nameJWTClaims: true, nameTimezone: true}
+
+func init() {
+	for name := range authNames {
+		knownNames[name] = true
+	}
 }
 
 // tokens holds the last value of each known name, before validation.
 type tokens struct {
 	values map[string]string
-	// general holds unknown and empty-valued tokens in header order.
-	general []string
+	// invalid holds unknown, empty-valued, and valued all-rows tokens in
+	// header order.
+	invalid []string
 	allRows bool
 }
 
@@ -106,13 +120,13 @@ type tokens struct {
 func Parse(headers []string) Preferences {
 	collected := collect(headers)
 	var preferences Preferences
-	for _, raw := range collected.general {
+	for _, raw := range collected.invalid {
 		preferences.invalid = append(preferences.invalid, invalidToken{raw: raw})
 	}
 	preferences.AllRows = collected.allRows
-	_, preferences.RowSecurity = collected.values["row-security"]
-	_, preferences.JWTClaims = collected.values["jwt-claims"]
-	_, preferences.Timezone = collected.values["timezone"]
+	_, preferences.RowSecurity = collected.values[nameRowSecurity]
+	_, preferences.JWTClaims = collected.values[nameJWTClaims]
+	_, preferences.Timezone = collected.values[nameTimezone]
 	// The rule order keeps the PGRST122 details stable.
 	for _, rule := range rules {
 		value, held := collected.values[rule.name]
@@ -146,20 +160,20 @@ func collect(headers []string) tokens {
 func collectToken(collected *tokens, name, value string, hasValue bool, raw string) {
 	switch {
 	case !knownNames[name]:
-		collected.general = append(collected.general, raw)
-	case name == "row-security" || name == "jwt-claims" || name == "timezone":
+		collected.invalid = append(collected.invalid, raw)
+	case authNames[name]:
 		collected.values[name] = value
 	case name == "all-rows":
 		// Only the bare flag unlocks an all-rows write. A valued form
 		// (all-rows=false, all-rows=true, all-rows=) is not the flag, so it
 		// never sets the option and is invalid under handling=strict.
 		if hasValue {
-			collected.general = append(collected.general, raw)
+			collected.invalid = append(collected.invalid, raw)
 			return
 		}
 		collected.allRows = true
 	case !hasValue || value == "":
-		collected.general = append(collected.general, raw)
+		collected.invalid = append(collected.invalid, raw)
 	default:
 		collected.values[name] = strings.ToLower(value)
 	}

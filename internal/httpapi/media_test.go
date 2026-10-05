@@ -277,3 +277,63 @@ func TestPreferTimezoneIsRefused(t *testing.T) {
 		t.Fatalf("message = %q, want a timezone refusal", failure.Message)
 	}
 }
+
+// prefer-001: under handling=strict, the auth Prefer tokens keep their stable
+// MYREST001 refusal on every surface and are not PGRST122 tokens.
+func TestPreferAuthTokensUnderStrictKeepTheirRefusal(t *testing.T) {
+	t.Parallel()
+
+	surfaces := []struct {
+		name   string
+		method string
+		url    func(t *testing.T) string
+		body   string
+	}{
+		{
+			name:   "read",
+			method: http.MethodGet,
+			url:    func(t *testing.T) string { return serve(t, &reader{}, settings()).URL() + "/items" },
+		},
+		{
+			name:   "put",
+			method: http.MethodPut,
+			url: func(t *testing.T) string {
+				return serveWrite(t, &reader{}, &writer{}).URL() + "/items?id=eq.1"
+			},
+			body: `{"id":1,"name":"item"}`,
+		},
+		{
+			name:   "rpc",
+			method: http.MethodPost,
+			url:    func(t *testing.T) string { return serveRPC(t, &caller{}).URL() + "/rpc/add_them" },
+			body:   `{"a":1,"b":2}`,
+		},
+	}
+	for _, surface := range surfaces {
+		for _, token := range []string{"timezone=UTC", "row-security=on", "jwt-claims"} {
+			t.Run(surface.name+" "+token, func(t *testing.T) {
+				t.Parallel()
+				var payload io.Reader
+				if surface.body != "" {
+					payload = strings.NewReader(surface.body)
+				}
+				request, err := http.NewRequest(surface.method, surface.url(t), payload)
+				if err != nil {
+					t.Fatalf("new request: %v", err)
+				}
+				request.Header.Set("Content-Type", "application/json")
+				request.Header.Set("Prefer", "handling=strict, "+token)
+				response, err := http.DefaultClient.Do(request)
+				if err != nil {
+					t.Fatalf("%s: %v", surface.method, err)
+				}
+				t.Cleanup(func() { _ = response.Body.Close() })
+				body, err := io.ReadAll(response.Body)
+				if err != nil {
+					t.Fatalf("read body: %v", err)
+				}
+				apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+			})
+		}
+	}
+}

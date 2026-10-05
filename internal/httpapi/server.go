@@ -107,7 +107,6 @@ func Listen(options Options) (*Service, error) {
 	return service, nil
 }
 
-// Serve accepts connections until Close is called.
 // preferHandler answers one route with the parsed Prefer header.
 type preferHandler func(http.ResponseWriter, *http.Request, prefer.Preferences)
 
@@ -119,6 +118,7 @@ func withPrefer(handler preferHandler) http.HandlerFunc {
 	}
 }
 
+// Serve accepts connections until Close is called.
 func (s *Service) Serve() error {
 	return s.server.Serve(s.listener)
 }
