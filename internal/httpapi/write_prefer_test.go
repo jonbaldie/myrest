@@ -6,9 +6,10 @@ import (
 	"testing"
 
 	"github.com/jonbaldie/myrest/internal/config"
+	"github.com/jonbaldie/myrest/internal/prefer"
 )
 
-func TestParseWritePreferTxValues(t *testing.T) {
+func TestNewWritePreferTxValues(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -17,7 +18,6 @@ func TestParseWritePreferTxValues(t *testing.T) {
 		txEnd     config.TxEnd
 		wantTx    string
 		wantApply string
-		wantErr   bool
 	}{
 		{
 			name:      "rollback under allow-override",
@@ -39,30 +39,15 @@ func TestParseWritePreferTxValues(t *testing.T) {
 			txEnd:  config.TxEndCommit,
 			wantTx: "rollback",
 		},
-		{
-			name:    "invalid tx under strict",
-			header:  "handling=strict, tx=sideways",
-			txEnd:   config.TxEndCommitAllowOverride,
-			wantErr: true,
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			prefer, err := parseWritePrefer([]string{tc.header}, tc.txEnd, writeKindPatch)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatal("expected invalid prefer error")
-				}
-				return
+			written := newWritePrefer(prefer.Parse([]string{tc.header}), tc.txEnd, writeKindPatch)
+			if written.Tx != tc.wantTx {
+				t.Fatalf("Tx = %q, want %q", written.Tx, tc.wantTx)
 			}
-			if err != nil {
-				t.Fatalf("parseWritePrefer: %v", err)
-			}
-			if prefer.Tx != tc.wantTx {
-				t.Fatalf("Tx = %q, want %q", prefer.Tx, tc.wantTx)
-			}
-			got := strings.Join(prefer.applied, ", ")
+			got := strings.Join(written.applied, ", ")
 			if got != tc.wantApply {
 				t.Fatalf("applied = %q, want %q", got, tc.wantApply)
 			}
@@ -70,92 +55,54 @@ func TestParseWritePreferTxValues(t *testing.T) {
 	}
 }
 
-// Only the bare all-rows flag sets the option. A valued form (all-rows=false,
-// all-rows=true, all-rows=) never sets it and is invalid under handling=strict.
-func TestParseWritePreferAllRowsFlagOnly(t *testing.T) {
+// Preference-Applied names only the preferences the write kind applied.
+func TestNewWritePreferApplied(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name     string
-		header   string
-		wantFlag bool
-		wantErr  bool
+		name   string
+		header string
+		kind   writeKind
+		want   string
 	}{
+		{name: "missing default on insert", header: "missing=default", kind: writeKindInsert, want: "missing=default"},
+		{name: "missing default on patch", header: "missing=default", kind: writeKindPatch},
+		{name: "missing default on delete", header: "missing=default", kind: writeKindDelete},
+		{name: "missing default on put", header: "missing=default", kind: writeKindPut},
+		{name: "invalid return is not applied", header: "return=bogus", kind: writeKindPatch},
+		{name: "default return is not applied", header: "", kind: writeKindPatch},
 		{
-			name:     "bare flag sets the option",
-			header:   "handling=strict, all-rows",
-			wantFlag: true,
+			name:   "strict max-affected on patch",
+			header: "handling=strict, max-affected=2",
+			kind:   writeKindPatch,
+			want:   "handling=strict, max-affected=2",
 		},
 		{
-			name:    "valued form is not the flag",
-			header:  "handling=strict, all-rows=false",
-			wantErr: true,
+			name:   "strict max-affected on insert",
+			header: "handling=strict, max-affected=2",
+			kind:   writeKindInsert,
+			want:   "handling=strict",
 		},
-		{
-			name:    "valued true is not the flag either",
-			header:  "handling=strict, all-rows=true",
-			wantErr: true,
-		},
-		{
-			name:    "valued empty is not the flag",
-			header:  "handling=strict, all-rows=",
-			wantErr: true,
-		},
-		{
-			name:     "bare flag among other tokens",
-			header:   "return=representation, all-rows, missing=default",
-			wantFlag: true,
-		},
+		{name: "lenient max-affected", header: "max-affected=2", kind: writeKindDelete},
+		{name: "count is not applied", header: "count=exact", kind: writeKindPatch},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			prefer, err := parseWritePrefer([]string{tc.header}, config.TxEndCommit, writeKindPatch)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatal("expected invalid prefer error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("parseWritePrefer: %v", err)
-			}
-			if prefer.AllRows != tc.wantFlag {
-				t.Fatalf("AllRows = %v, want %v", prefer.AllRows, tc.wantFlag)
+			written := newWritePrefer(prefer.Parse([]string{tc.header}), config.TxEndCommit, tc.kind)
+			if got := strings.Join(written.applied, ", "); got != tc.want {
+				t.Fatalf("applied = %q, want %q", got, tc.want)
 			}
 		})
 	}
 }
 
-func TestParseWritePreferMissingDefaultOnlyAppliesToInsert(t *testing.T) {
+func TestNewWritePreferDefaultsReturnToMinimal(t *testing.T) {
 	t.Parallel()
 
-	cases := []struct {
-		name string
-		kind writeKind
-		want string
-	}{
-		{name: "insert", kind: writeKindInsert, want: "missing=default"},
-		{name: "patch", kind: writeKindPatch},
-		{name: "delete", kind: writeKindDelete},
-		{name: "put", kind: writeKindPut},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			prefer, err := parseWritePrefer(
-				[]string{"missing=default"},
-				config.TxEndCommit,
-				tc.kind,
-			)
-			if err != nil {
-				t.Fatalf("parseWritePrefer: %v", err)
-			}
-			if got := strings.Join(prefer.applied, ", "); got != tc.want {
-				t.Fatalf("applied = %q, want %q", got, tc.want)
-			}
-		})
+	written := newWritePrefer(prefer.Parse(nil), config.TxEndCommit, writeKindInsert)
+	if written.Return != returnMinimal {
+		t.Fatalf("Return = %q, want %q", written.Return, returnMinimal)
 	}
 }
 
@@ -192,119 +139,3 @@ func TestSetPreferenceAppliedJoinsTokens(t *testing.T) {
 		t.Fatalf("empty applied set header %q", got)
 	}
 }
-
-func TestParseWritePreferCount(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name      string
-		header    string
-		wantCount string
-		wantErr   bool
-	}{
-		{
-			name:      "exact under strict",
-			header:    "handling=strict, count=exact",
-			wantCount: "exact",
-		},
-		{
-			name:      "exact under lenient",
-			header:    "count=exact",
-			wantCount: "exact",
-		},
-		{
-			name:    "bogus under strict",
-			header:  "handling=strict, count=bogus",
-			wantErr: true,
-		},
-		{
-			name:    "planned under strict",
-			header:  "handling=strict, count=planned",
-			wantErr: true,
-		},
-		{
-			name:    "estimated under strict",
-			header:  "handling=strict, count=estimated",
-			wantErr: true,
-		},
-		{
-			name:      "bogus under lenient ignored",
-			header:    "count=bogus",
-			wantCount: "",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			prefer, err := parseWritePrefer([]string{tc.header}, config.TxEndCommit, writeKindPatch)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatal("expected invalid prefer error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("parseWritePrefer: %v", err)
-			}
-			if prefer.Count != tc.wantCount {
-				t.Fatalf("Count = %q, want %q", prefer.Count, tc.wantCount)
-			}
-		})
-	}
-}
-
-func TestParseWritePreferResolution(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name           string
-		header         string
-		wantResolution string
-		wantErr        bool
-	}{
-		{
-			name:           "merge-duplicates under strict",
-			header:         "handling=strict, resolution=merge-duplicates",
-			wantResolution: "merge-duplicates",
-		},
-		{
-			name:           "ignore-duplicates under strict",
-			header:         "handling=strict, resolution=ignore-duplicates",
-			wantResolution: "ignore-duplicates",
-		},
-		{
-			name:           "merge-duplicates case-insensitive",
-			header:         "handling=strict, resolution=Merge-Duplicates",
-			wantResolution: "merge-duplicates",
-		},
-		{
-			name:    "bogus under strict",
-			header:  "handling=strict, resolution=bogus",
-			wantErr: true,
-		},
-		{
-			name:           "bogus under lenient ignored",
-			header:         "resolution=bogus",
-			wantResolution: "",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			prefer, err := parseWritePrefer([]string{tc.header}, config.TxEndCommit, writeKindPatch)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatal("expected invalid prefer error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("parseWritePrefer: %v", err)
-			}
-			if prefer.Resolution != tc.wantResolution {
-				t.Fatalf("Resolution = %q, want %q", prefer.Resolution, tc.wantResolution)
-			}
-		})
-	}
-}
-

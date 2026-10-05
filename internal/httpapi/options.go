@@ -4,13 +4,14 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jonbaldie/myrest/internal/prefer"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
 // optionsTable answers OPTIONS /{table}: Allow lists only methods the active
 // database role can use on that resource, from the schema cache grants.
-func (s *Service) optionsTable(writer http.ResponseWriter, request *http.Request) {
-	role, ok := s.requestRole(writer, request)
+func (s *Service) optionsTable(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
+	role, ok := s.requestRole(writer, request, preferences)
 	if !ok {
 		return
 	}
@@ -31,8 +32,8 @@ func (s *Service) optionsTable(writer http.ResponseWriter, request *http.Request
 
 // optionsRoutine answers OPTIONS /rpc/{name}: Allow lists only methods the
 // active database role can use on that routine resource.
-func (s *Service) optionsRoutine(writer http.ResponseWriter, request *http.Request) {
-	role, ok := s.requestRole(writer, request)
+func (s *Service) optionsRoutine(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
+	role, ok := s.requestRole(writer, request, preferences)
 	if !ok {
 		return
 	}

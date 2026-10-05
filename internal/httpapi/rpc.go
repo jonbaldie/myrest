@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/jonbaldie/myrest/internal/prefer"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/representation"
 	"github.com/jonbaldie/myrest/internal/rows"
@@ -32,28 +33,28 @@ type Caller = rpcexec.Caller
 
 // callRoutine answers POST /rpc/<name>: named JSON body arguments, optional
 // read features on the query string for row-set results.
-func (s *Service) callRoutine(writer http.ResponseWriter, request *http.Request) {
+func (s *Service) callRoutine(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
 	args, ok := readNamedJSONArgs(writer, request)
 	if !ok {
 		return
 	}
-	role, asked, routine, ok := s.lookupRoutine(writer, request)
+	role, asked, routine, ok := s.lookupRoutine(writer, request, preferences)
 	if !ok {
 		return
 	}
-	query, err := parseReadQuery(request, s.settings.DB.MaxRows)
+	query, err := parseReadQuery(request, preferences.Count, s.settings.DB.MaxRows)
 	if err != nil {
 		writeQueryFailure(writer, err)
 		return
 	}
-	s.invokeRoutine(writer, request, role, asked, routine, args, query, rpcexec.CallModePost)
+	s.invokeRoutine(writer, request, preferences, role, asked, routine, args, query, rpcexec.CallModePost)
 }
 
 // getRoutine answers GET /rpc/<name>: named query-string arguments for the
 // routine parameters, and the remaining query keys as read features when the
 // routine is read-safe under MySQL SQL_DATA_ACCESS.
-func (s *Service) getRoutine(writer http.ResponseWriter, request *http.Request) {
-	role, asked, routine, ok := s.lookupRoutine(writer, request)
+func (s *Service) getRoutine(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
+	role, asked, routine, ok := s.lookupRoutine(writer, request, preferences)
 	if !ok {
 		return
 	}
@@ -63,7 +64,7 @@ func (s *Service) getRoutine(writer http.ResponseWriter, request *http.Request) 
 		return
 	}
 	args, readValues := splitRPCQuery(routine, values)
-	query, err := readquery.Parse(readValues, request.Header.Values("Prefer"))
+	query, err := readquery.Parse(readValues, preferences.Count)
 	if err != nil {
 		writeQueryFailure(writer, err)
 		return
@@ -76,14 +77,15 @@ func (s *Service) getRoutine(writer http.ResponseWriter, request *http.Request) 
 		writeQueryFailure(writer, err)
 		return
 	}
-	s.invokeRoutine(writer, request, role, asked, routine, args, query, rpcexec.CallModeGet)
+	s.invokeRoutine(writer, request, preferences, role, asked, routine, args, query, rpcexec.CallModeGet)
 }
 
 func (s *Service) lookupRoutine(
 	writer http.ResponseWriter,
 	request *http.Request,
+	preferences prefer.Preferences,
 ) (schemacache.Role, schemacache.RoutineID, schemacache.RoutineFact, bool) {
-	role, ok := s.requestRole(writer, request)
+	role, ok := s.requestRole(writer, request, preferences)
 	if !ok {
 		return "", schemacache.RoutineID{}, schemacache.RoutineFact{}, false
 	}
@@ -107,6 +109,7 @@ func (s *Service) lookupRoutine(
 func (s *Service) invokeRoutine(
 	writer http.ResponseWriter,
 	request *http.Request,
+	preferences prefer.Preferences,
 	role schemacache.Role,
 	asked schemacache.RoutineID,
 	routine schemacache.RoutineFact,
@@ -114,9 +117,9 @@ func (s *Service) invokeRoutine(
 	query readquery.Query,
 	callMode rpcexec.CallMode,
 ) {
-	// RPC only honours Prefer: tx= from the write Prefer parser; other write
-	// Prefer tokens are accepted for strict handling but not applied on /rpc.
-	prefer, ok := s.readWritePrefer(writer, request, writeKindRPC)
+	// RPC only applies Prefer: tx=; other write Prefer tokens are accepted
+	// for strict handling but not applied on /rpc.
+	written, ok := s.readWritePrefer(writer, preferences, writeKindRPC)
 	if !ok {
 		return
 	}
@@ -134,7 +137,7 @@ func (s *Service) invokeRoutine(
 			Role:           role,
 			Args:           args,
 			CallMode:       callMode,
-			PreferTx:       prefer.Tx,
+			PreferTx:       written.Tx,
 			Representation: repr,
 			Query:          query,
 		},
@@ -146,7 +149,7 @@ func (s *Service) invokeRoutine(
 	}
 
 	if outcome.TxOutcome.PreferApplied {
-		setTxPreferenceApplied(writer, prefer.Tx, s.settings.DB.TxEnd)
+		setTxPreferenceApplied(writer, written.Tx, s.settings.DB.TxEnd)
 	}
 
 	if outcome.Kind == rpcexec.ResultKindRowSet {

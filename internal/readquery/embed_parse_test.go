@@ -13,7 +13,7 @@ func TestParseNestedSelectEmbed(t *testing.T) {
 
 	query, err := readquery.Parse(url.Values{
 		"select": []string{"id,items(id,name)"},
-	}, nil)
+	}, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestParseEmbedHintAliasAndNestedFilterOrderLimit(t *testing.T) {
 		"billing.offset": []string{"0"},
 		"billing.label":  []string{"eq.from-here"},
 	}
-	query, err := readquery.Parse(values, nil)
+	query, err := readquery.Parse(values, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestParseEmbedNegatedLogicalGroups(t *testing.T) {
 				"select": []string{tc.selectQ},
 				tc.key:   []string{tc.raw},
 			}
-			query, err := readquery.Parse(values, nil)
+			query, err := readquery.Parse(values, readquery.CountNone)
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
 			}
@@ -121,7 +121,7 @@ func TestParseEmbedMultipleLogicalGroups(t *testing.T) {
 		"orders.not.or":  []string{"(id.eq.1)"},
 		"orders.not.and": []string{"(id.eq.2)"},
 	}
-	query, err := readquery.Parse(values, nil)
+	query, err := readquery.Parse(values, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestParseEmbedRefusesEmptyLogicalGroups(t *testing.T) {
 				"select": []string{"id,orders(id)"},
 				tc.key:   []string{tc.raw},
 			}
-			_, err := readquery.Parse(values, nil)
+			_, err := readquery.Parse(values, readquery.CountNone)
 			var failure readquery.ParseFailure
 			if err == nil || !errors.As(err, &failure) || failure.Gap {
 				t.Fatalf("query %s=%s err = %v, want non-gap ParseFailure", tc.key, tc.raw, err)

@@ -1,19 +1,21 @@
 package httpapi
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/jonbaldie/myrest/internal/config"
+	"github.com/jonbaldie/myrest/internal/prefer"
 )
 
 // Write preference tokens claimed by this service for ordinary writes.
 const (
-	returnMinimal        = "minimal"
-	returnHeadersOnly    = "headers-only"
-	returnRepresentation = "representation"
+	returnMinimal        = prefer.ReturnMinimal
+	returnHeadersOnly    = prefer.ReturnHeadersOnly
+	returnRepresentation = prefer.ReturnRepresentation
 
 	// codeInvalidPrefer is Prefer handling=strict with an invalid token.
 	codeInvalidPrefer = "PGRST122"
@@ -21,281 +23,69 @@ const (
 	codeMaxAffected = "PGRST124"
 )
 
-// writePrefer is the Prefer control surface for ordinary writes.
+// writePrefer is the Prefer control surface for ordinary writes and RPC: the
+// parsed preferences of the request and the Preference-Applied tokens of the
+// write kind.
 type writePrefer struct {
-	Return         string
-	Count          string
-	Resolution     string
-	MissingDefault bool
-	MaxAffected    *int64
-	Strict         bool
-	AllRows        bool
-	// Tx is Prefer: tx=commit|rollback when the client sent a valid value.
-	Tx string
+	prefer.Preferences
 	// applied lists Preference-Applied tokens in stable order.
 	applied []string
 }
 
-// knownPreferNames are Prefer names myrest recognises on a write. Unknown
-// names are invalid under handling=strict. Prefer timezone is refused before
-// this map runs (see preferAsksForTimezone).
-var knownPreferNames = map[string]bool{
-	"return":       true,
-	"missing":      true,
-	"max-affected": true,
-	"handling":     true,
-	"all-rows":     true,
-	"count":        true,
-	"resolution":   true,
-	"tx":           true,
+// newWritePrefer works out which preferences the write kind applies. The
+// caller has already refused invalid preferences (refuseInvalidPrefer).
+func newWritePrefer(preferences prefer.Preferences, txEnd config.TxEnd, kind writeKind) writePrefer {
+	applied := preferenceApplied(preferences, txEnd, kind)
+	if preferences.Return == "" {
+		preferences.Return = returnMinimal
+	}
+	return writePrefer{Preferences: preferences, applied: applied}
 }
 
-type preferTokens struct {
-	returnValue     string
-	returnSet       bool
-	missingValue    string
-	missingSet      bool
-	maxRaw          string
-	maxSet          bool
-	handlingValue   string
-	handlingSet     bool
-	txValue         string
-	txSet           bool
-	countValue      string
-	countSet        bool
-	resolutionValue string
-	resolutionSet   bool
-	allRows         bool
-	invalid         []string
-}
-
-func parseWritePrefer(headers []string, txEnd config.TxEnd, kind writeKind) (writePrefer, error) {
-	tokens := collectPreferTokens(headers)
-	prefer, invalid := applyPreferTokens(tokens)
-	if prefer.Strict && len(invalid) > 0 {
-		return writePrefer{}, invalidPreferError{tokens: invalid}
-	}
-	prefer.applied = preferenceApplied(prefer, tokens, txEnd, kind)
-	return prefer, nil
-}
-
-func collectPreferTokens(headers []string) preferTokens {
-	var tokens preferTokens
-	for _, header := range headers {
-		for _, part := range strings.Split(header, ",") {
-			token := strings.TrimSpace(part)
-			if token == "" {
-				continue
-			}
-			name, value, hasValue := strings.Cut(token, "=")
-			name = strings.ToLower(strings.TrimSpace(name))
-			value = strings.TrimSpace(value)
-			if !knownPreferNames[name] {
-				tokens.invalid = append(tokens.invalid, token)
-				continue
-			}
-			collectKnownToken(&tokens, name, value, hasValue, token)
-		}
-	}
-	return tokens
-}
-
-func collectKnownToken(tokens *preferTokens, name, value string, hasValue bool, raw string) {
-	if name == "all-rows" {
-		// Only the bare flag unlocks an all-rows write. A valued form
-		// (all-rows=false, all-rows=true, all-rows=) is not the flag, so it
-		// never sets the option and is invalid under handling=strict.
-		if hasValue {
-			tokens.invalid = append(tokens.invalid, raw)
-			return
-		}
-		tokens.allRows = true
-		return
-	}
-	if !hasValue || value == "" {
-		tokens.invalid = append(tokens.invalid, raw)
-		return
-	}
-	switch name {
-	case "return":
-		tokens.returnValue = strings.ToLower(value)
-		tokens.returnSet = true
-	case "missing":
-		tokens.missingValue = strings.ToLower(value)
-		tokens.missingSet = true
-	case "max-affected":
-		tokens.maxRaw = value
-		tokens.maxSet = true
-	case "handling":
-		tokens.handlingValue = strings.ToLower(value)
-		tokens.handlingSet = true
-	case "tx":
-		tokens.txValue = strings.ToLower(value)
-		tokens.txSet = true
-	case "count":
-		tokens.countValue = strings.ToLower(value)
-		tokens.countSet = true
-	case "resolution":
-		tokens.resolutionValue = strings.ToLower(value)
-		tokens.resolutionSet = true
-	}
-}
-
-func applyPreferTokens(tokens preferTokens) (writePrefer, []string) {
-	prefer := writePrefer{Return: returnMinimal, AllRows: tokens.allRows}
-	invalid := append([]string(nil), tokens.invalid...)
-	invalid = append(invalid, applyHandling(&prefer, tokens)...)
-	invalid = append(invalid, applyReturn(&prefer, tokens)...)
-	invalid = append(invalid, applyMissing(&prefer, tokens)...)
-	invalid = append(invalid, applyMaxAffected(&prefer, tokens)...)
-	invalid = append(invalid, applyTx(&prefer, tokens)...)
-	invalid = append(invalid, applyCount(&prefer, tokens)...)
-	invalid = append(invalid, applyResolution(&prefer, tokens)...)
-	return prefer, invalid
-}
-
-func applyTx(prefer *writePrefer, tokens preferTokens) []string {
-	if !tokens.txSet {
-		return nil
-	}
-	switch tokens.txValue {
-	case config.PreferTxCommit, config.PreferTxRollback:
-		prefer.Tx = tokens.txValue
-		return nil
-	default:
-		return []string{"tx=" + tokens.txValue}
-	}
-}
-
-func applyHandling(prefer *writePrefer, tokens preferTokens) []string {
-	if !tokens.handlingSet {
-		return nil
-	}
-	switch tokens.handlingValue {
-	case "strict":
-		prefer.Strict = true
-	case "lenient":
-		prefer.Strict = false
-	default:
-		return []string{"handling=" + tokens.handlingValue}
-	}
-	return nil
-}
-
-func applyReturn(prefer *writePrefer, tokens preferTokens) []string {
-	if !tokens.returnSet {
-		return nil
-	}
-	switch tokens.returnValue {
-	case returnMinimal, returnHeadersOnly, returnRepresentation:
-		prefer.Return = tokens.returnValue
-		return nil
-	default:
-		return []string{"return=" + tokens.returnValue}
-	}
-}
-
-func applyMissing(prefer *writePrefer, tokens preferTokens) []string {
-	if !tokens.missingSet {
-		return nil
-	}
-	if tokens.missingValue == "default" {
-		prefer.MissingDefault = true
-		return nil
-	}
-	return []string{"missing=" + tokens.missingValue}
-}
-
-func applyMaxAffected(prefer *writePrefer, tokens preferTokens) []string {
-	if !tokens.maxSet {
-		return nil
-	}
-	maxValue, err := strconv.ParseInt(tokens.maxRaw, 10, 64)
-	if err != nil || maxValue < 0 {
-		return []string{"max-affected=" + tokens.maxRaw}
-	}
-	prefer.MaxAffected = &maxValue
-	return nil
-}
-
-func applyCount(prefer *writePrefer, tokens preferTokens) []string {
-	if !tokens.countSet {
-		return nil
-	}
-	switch tokens.countValue {
-	case "exact":
-		prefer.Count = tokens.countValue
-		return nil
-	default:
-		return []string{"count=" + tokens.countValue}
-	}
-}
-
-func applyResolution(prefer *writePrefer, tokens preferTokens) []string {
-	if !tokens.resolutionSet {
-		return nil
-	}
-	switch tokens.resolutionValue {
-	case "merge-duplicates", "ignore-duplicates":
-		prefer.Resolution = tokens.resolutionValue
-		return nil
-	default:
-		return []string{"resolution=" + tokens.resolutionValue}
-	}
-}
-
-func preferenceApplied(prefer writePrefer, tokens preferTokens, txEnd config.TxEnd, kind writeKind) []string {
+func preferenceApplied(preferences prefer.Preferences, txEnd config.TxEnd, kind writeKind) []string {
 	var applied []string
-	if prefer.Strict {
+	if preferences.Strict {
 		applied = append(applied, "handling=strict")
 	}
-	if tokens.returnSet && prefer.Return == tokens.returnValue {
-		applied = append(applied, "return="+prefer.Return)
+	if preferences.Return != "" {
+		applied = append(applied, "return="+preferences.Return)
 	}
 	// missing=default changes omitted columns only for inserts.
-	if shouldApplyMissingDefault(prefer, kind) {
+	if preferences.MissingDefault && kind == writeKindInsert {
 		applied = append(applied, "missing=default")
 	}
 	// max-affected is an update, delete, and upsert preference. Inserts
 	// write normally, so they must not echo the limit as applied.
-	if prefer.Strict && prefer.MaxAffected != nil && honoursMaxAffected(kind) {
+	if preferences.Strict && preferences.MaxAffected != nil && honoursMaxAffected(kind) {
 		applied = append(
 			applied,
-			"max-affected="+strconv.FormatInt(*prefer.MaxAffected, 10),
+			"max-affected="+strconv.FormatInt(*preferences.MaxAffected, 10),
 		)
 	}
-	if _, txApplied := config.DecideTxEnd(txEnd, prefer.Tx); txApplied {
-		applied = append(applied, "tx="+prefer.Tx)
+	if _, txApplied := config.DecideTxEnd(txEnd, preferences.Tx); txApplied {
+		applied = append(applied, "tx="+preferences.Tx)
 	}
 	return applied
 }
 
-func shouldApplyMissingDefault(prefer writePrefer, kind writeKind) bool {
-	if !prefer.MissingDefault {
+// refuseInvalidPrefer answers PGRST122 when handling=strict meets an invalid
+// token on the surface.
+func refuseInvalidPrefer(writer http.ResponseWriter, preferences prefer.Preferences, surface prefer.Surface) bool {
+	var invalid prefer.InvalidError
+	if !errors.As(preferences.Refusal(surface), &invalid) {
 		return false
 	}
-	return kind == writeKindInsert
+	writeInvalidPrefer(writer, invalid)
+	return true
 }
 
-type invalidPreferError struct {
-	tokens []string
-}
-
-func (e invalidPreferError) Error() string {
-	return "Invalid preferences given with handling=strict"
-}
-
-func (e invalidPreferError) details() string {
-	return "Invalid preferences: " + strings.Join(e.tokens, ", ")
-}
-
-func writeInvalidPrefer(writer http.ResponseWriter, err invalidPreferError) {
+func writeInvalidPrefer(writer http.ResponseWriter, err prefer.InvalidError) {
 	writeFailureExtra(
 		writer,
 		http.StatusBadRequest,
 		codeInvalidPrefer,
 		err.Error(),
-		err.details(),
+		err.Details(),
 		nil,
 	)
 }
@@ -325,11 +115,11 @@ func writeMaxAffected(writer http.ResponseWriter, err maxAffectedError) {
 	)
 }
 
-func setPreferenceApplied(writer http.ResponseWriter, prefer writePrefer) {
-	if len(prefer.applied) == 0 {
+func setPreferenceApplied(writer http.ResponseWriter, written writePrefer) {
+	if len(written.applied) == 0 {
 		return
 	}
-	writer.Header().Set("Preference-Applied", strings.Join(prefer.applied, ", "))
+	writer.Header().Set("Preference-Applied", strings.Join(written.applied, ", "))
 }
 
 // setTxPreferenceApplied sets Preference-Applied only for an applied Prefer: tx=.

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jonbaldie/myrest/internal/prefer"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/representation"
 	"github.com/jonbaldie/myrest/internal/rows"
@@ -77,31 +78,31 @@ const (
 // insertTable answers POST /<table>: one JSON object or a JSON array of objects.
 // Content-Profile selects the database; with no header the table comes from
 // the default database.
-func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request) {
-	role, asked, table, ok := s.lookupWriteTable(writer, request, "INSERT")
+func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
+	role, asked, table, ok := s.lookupWriteTable(writer, request, preferences, "INSERT")
 	if !ok {
 		return
 	}
-	prefer, ok := s.readWritePrefer(writer, request, writeKindInsert)
+	written, ok := s.readWritePrefer(writer, preferences, writeKindInsert)
 	if !ok {
 		return
 	}
-	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, prefer, writeBoundOptional)
+	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, written, writeBoundOptional)
 	if !ok {
 		return
 	}
 
 	primaryKey := schemacache.PrimaryKeyOf(s.cache.KeysOf(asked))
-	options, ok := s.buildWriteOptions(writer, role, asked, prefer, primaryKey, writeKindInsert)
+	options, ok := s.buildWriteOptions(writer, role, asked, written, primaryKey, writeKindInsert)
 	if !ok {
 		return
 	}
 
-	if !applyInsertResolution(writer, request, &prefer, &options) {
+	if !applyInsertResolution(writer, request, &written, &options) {
 		return
 	}
 
-	bodyRows, repr, ok := readInsertRowsAndRepr(writer, request, prefer)
+	bodyRows, repr, ok := readInsertRowsAndRepr(writer, request, written)
 	if !ok {
 		return
 	}
@@ -114,7 +115,7 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
-		Prefer: prefer, Method: http.MethodPost, TableName: asked.Name,
+		Prefer: written, Method: http.MethodPost, TableName: asked.Name,
 		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan, Repr: repr,
 	})
 }
@@ -145,9 +146,9 @@ func validateRepresentation(
 func writeRepresentationPrecheck(
 	writer http.ResponseWriter,
 	request *http.Request,
-	prefer writePrefer,
+	written writePrefer,
 ) (representation.Spec, bool) {
-	if prefer.Return != returnRepresentation {
+	if written.Return != returnRepresentation {
 		return representation.Spec{}, true
 	}
 	return requestRepresentation(writer, request)
@@ -158,13 +159,13 @@ func writeRepresentationPrecheck(
 func readInsertRowsAndRepr(
 	writer http.ResponseWriter,
 	request *http.Request,
-	prefer writePrefer,
+	written writePrefer,
 ) ([]map[string]any, representation.Spec, bool) {
 	rows, ok := readInsertRows(writer, request)
 	if !ok {
 		return nil, representation.Spec{}, false
 	}
-	repr, ok := writeRepresentationPrecheck(writer, request, prefer)
+	repr, ok := writeRepresentationPrecheck(writer, request, written)
 	if !ok {
 		return nil, representation.Spec{}, false
 	}
@@ -176,14 +177,13 @@ func readInsertRowsAndRepr(
 func applyInsertResolution(
 	writer http.ResponseWriter,
 	request *http.Request,
-	prefer *writePrefer,
+	written *writePrefer,
 	options *writequery.Options,
 ) bool {
-	value, held := preferValue(request, "resolution")
-	if !held || value == "" {
+	if written.Resolution == "" && !written.BadResolution {
 		return true
 	}
-	resolution, ok := parseUpsertResolution(writer, request)
+	resolution, ok := parseUpsertResolution(writer, written.Preferences)
 	if !ok {
 		return false
 	}
@@ -198,37 +198,36 @@ func applyInsertResolution(
 	if resolution == UpsertIgnoreDuplicates {
 		options.OnDuplicate = writequery.DuplicateIgnored
 	}
-	prefer.applied = append(prefer.applied, appliedResolutionTokens(request)...)
+	written.applied = append(written.applied, appliedResolutionTokens(written.Preferences)...)
 	return true
 }
 
-func appliedResolutionTokens(request *http.Request) []string {
-	value, _ := preferValue(request, "resolution")
-	if value == "" {
+func appliedResolutionTokens(preferences prefer.Preferences) []string {
+	if preferences.Resolution == "" {
 		return nil
 	}
-	return []string{"resolution=" + strings.ToLower(value)}
+	return []string{"resolution=" + preferences.Resolution}
 }
 
 // patchTable answers PATCH /<table> with the ordinary-read filter surface.
 // Content-Profile selects the database; with no header the table comes from
 // the default database.
-func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) {
-	role, asked, table, ok := s.lookupWriteTable(writer, request, "UPDATE")
+func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
+	role, asked, table, ok := s.lookupWriteTable(writer, request, preferences, "UPDATE")
 	if !ok {
 		return
 	}
-	prefer, ok := s.readWritePrefer(writer, request, writeKindPatch)
+	written, ok := s.readWritePrefer(writer, preferences, writeKindPatch)
 	if !ok {
 		return
 	}
-	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, prefer, writeBoundRequired)
+	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, written, writeBoundRequired)
 	if !ok {
 		return
 	}
 
 	primaryKey := schemacache.PrimaryKeyOf(s.cache.KeysOf(asked))
-	options, ok := s.buildWriteOptions(writer, role, asked, prefer, primaryKey, writeKindPatch)
+	options, ok := s.buildWriteOptions(writer, role, asked, written, primaryKey, writeKindPatch)
 	if !ok {
 		return
 	}
@@ -237,7 +236,7 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 	if !ok {
 		return
 	}
-	repr, ok := writeRepresentationPrecheck(writer, request, prefer)
+	repr, ok := writeRepresentationPrecheck(writer, request, written)
 	if !ok {
 		return
 	}
@@ -249,7 +248,7 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 		return
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
-		Prefer: prefer, Method: http.MethodPatch, TableName: asked.Name,
+		Prefer: written, Method: http.MethodPatch, TableName: asked.Name,
 		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan, Repr: repr,
 	})
 }
@@ -257,27 +256,27 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request) 
 // deleteTable answers DELETE /<table> with the ordinary-read filter surface.
 // Content-Profile selects the database; with no header the table comes from
 // the default database.
-func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request) {
-	role, asked, table, ok := s.lookupWriteTable(writer, request, "DELETE")
+func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
+	role, asked, table, ok := s.lookupWriteTable(writer, request, preferences, "DELETE")
 	if !ok {
 		return
 	}
-	prefer, ok := s.readWritePrefer(writer, request, writeKindDelete)
+	written, ok := s.readWritePrefer(writer, preferences, writeKindDelete)
 	if !ok {
 		return
 	}
-	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, prefer, writeBoundRequired)
+	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, written, writeBoundRequired)
 	if !ok {
 		return
 	}
 
 	primaryKey := schemacache.PrimaryKeyOf(s.cache.KeysOf(asked))
-	options, ok := s.buildWriteOptions(writer, role, asked, prefer, primaryKey, writeKindDelete)
+	options, ok := s.buildWriteOptions(writer, role, asked, written, primaryKey, writeKindDelete)
 	if !ok {
 		return
 	}
 
-	repr, ok := writeRepresentationPrecheck(writer, request, prefer)
+	repr, ok := writeRepresentationPrecheck(writer, request, written)
 	if !ok {
 		return
 	}
@@ -289,7 +288,7 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
-		Prefer: prefer, Method: http.MethodDelete, TableName: asked.Name,
+		Prefer: written, Method: http.MethodDelete, TableName: asked.Name,
 		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan, Repr: repr,
 	})
 }
@@ -298,16 +297,16 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request)
 // Prefer resolution selects merge-duplicates (default) or ignore-duplicates.
 // Content-Profile selects the database; with no header the table comes from
 // the default database.
-func (s *Service) putTable(writer http.ResponseWriter, request *http.Request) {
-	prefer, ok := s.readWritePrefer(writer, request, writeKindPut)
+func (s *Service) putTable(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
+	written, ok := s.readWritePrefer(writer, preferences, writeKindPut)
 	if !ok {
 		return
 	}
-	resolution, ok := parseUpsertResolution(writer, request)
+	resolution, ok := parseUpsertResolution(writer, preferences)
 	if !ok {
 		return
 	}
-	role, asked, table, ok := s.lookupPutTable(writer, request, resolution)
+	role, asked, table, ok := s.lookupPutTable(writer, request, preferences, resolution)
 	if !ok {
 		return
 	}
@@ -315,7 +314,7 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request) {
 	if !ok {
 		return
 	}
-	options, ok := s.buildWriteOptions(writer, role, asked, prefer, primaryKey, writeKindPut)
+	options, ok := s.buildWriteOptions(writer, role, asked, written, primaryKey, writeKindPut)
 	if !ok {
 		return
 	}
@@ -334,8 +333,8 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request) {
 		s.writeWriteFailure(writer, err)
 		return
 	}
-	prefer.applied = append(prefer.applied, appliedResolutionTokens(request)...)
-	setPreferenceApplied(writer, prefer)
+	written.applied = append(written.applied, appliedResolutionTokens(written.Preferences)...)
+	setPreferenceApplied(writer, written)
 	if inserted {
 		writeMinimal(writer, http.StatusCreated)
 		return
@@ -343,18 +342,17 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request) {
 	writeMinimal(writer, http.StatusNoContent)
 }
 
-func (s *Service) readWritePrefer(writer http.ResponseWriter, request *http.Request, kind writeKind) (writePrefer, bool) {
-	prefer, err := parseWritePrefer(request.Header.Values("Prefer"), s.settings.DB.TxEnd, kind)
-	if err != nil {
-		var invalid invalidPreferError
-		if errors.As(err, &invalid) {
-			writeInvalidPrefer(writer, invalid)
-			return writePrefer{}, false
-		}
-		writeFailure(writer, http.StatusBadRequest, codeParseFailure, err.Error())
+// readWritePrefer refuses invalid preferences under handling=strict and
+// builds the write view of the parsed preferences.
+func (s *Service) readWritePrefer(
+	writer http.ResponseWriter,
+	preferences prefer.Preferences,
+	kind writeKind,
+) (writePrefer, bool) {
+	if refuseInvalidPrefer(writer, preferences, kind.surface()) {
 		return writePrefer{}, false
 	}
-	return prefer, true
+	return newWritePrefer(preferences, s.settings.DB.TxEnd, kind), true
 }
 
 // writeKind selects which honesty rules apply for return=representation and
@@ -366,10 +364,18 @@ const (
 	writeKindPatch
 	writeKindDelete
 	writeKindPut
-	// writeKindRPC marks the /rpc surface, which reuses the write Prefer
-	// parser for tx= only.
+	// writeKindRPC marks the /rpc surface, which applies the write
+	// preference tx= only.
 	writeKindRPC
 )
+
+// surface is the Prefer surface of the write kind.
+func (kind writeKind) surface() prefer.Surface {
+	if kind == writeKindRPC {
+		return prefer.SurfaceRPC
+	}
+	return prefer.SurfaceWrite
+}
 
 // honoursMaxAffected reports whether the write kind enforces Prefer
 // max-affected. Updates, deletes, and upserts refuse with PGRST124 when they
@@ -388,20 +394,20 @@ func (s *Service) buildWriteOptions(
 	writer http.ResponseWriter,
 	role schemacache.Role,
 	asked schemacache.TableID,
-	prefer writePrefer,
+	written writePrefer,
 	primaryKey []string,
 	kind writeKind,
 ) (writequery.Options, bool) {
 	options := writequery.Options{
 		PrimaryKey:     primaryKey,
-		MissingDefault: prefer.MissingDefault,
-		PreferTx:       prefer.Tx,
+		MissingDefault: written.MissingDefault,
+		PreferTx:       written.Tx,
 	}
-	if prefer.Strict && prefer.MaxAffected != nil && honoursMaxAffected(kind) {
-		options.MaxAffected = prefer.MaxAffected
+	if written.Strict && written.MaxAffected != nil && honoursMaxAffected(kind) {
+		options.MaxAffected = written.MaxAffected
 	}
 
-	switch prefer.Return {
+	switch written.Return {
 	case returnHeadersOnly:
 		options.ReturnKeys = true
 	case returnRepresentation:
@@ -452,9 +458,10 @@ func representationLimitMessage(kind writeKind) string {
 func (s *Service) lookupPutTable(
 	writer http.ResponseWriter,
 	request *http.Request,
+	preferences prefer.Preferences,
 	resolution UpsertResolution,
 ) (schemacache.Role, schemacache.TableID, schemacache.Table, bool) {
-	role, asked, table, ok := s.lookupWriteTable(writer, request, "INSERT")
+	role, asked, table, ok := s.lookupWriteTable(writer, request, preferences, "INSERT")
 	if !ok {
 		return "", schemacache.TableID{}, schemacache.Table{}, false
 	}
@@ -502,17 +509,8 @@ func readPutRow(
 	return row, primaryKey, true
 }
 
-func parseUpsertResolution(writer http.ResponseWriter, request *http.Request) (UpsertResolution, bool) {
-	value, held := preferValue(request, "resolution")
-	if !held || value == "" {
-		return UpsertMergeDuplicates, true
-	}
-	switch strings.ToLower(value) {
-	case "merge-duplicates":
-		return UpsertMergeDuplicates, true
-	case "ignore-duplicates":
-		return UpsertIgnoreDuplicates, true
-	default:
+func parseUpsertResolution(writer http.ResponseWriter, preferences prefer.Preferences) (UpsertResolution, bool) {
+	if preferences.BadResolution {
 		writeFailure(
 			writer,
 			http.StatusBadRequest,
@@ -521,21 +519,10 @@ func parseUpsertResolution(writer http.ResponseWriter, request *http.Request) (U
 		)
 		return 0, false
 	}
-}
-
-func preferValue(request *http.Request, name string) (string, bool) {
-	for _, header := range request.Header.Values("Prefer") {
-		for _, part := range strings.Split(header, ",") {
-			key, value, found := strings.Cut(strings.TrimSpace(part), "=")
-			if !found {
-				continue
-			}
-			if strings.EqualFold(strings.TrimSpace(key), name) {
-				return strings.TrimSpace(value), true
-			}
-		}
+	if preferences.Resolution == prefer.ResolutionIgnoreDuplicates {
+		return UpsertIgnoreDuplicates, true
 	}
-	return "", false
+	return UpsertMergeDuplicates, true
 }
 
 func putPrimaryKeyValues(
@@ -643,9 +630,10 @@ func readPutObject(writer http.ResponseWriter, request *http.Request) (map[strin
 func (s *Service) lookupWriteTable(
 	writer http.ResponseWriter,
 	request *http.Request,
+	preferences prefer.Preferences,
 	privilege string,
 ) (schemacache.Role, schemacache.TableID, schemacache.Table, bool) {
-	role, ok := s.requestRole(writer, request)
+	role, ok := s.requestRole(writer, request, preferences)
 	if !ok {
 		return "", schemacache.TableID{}, schemacache.Table{}, false
 	}
@@ -666,8 +654,8 @@ func (s *Service) lookupWriteTable(
 	return requested.role, requested.table(), table, true
 }
 
-func refuseUnbounded(writer http.ResponseWriter, prefer writePrefer, query readquery.Query) bool {
-	if !unboundedWrite(query) || prefer.AllRows {
+func refuseUnbounded(writer http.ResponseWriter, written writePrefer, query readquery.Query) bool {
+	if !unboundedWrite(query) || written.AllRows {
 		return false
 	}
 	writeFailure(
@@ -688,7 +676,7 @@ func parseMutateQuery(request *http.Request) (readquery.Query, error) {
 	if err != nil {
 		return readquery.Query{}, err
 	}
-	return readquery.Parse(values, nil)
+	return readquery.Parse(values, readquery.CountNone)
 }
 
 func readInsertRows(writer http.ResponseWriter, request *http.Request) ([]map[string]any, bool) {
@@ -814,7 +802,7 @@ func (s *Service) parseWriteQuery(
 	request *http.Request,
 	role schemacache.Role,
 	origin schemacache.TableID,
-	prefer writePrefer,
+	written writePrefer,
 	bound writeBound,
 ) (readquery.Query, []plannedEmbed, bool) {
 	query, err := parseMutateQuery(request)
@@ -822,10 +810,10 @@ func (s *Service) parseWriteQuery(
 		writeQueryFailure(writer, err)
 		return readquery.Query{}, nil, false
 	}
-	if bound == writeBoundRequired && refuseUnbounded(writer, prefer, query) {
+	if bound == writeBoundRequired && refuseUnbounded(writer, written, query) {
 		return readquery.Query{}, nil, false
 	}
-	plan, ok := s.planWriteEmbeds(writer, role, origin, prefer, query)
+	plan, ok := s.planWriteEmbeds(writer, role, origin, written, query)
 	if !ok {
 		return readquery.Query{}, nil, false
 	}
@@ -839,10 +827,10 @@ func (s *Service) planWriteEmbeds(
 	writer http.ResponseWriter,
 	role schemacache.Role,
 	origin schemacache.TableID,
-	prefer writePrefer,
+	written writePrefer,
 	query readquery.Query,
 ) ([]plannedEmbed, bool) {
-	if prefer.Return != returnRepresentation || len(query.Embeds) == 0 {
+	if written.Return != returnRepresentation || len(query.Embeds) == 0 {
 		return nil, true
 	}
 	plan, err := s.planEmbeds(role, origin, query.Embeds)

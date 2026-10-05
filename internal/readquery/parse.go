@@ -31,9 +31,23 @@ type ParseFailure struct {
 
 func (e ParseFailure) Error() string { return e.Message }
 
+// CountMode is the parsed Prefer count value of one request.
+type CountMode int
+
+const (
+	// CountNone is a request with no valid Prefer count.
+	CountNone CountMode = iota
+	// CountExact is Prefer: count=exact.
+	CountExact
+	// CountPlanned is Prefer: count=planned, a Postgres planner estimate.
+	CountPlanned
+	// CountEstimated is Prefer: count=estimated, a Postgres planner estimate.
+	CountEstimated
+)
+
 // Parse reads a PostgREST-shaped ordinary-read query from the URL values and
-// Prefer header tokens.
-func Parse(values url.Values, prefer []string) (Query, error) {
+// the parsed Prefer count of the request.
+func Parse(values url.Values, count CountMode) (Query, error) {
 	var query Query
 	rawSelect := values.Get("select")
 	if err := parseSelect(rawSelect, &query); err != nil {
@@ -45,7 +59,7 @@ func Parse(values url.Values, prefer []string) (Query, error) {
 	if err := parseLimitOffset(values, &query); err != nil {
 		return Query{}, err
 	}
-	if err := parsePreferCount(prefer, &query); err != nil {
+	if err := applyCount(count, &query); err != nil {
 		return Query{}, err
 	}
 	if err := parseColumnFilters(values, &query); err != nil {
@@ -200,22 +214,14 @@ func sortedKeys(values url.Values) []string {
 	return keys
 }
 
-func parsePreferCount(prefer []string, query *Query) error {
-	for _, header := range prefer {
-		for _, part := range strings.Split(header, ",") {
-			name, value, found := strings.Cut(strings.TrimSpace(part), "=")
-			if !found || !strings.EqualFold(name, "count") {
-				continue
-			}
-			switch strings.ToLower(value) {
-			case "exact":
-				query.ExactCount = true
-			case "planned", "estimated":
-				return ParseFailure{
-					Message: "Prefer count=planned and count=estimated are not available with MySQL",
-					Gap:     true,
-				}
-			}
+func applyCount(count CountMode, query *Query) error {
+	switch count {
+	case CountExact:
+		query.ExactCount = true
+	case CountPlanned, CountEstimated:
+		return ParseFailure{
+			Message: "Prefer count=planned and count=estimated are not available with MySQL",
+			Gap:     true,
 		}
 	}
 	return nil

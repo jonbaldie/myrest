@@ -94,7 +94,7 @@ func evalParse(in input) checkResult {
 	if in.Group != "" {
 		values.Set("or", "("+in.Group+")")
 	}
-	query, err := readquery.Parse(values, nil)
+	query, err := readquery.Parse(values, readquery.CountNone)
 	cover := []string{"parse"}
 	if err != nil {
 		cover = append(cover, "parse-err")

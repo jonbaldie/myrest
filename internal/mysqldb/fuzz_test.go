@@ -20,7 +20,7 @@ func FuzzReadFilterValueStaysAnArgument(f *testing.F) {
 			t.Skip()
 		}
 
-		query, err := readquery.Parse(url.Values{"name": {"eq." + value}}, nil)
+		query, err := readquery.Parse(url.Values{"name": {"eq." + value}}, readquery.CountNone)
 		if err != nil {
 			t.Skip()
 		}
@@ -32,7 +32,7 @@ func FuzzReadFilterValueStaysAnArgument(f *testing.F) {
 		if err != nil {
 			t.Fatalf("buildSelect: %v", err)
 		}
-		control, err := readquery.Parse(url.Values{"name": {"eq.control"}}, nil)
+		control, err := readquery.Parse(url.Values{"name": {"eq.control"}}, readquery.CountNone)
 		if err != nil {
 			t.Fatalf("parse control query: %v", err)
 		}

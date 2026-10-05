@@ -269,3 +269,65 @@ func TestViewWithoutSelectIsNotAUsableResource(t *testing.T) {
 	response, body := get(t, service, "/locked_view")
 	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
 }
+
+// read-002: Prefer handling=strict refuses invalid preferences on a table
+// read, as it does on writes and RPC (issue #213).
+func TestReadPreferHandlingStrictRefusesInvalid(t *testing.T) {
+	t.Parallel()
+
+	for _, header := range []string{
+		"handling=strict, bogus=1",
+		"handling=strict, count=bogus",
+	} {
+		t.Run(header, func(t *testing.T) {
+			t.Parallel()
+			source := &reader{}
+			headers := make(http.Header)
+			headers.Set("Prefer", header)
+			response, body := apitest.Do(
+				t, http.MethodGet, serve(t, source, settings()).URL()+"/items", headers,
+			)
+
+			envelope := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST122")
+			if envelope.Message != "Invalid preferences given with handling=strict" {
+				t.Fatalf("message = %q", envelope.Message)
+			}
+			if source.role != "" {
+				t.Fatal("reader must not run")
+			}
+		})
+	}
+}
+
+// read-002: Prefer handling=lenient keeps ignoring invalid preferences on a
+// table read.
+func TestReadPreferHandlingLenientIgnoresInvalid(t *testing.T) {
+	t.Parallel()
+
+	headers := make(http.Header)
+	headers.Set("Prefer", "handling=lenient, bogus=1, count=bogus")
+	response, body := apitest.Do(
+		t, http.MethodGet, serve(t, &reader{}, settings()).URL()+"/items", headers,
+	)
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	if got := response.Header.Get("Preference-Applied"); got != "" {
+		t.Fatalf("Preference-Applied = %q, want none", got)
+	}
+}
+
+// read-002: under handling=strict, count=planned keeps its MySQL gap refusal on
+// a read and is not a PGRST122 token.
+func TestReadPreferHandlingStrictKeepsCountGap(t *testing.T) {
+	t.Parallel()
+
+	headers := make(http.Header)
+	headers.Set("Prefer", "handling=strict, count=planned")
+	response, body := apitest.Do(
+		t, http.MethodGet, serve(t, &reader{}, settings()).URL()+"/items", headers,
+	)
+
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+}

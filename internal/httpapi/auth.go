@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jonbaldie/myrest/internal/jwt"
+	"github.com/jonbaldie/myrest/internal/prefer"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
@@ -20,8 +21,12 @@ const (
 // requestRole picks the database role of the request: the JWT role claim on a
 // valid Bearer token, or the anonymous database role when there is no usable
 // JWT. Non-Bearer schemes and Postgres-only authz Prefer values are refused.
-func (s *Service) requestRole(writer http.ResponseWriter, request *http.Request) (schemacache.Role, bool) {
-	if refused := refuseUnsupportedAuth(writer, request); refused {
+func (s *Service) requestRole(
+	writer http.ResponseWriter,
+	request *http.Request,
+	preferences prefer.Preferences,
+) (schemacache.Role, bool) {
+	if refused := refuseUnsupportedAuth(writer, preferences); refused {
 		return "", false
 	}
 
@@ -35,22 +40,25 @@ func (s *Service) requestRole(writer http.ResponseWriter, request *http.Request)
 	return s.roleFromBearer(writer, token)
 }
 
-func refuseUnsupportedAuth(writer http.ResponseWriter, request *http.Request) bool {
-	if preferAsksForRowSecurity(request) {
+// refuseUnsupportedAuth refuses the Prefer tokens that ask for Postgres-only
+// features. MySQL has no row-level security and no request GUCs, and its
+// session time zone is not the Postgres Prefer timezone contract.
+func refuseUnsupportedAuth(writer http.ResponseWriter, preferences prefer.Preferences) bool {
+	if preferences.RowSecurity {
 		writeUnsupportedFeature(
 			writer,
 			"Postgres row-level security is not available with MySQL",
 		)
 		return true
 	}
-	if preferAsksForRequestGUCs(request) {
+	if preferences.JWTClaims {
 		writeUnsupportedFeature(
 			writer,
 			"Request GUCs and request.jwt.claims are not available with MySQL",
 		)
 		return true
 	}
-	if preferAsksForTimezone(request) {
+	if preferences.Timezone {
 		writeUnsupportedFeature(
 			writer,
 			"Prefer timezone is not available with MySQL",
@@ -132,35 +140,4 @@ func writeAuthFailure(writer http.ResponseWriter, code, message string) {
 		)
 	}
 	writeFailure(writer, http.StatusUnauthorized, code, message)
-}
-
-// preferAsksForRowSecurity finds a Prefer token that asks for Postgres
-// row-level security. myrest refuses it: MySQL has no RLS, and myrest offers
-// no fake row policy layer.
-func preferAsksForRowSecurity(request *http.Request) bool {
-	return preferHolds(request, "row-security")
-}
-
-// preferAsksForRequestGUCs finds a Prefer token that asks for claim or header
-// injection as request GUCs in SQL. myrest refuses it: MySQL has no GUCs.
-func preferAsksForRequestGUCs(request *http.Request) bool {
-	return preferHolds(request, "jwt-claims")
-}
-
-// preferAsksForTimezone finds Prefer timezone. myrest refuses it: session
-// time zone on MySQL is not the Postgres GUC Prefer contract.
-func preferAsksForTimezone(request *http.Request) bool {
-	return preferHolds(request, "timezone")
-}
-
-func preferHolds(request *http.Request, token string) bool {
-	for _, header := range request.Header.Values("Prefer") {
-		for _, part := range strings.Split(header, ",") {
-			name, _, _ := strings.Cut(strings.TrimSpace(part), "=")
-			if strings.EqualFold(name, token) {
-				return true
-			}
-		}
-	}
-	return false
 }

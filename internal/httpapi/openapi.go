@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jonbaldie/myrest/internal/config"
+	"github.com/jonbaldie/myrest/internal/prefer"
 	"github.com/jonbaldie/myrest/internal/rpcexec"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
@@ -17,13 +18,13 @@ const openAPIContentType = "application/openapi+json"
 // writeRoot answers GET /. It serves the OpenAPI document from the schema
 // cache and the privileges of the active database role, unless openapi-mode
 // is disabled or db-root-spec replaces the body.
-func (s *Service) writeRoot(writer http.ResponseWriter, request *http.Request) {
+func (s *Service) writeRoot(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
 	if s.settings.OpenAPI.Mode == config.OpenAPIModeDisabled {
 		writeNoHandler(writer, request)
 		return
 	}
 
-	role, ok := s.requestRole(writer, request)
+	role, ok := s.requestRole(writer, request, preferences)
 	if !ok {
 		return
 	}

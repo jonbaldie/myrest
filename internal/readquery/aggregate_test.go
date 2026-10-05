@@ -10,7 +10,7 @@ import (
 func TestParseBareCountAggregate(t *testing.T) {
 	t.Parallel()
 
-	query, err := readquery.Parse(url.Values{"select": []string{"count()"}}, nil)
+	query, err := readquery.Parse(url.Values{"select": []string{"count()"}}, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestParseColumnAggregatesAndGroupColumn(t *testing.T) {
 
 	query, err := readquery.Parse(url.Values{
 		"select": []string{"total:id.sum(),id.avg(),id.min(),id.max(),name"},
-	}, nil)
+	}, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestParseAggregateInsideEmbedAndSpreadMark(t *testing.T) {
 
 	query, err := readquery.Parse(url.Values{
 		"select": []string{"name,orders(count()),...tags(id.count())"},
-	}, nil)
+	}, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

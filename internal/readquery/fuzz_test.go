@@ -15,7 +15,7 @@ func FuzzParseDoesNotPanic(f *testing.F) {
 		values.Set("order", orderText)
 		values.Set("name", "eq."+filterValue)
 		values.Set("or", "("+groupValue+")")
-		_, _ = Parse(values, nil)
+		_, _ = Parse(values, CountNone)
 	})
 }
 
@@ -25,7 +25,7 @@ func FuzzParseRejectsExtraLogicalClosingParen(f *testing.F) {
 		if strings.ContainsAny(value, "()") {
 			t.Skip()
 		}
-		_, err := Parse(url.Values{"or": {"(id.eq." + value + "))"}}, nil)
+		_, err := Parse(url.Values{"or": {"(id.eq." + value + "))"}}, CountNone)
 		if err == nil {
 			t.Fatalf("accepted logical filter with an extra closing parenthesis: %q", value)
 		}
@@ -38,7 +38,7 @@ func FuzzParseRejectsExtraInClosingParen(f *testing.F) {
 		if strings.ContainsAny(value, "()") {
 			t.Skip()
 		}
-		_, err := Parse(url.Values{"id": {"in.(" + value + "))"}}, nil)
+		_, err := Parse(url.Values{"id": {"in.(" + value + "))"}}, CountNone)
 		if err == nil {
 			t.Fatalf("accepted an in filter with an extra closing parenthesis: %q", value)
 		}
@@ -52,7 +52,7 @@ func FuzzParseInListPreservesEscapedQuotes(f *testing.F) {
 			t.Skip()
 		}
 		escaped := strings.ReplaceAll(value, `"`, `""`)
-		query, err := Parse(url.Values{"id": {`in.("` + escaped + `")`}}, nil)
+		query, err := Parse(url.Values{"id": {`in.("` + escaped + `")`}}, CountNone)
 		if err != nil {
 			t.Skip()
 		}

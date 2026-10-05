@@ -58,7 +58,7 @@ func TestHasRowSetFeatures(t *testing.T) {
 func TestShapeFiltersARowSetWithAQuotedValue(t *testing.T) {
 	t.Parallel()
 
-	query, err := readquery.Parse(url.Values{"name": {`eq."alpha,beta"`}}, nil)
+	query, err := readquery.Parse(url.Values{"name": {`eq."alpha,beta"`}}, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestShapeIsDistinctQuotedNullIsALiteral(t *testing.T) {
 		{raw: `not.isdistinct."red"`, ids: []int64{2}},
 	}
 	for _, c := range cases {
-		query, err := readquery.Parse(url.Values{"name": {c.raw}}, nil)
+		query, err := readquery.Parse(url.Values{"name": {c.raw}}, readquery.CountNone)
 		if err != nil {
 			t.Fatalf("Parse %s: %v", c.raw, err)
 		}
@@ -181,7 +181,7 @@ func TestShapeNullFilterParity(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			query, err := readquery.Parse(url.Values{"name": {c.raw}}, nil)
+			query, err := readquery.Parse(url.Values{"name": {c.raw}}, readquery.CountNone)
 			if err != nil {
 				t.Fatalf("Parse %s: %v", c.raw, err)
 			}
