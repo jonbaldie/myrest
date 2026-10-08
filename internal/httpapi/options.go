@@ -43,11 +43,11 @@ func (s *Service) optionsRoutine(writer http.ResponseWriter, request *http.Reque
 	if !ok {
 		return
 	}
-	routine, ok := s.admitRoutineResource(writer, requested)
+	admission, ok := s.admitRoutineResource(writer, requested)
 	if !ok {
 		return
 	}
-	writeAllow(writer, routineAllowMethods(routine))
+	writeAllow(writer, routineAllowMethods(admission.routine))
 }
 
 // routineAllowMethods builds the Allow list for a routine. EXECUTE is already

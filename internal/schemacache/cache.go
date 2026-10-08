@@ -83,10 +83,18 @@ type Catalog struct {
 }
 
 // Cache answers which table a request can read as a given database role.
-// Replace puts a new catalog into the cache under the lock, so a request that
-// reads during a reload still sees one complete snapshot.
+// Replace puts a new snapshot into the cache under the lock, so a request that
+// reads during a reload still sees one complete snapshot. The query methods of
+// Cache each read one fresh snapshot; a request that asks more than one
+// question reads one Snapshot with ReadSnapshot and asks it every question.
 type Cache struct {
-	mu                sync.RWMutex
+	mu       sync.RWMutex
+	snapshot Snapshot
+}
+
+// Snapshot is one complete, immutable set of schema-cache facts. A request
+// can use it while an explicit reload replaces the cache with new facts.
+type Snapshot struct {
 	tables            map[TableID]Table
 	views             []TableID
 	viewSet           map[TableID]bool
@@ -95,18 +103,6 @@ type Cache struct {
 	columns           map[TableID][]Column
 	keys              map[TableID][]KeyFact
 	foreignKeys       []ForeignKeyFact
-	routines          []RoutineFact
-	routinesByID      map[RoutineID]RoutineFact
-	tablePrivileges   map[Role]map[tablePrivilege]bool
-	routinePrivileges map[Role]map[routinePrivilege]bool
-}
-
-// Snapshot is one complete, immutable set of schema-cache facts. A request
-// can use it while an explicit reload replaces the cache with new facts.
-type Snapshot struct {
-	tables            map[TableID]Table
-	viewSet           map[TableID]bool
-	updatableViews    map[TableID]bool
 	routines          []RoutineFact
 	routinesByID      map[RoutineID]RoutineFact
 	tablePrivileges   map[Role]map[tablePrivilege]bool
@@ -125,38 +121,29 @@ type routinePrivilege struct {
 
 // Build makes a cache from catalog data.
 func Build(catalog Catalog) *Cache {
-	cache := &Cache{}
-	cache.replaceUnlocked(catalog)
-	return cache
+	return &Cache{snapshot: buildSnapshot(catalog)}
 }
 
 // Replace puts a new catalog into the cache. After it returns, Resource answers
 // from the new facts alone.
 func (c *Cache) Replace(catalog Catalog) {
+	snapshot := buildSnapshot(catalog)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.replaceUnlocked(catalog)
+	c.snapshot = snapshot
 }
 
 // ReadSnapshot gives one complete schema-cache state. Cache replacement
-// installs fresh maps and slices, so these facts stay unchanged after reload.
+// installs a fresh snapshot, so these facts stay unchanged after reload.
 func ReadSnapshot(c *Cache) Snapshot {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return Snapshot{
-		tables:            c.tables,
-		viewSet:           c.viewSet,
-		updatableViews:    c.updatableViews,
-		routines:          c.routines,
-		routinesByID:      c.routinesByID,
-		tablePrivileges:   c.tablePrivileges,
-		routinePrivileges: c.routinePrivileges,
-	}
+	return c.snapshot
 }
 
-// replaceUnlocked builds the maps of the cache from catalog data. The caller
-// holds the write lock when the cache already serves requests.
-func (c *Cache) replaceUnlocked(catalog Catalog) {
+// buildSnapshot builds the maps of one snapshot from catalog data. It shares
+// nothing with an earlier snapshot.
+func buildSnapshot(catalog Catalog) Snapshot {
 	tables := make(map[TableID]Table, len(catalog.Tables))
 	columns := make(map[TableID][]Column)
 	comments := make(map[TableID]string, len(catalog.RelationComments))
@@ -196,18 +183,20 @@ func (c *Cache) replaceUnlocked(catalog Catalog) {
 	foreignKeys := append([]ForeignKeyFact(nil), catalog.ForeignKeys...)
 	routines, routinesByID := indexRoutines(catalog.Routines)
 
-	c.tables = tables
-	c.views = views
-	c.viewSet = viewSet
-	c.updatableViews = updatableViews
-	c.comments = comments
-	c.columns = columns
-	c.keys = keys
-	c.foreignKeys = foreignKeys
-	c.routines = routines
-	c.routinesByID = routinesByID
-	c.tablePrivileges = tablePrivileges
-	c.routinePrivileges = routinePrivileges
+	return Snapshot{
+		tables:            tables,
+		views:             views,
+		viewSet:           viewSet,
+		updatableViews:    updatableViews,
+		comments:          comments,
+		columns:           columns,
+		keys:              keys,
+		foreignKeys:       foreignKeys,
+		routines:          routines,
+		routinesByID:      routinesByID,
+		tablePrivileges:   tablePrivileges,
+		routinePrivileges: routinePrivileges,
+	}
 }
 
 // indexViews copies view ids and builds the view and updatable-view sets.
@@ -416,61 +405,67 @@ func TableIDsFrom(snapshot Snapshot) []TableID {
 
 // HasTable says whether the cache holds this table or view id as a relation.
 func (c *Cache) HasTable(id TableID) bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	_, held := c.tables[id]
-	return held
+	return HasTableIn(ReadSnapshot(c), id)
 }
 
 // Views are the views the catalog holds. A view with the matching grant is a
 // resource under the same exposure rule as a table.
 func (c *Cache) Views() []TableID {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return append([]TableID(nil), c.views...)
+	return ViewsFrom(ReadSnapshot(c))
+}
+
+// ViewsFrom lists the views of one schema-cache snapshot.
+func ViewsFrom(snapshot Snapshot) []TableID {
+	return append([]TableID(nil), snapshot.views...)
 }
 
 // IsWritable says whether a write may target this relation. A base table is
 // writable. A view is writable only when MySQL marks it IS_UPDATABLE = YES.
 // Grants still decide which write method is allowed.
 func (c *Cache) IsWritable(id TableID) bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if _, held := c.tables[id]; !held {
-		return false
-	}
-	if c.viewSet[id] {
-		return c.updatableViews[id]
-	}
-	return true
+	return IsWritableIn(ReadSnapshot(c), id)
 }
 
 // Comment is the comment MySQL holds on a table or a view.
 func (c *Cache) Comment(id TableID) string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.comments[id]
+	return CommentFrom(ReadSnapshot(c), id)
+}
+
+// CommentFrom gives the comment on a table or view of one schema-cache snapshot.
+func CommentFrom(snapshot Snapshot, id TableID) string {
+	return snapshot.comments[id]
 }
 
 // ColumnsOf are the columns of a table or view, in catalog order.
 func (c *Cache) ColumnsOf(id TableID) []Column {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return append([]Column(nil), c.columns[id]...)
+	return ColumnsFrom(ReadSnapshot(c), id)
+}
+
+// ColumnsFrom gives the columns of a table or view of one schema-cache
+// snapshot, in catalog order.
+func ColumnsFrom(snapshot Snapshot, id TableID) []Column {
+	return append([]Column(nil), snapshot.columns[id]...)
 }
 
 // KeysOf are the primary and unique keys of a table or view.
 func (c *Cache) KeysOf(id TableID) []KeyFact {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return append([]KeyFact(nil), c.keys[id]...)
+	return KeysFrom(ReadSnapshot(c), id)
+}
+
+// KeysFrom gives the primary and unique keys of a table or view of one
+// schema-cache snapshot.
+func KeysFrom(snapshot Snapshot, id TableID) []KeyFact {
+	return append([]KeyFact(nil), snapshot.keys[id]...)
 }
 
 // ForeignKeys are the foreign keys the catalog declares.
 func (c *Cache) ForeignKeys() []ForeignKeyFact {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return append([]ForeignKeyFact(nil), c.foreignKeys...)
+	return ForeignKeysFrom(ReadSnapshot(c))
+}
+
+// ForeignKeysFrom lists the foreign keys of one schema-cache snapshot.
+func ForeignKeysFrom(snapshot Snapshot) []ForeignKeyFact {
+	return append([]ForeignKeyFact(nil), snapshot.foreignKeys...)
 }
 
 // Routines are the functions and procedures the catalog holds.
@@ -533,7 +528,11 @@ func HasTablePrivilegeFrom(snapshot Snapshot, role Role, id TableID, privilege s
 // HasRoutinePrivilege says whether the role holds EXECUTE on a routine, of
 // itself or through a role grant.
 func (c *Cache) HasRoutinePrivilege(role Role, id RoutineID, privilege string) bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.routinePrivileges[bareName(role)][routinePrivilege{routine: id, privilege: privilege}]
+	return HasRoutinePrivilegeFrom(ReadSnapshot(c), role, id, privilege)
+}
+
+// HasRoutinePrivilegeFrom says whether the role holds a routine privilege in
+// the snapshot, of itself or through a role grant.
+func HasRoutinePrivilegeFrom(snapshot Snapshot, role Role, id RoutineID, privilege string) bool {
+	return snapshot.routinePrivileges[bareName(role)][routinePrivilege{routine: id, privilege: privilege}]
 }

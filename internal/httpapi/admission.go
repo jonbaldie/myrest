@@ -39,11 +39,14 @@ const (
 	noRoutineRefusal
 )
 
+// admissionResult carries the snapshot admission read, so that every later
+// step of the request answers from the same schema (issue #230).
 type admissionResult struct {
-	table   schemacache.Table
-	routine schemacache.RoutineFact
-	methods []string
-	refusal admissionRefusal
+	snapshot schemacache.Snapshot
+	table    schemacache.Table
+	routine  schemacache.RoutineFact
+	methods  []string
+	refusal  admissionRefusal
 }
 
 // selectResource selects a requested Resource for a known database role. The
@@ -73,7 +76,10 @@ func (requested requestedResource) routine() schemacache.RoutineID {
 // admit resolves one HTTP Resource need from one complete schema-cache
 // snapshot. Its callers keep only the HTTP-specific refusal and response work.
 func (s *Service) admit(request admissionRequest) admissionResult {
-	return admitFrom(schemacache.ReadSnapshot(s.cache), request)
+	snapshot := schemacache.ReadSnapshot(s.cache)
+	admission := admitFrom(snapshot, request)
+	admission.snapshot = snapshot
+	return admission
 }
 
 func admitFrom(snapshot schemacache.Snapshot, request admissionRequest) admissionResult {
@@ -148,14 +154,14 @@ func admitTableMethods(snapshot schemacache.Snapshot, requested requestedResourc
 func (s *Service) admitReadResource(
 	writer http.ResponseWriter,
 	requested requestedResource,
-) (schemacache.Table, bool) {
+) (admissionResult, bool) {
 	asked := requested.table()
 	admission := s.admit(admissionRequest{requested: requested, need: readTableNeed})
 	if admission.refusal != noAdmissionRefusal {
 		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(asked))
-		return schemacache.Table{}, false
+		return admissionResult{}, false
 	}
-	return admission.table, true
+	return admission, true
 }
 
 // admitWriteResource admits a writable table Resource with the method grant.
@@ -164,7 +170,7 @@ func (s *Service) admitWriteResource(
 	writer http.ResponseWriter,
 	requested requestedResource,
 	privilege string,
-) (schemacache.Table, bool) {
+) (admissionResult, bool) {
 	asked := requested.table()
 	admission := s.admit(admissionRequest{
 		requested: requested,
@@ -173,13 +179,13 @@ func (s *Service) admitWriteResource(
 	})
 	if admission.refusal == noTableRefusal {
 		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(asked))
-		return schemacache.Table{}, false
+		return admissionResult{}, false
 	}
 	if admission.refusal == nonWritableViewRefusal {
 		writeFailure(writer, http.StatusBadRequest, codePostgresOnlyFeature, "The view is not updatable")
-		return schemacache.Table{}, false
+		return admissionResult{}, false
 	}
-	return admission.table, true
+	return admission, true
 }
 
 // admitRoutineResource admits a routine Resource with EXECUTE. A refused
@@ -187,14 +193,14 @@ func (s *Service) admitWriteResource(
 func (s *Service) admitRoutineResource(
 	writer http.ResponseWriter,
 	requested requestedResource,
-) (schemacache.RoutineFact, bool) {
+) (admissionResult, bool) {
 	asked := requested.routine()
 	admission := s.admit(admissionRequest{requested: requested, need: routineNeed})
 	if admission.refusal != noAdmissionRefusal {
 		writeFailure(writer, http.StatusNotFound, codeNoRoutine, noRoutineMessage(asked))
-		return schemacache.RoutineFact{}, false
+		return admissionResult{}, false
 	}
-	return admission.routine, true
+	return admission, true
 }
 
 // tableAllowMethods gives the methods OPTIONS and discovery can advertise for

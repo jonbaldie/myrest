@@ -56,14 +56,14 @@ func (s *Service) writeRootSpec(
 		return
 	}
 	requested := requestedResource{role: role, database: database, name: routineName}
-	routine, ok := s.admitRoutineResource(writer, requested)
+	admission, ok := s.admitRoutineResource(writer, requested)
 	if !ok {
 		return
 	}
 	outcome, err := s.executor.Execute(
 		request.Context(),
 		rpcexec.Intent{
-			Routine:  routine,
+			Routine:  admission.routine,
 			Role:     role,
 			Args:     map[string]any{},
 			CallMode: rpcexec.CallModePost,

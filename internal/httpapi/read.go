@@ -57,7 +57,7 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request, p
 	if !ok {
 		return
 	}
-	table, ok := s.admitReadResource(writer, requested)
+	admission, ok := s.admitReadResource(writer, requested)
 	if !ok {
 		return
 	}
@@ -67,7 +67,7 @@ func (s *Service) readTable(writer http.ResponseWriter, request *http.Request, p
 		return
 	}
 
-	read, err := s.readWithEmbeds(request.Context(), requested.role, table, query)
+	read, err := s.readWithEmbeds(request.Context(), admission.snapshot, requested.role, admission.table, query)
 	if err != nil {
 		s.writeReadFailure(writer, requested.table(), requested.role, err)
 		return
@@ -100,11 +100,12 @@ func (s *Service) admitReadQuery(
 
 func (s *Service) readWithEmbeds(
 	ctx context.Context,
+	snapshot schemacache.Snapshot,
 	role schemacache.Role,
 	table schemacache.Table,
 	query readquery.Query,
 ) (readquery.Result, error) {
-	plan, err := s.planEmbeds(role, table.ID, query.Embeds)
+	plan, err := planEmbeds(snapshot, role, table.ID, query.Embeds)
 	if err != nil {
 		return readquery.Result{}, err
 	}

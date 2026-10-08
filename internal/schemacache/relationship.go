@@ -63,21 +63,24 @@ func (e ComputedRelationship) Error() string {
 // hint is a foreign-key name or column name that picks one path when several
 // apply.
 func (c *Cache) ResolveEmbed(role Role, origin TableID, targetName, hint string) (Relationship, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	return ResolveEmbedIn(ReadSnapshot(c), role, origin, targetName, hint)
+}
 
+// ResolveEmbedIn finds the declared relationship from origin to the named
+// target in one schema-cache snapshot.
+func ResolveEmbedIn(snapshot Snapshot, role Role, origin TableID, targetName, hint string) (Relationship, error) {
 	targetID := TableID{Database: origin.Database, Name: targetName}
-	if _, held := c.tables[targetID]; !held {
-		if _, isRoutine := c.routinesByID[RoutineID{Database: origin.Database, Name: targetName}]; isRoutine {
+	if _, held := snapshot.tables[targetID]; !held {
+		if _, isRoutine := snapshot.routinesByID[RoutineID{Database: origin.Database, Name: targetName}]; isRoutine {
 			return Relationship{}, ComputedRelationship{Name: targetName}
 		}
 		return Relationship{}, RelationshipMissing{Origin: origin, Target: targetName}
 	}
-	if !c.tablePrivileges[bareName(role)][tablePrivilege{table: targetID, privilege: "SELECT"}] {
+	if !HasTablePrivilegeFrom(snapshot, role, targetID, "SELECT") {
 		return Relationship{}, RelationshipMissing{Origin: origin, Target: targetName}
 	}
 
-	candidates := c.relationshipsUnlocked(origin, targetID)
+	candidates := snapshot.relationships(origin, targetID)
 	if hint != "" {
 		candidates = filterByHint(candidates, hint)
 	}
@@ -95,9 +98,9 @@ func (c *Cache) ResolveEmbed(role Role, origin TableID, targetName, hint string)
 	}
 }
 
-func (c *Cache) relationshipsUnlocked(origin, target TableID) []Relationship {
+func (snapshot Snapshot) relationships(origin, target TableID) []Relationship {
 	var found []Relationship
-	for _, fk := range c.foreignKeys {
+	for _, fk := range snapshot.foreignKeys {
 		if fk.Table == origin && fk.ReferencedTable == target {
 			found = append(found, relationshipFromFK(fk, ManyToOne))
 		}
@@ -108,7 +111,7 @@ func (c *Cache) relationshipsUnlocked(origin, target TableID) []Relationship {
 			found = append(found, relationshipFromFK(fk, OneToMany))
 		}
 	}
-	found = append(found, c.manyToManyUnlocked(origin, target)...)
+	found = append(found, snapshot.manyToMany(origin, target)...)
 	return found
 }
 
@@ -132,17 +135,17 @@ func relationshipFromFK(fk ForeignKeyFact, cardinality Cardinality) Relationship
 	return rel
 }
 
-func (c *Cache) manyToManyUnlocked(origin, target TableID) []Relationship {
+func (snapshot Snapshot) manyToMany(origin, target TableID) []Relationship {
 	var found []Relationship
-	for joinID := range c.tables {
+	for joinID := range snapshot.tables {
 		if joinID == origin || joinID == target {
 			continue
 		}
-		toOrigin, toTarget, ok := c.joinTableFKs(joinID, origin, target)
+		toOrigin, toTarget, ok := snapshot.joinTableFKs(joinID, origin, target)
 		if !ok {
 			continue
 		}
-		if !c.pkCoversFKs(joinID, toOrigin, toTarget) {
+		if !snapshot.pkCoversFKs(joinID, toOrigin, toTarget) {
 			continue
 		}
 		found = append(found, Relationship{
@@ -150,8 +153,8 @@ func (c *Cache) manyToManyUnlocked(origin, target TableID) []Relationship {
 			Name:              joinID.Name,
 			Origin:            origin,
 			Target:            target,
-			OriginColumns:     primaryKeyColumns(c.keys[origin]),
-			TargetColumns:     primaryKeyColumns(c.keys[target]),
+			OriginColumns:     primaryKeyColumns(snapshot.keys[origin]),
+			TargetColumns:     primaryKeyColumns(snapshot.keys[target]),
 			JoinTable:         joinID,
 			JoinOriginColumns: append([]string(nil), toOrigin.Columns...),
 			JoinTargetColumns: append([]string(nil), toTarget.Columns...),
@@ -160,10 +163,10 @@ func (c *Cache) manyToManyUnlocked(origin, target TableID) []Relationship {
 	return found
 }
 
-func (c *Cache) joinTableFKs(join, origin, target TableID) (toOrigin, toTarget ForeignKeyFact, ok bool) {
+func (snapshot Snapshot) joinTableFKs(join, origin, target TableID) (toOrigin, toTarget ForeignKeyFact, ok bool) {
 	var originFK, targetFK ForeignKeyFact
 	var haveOrigin, haveTarget bool
-	for _, fk := range c.foreignKeys {
+	for _, fk := range snapshot.foreignKeys {
 		if fk.Table != join {
 			continue
 		}
@@ -179,8 +182,8 @@ func (c *Cache) joinTableFKs(join, origin, target TableID) (toOrigin, toTarget F
 	return originFK, targetFK, haveOrigin && haveTarget
 }
 
-func (c *Cache) pkCoversFKs(join TableID, a, b ForeignKeyFact) bool {
-	pk := primaryKeyColumns(c.keys[join])
+func (snapshot Snapshot) pkCoversFKs(join TableID, a, b ForeignKeyFact) bool {
+	pk := primaryKeyColumns(snapshot.keys[join])
 	if len(pk) == 0 {
 		return false
 	}

@@ -79,21 +79,22 @@ const (
 // Content-Profile selects the database; with no header the table comes from
 // the default database.
 func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
-	role, asked, table, ok := s.lookupWriteTable(writer, request, preferences, "INSERT")
+	role, asked, admission, ok := s.lookupWriteTable(writer, request, preferences, "INSERT")
 	if !ok {
 		return
 	}
+	snapshot, table := admission.snapshot, admission.table
 	written, ok := s.readWritePrefer(writer, preferences, writeKindInsert)
 	if !ok {
 		return
 	}
-	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, written, writeBoundOptional)
+	query, plan, ok := s.parseWriteQuery(writer, request, snapshot, role, asked, written, writeBoundOptional)
 	if !ok {
 		return
 	}
 
-	primaryKey := schemacache.PrimaryKeyOf(s.cache.KeysOf(asked))
-	options, ok := s.buildWriteOptions(writer, role, asked, written, primaryKey, writeKindInsert)
+	primaryKey := schemacache.PrimaryKeyOf(schemacache.KeysFrom(snapshot, asked))
+	options, ok := s.buildWriteOptions(writer, snapshot, role, asked, written, primaryKey, writeKindInsert)
 	if !ok {
 		return
 	}
@@ -213,21 +214,22 @@ func appliedResolutionTokens(preferences prefer.Preferences) []string {
 // Content-Profile selects the database; with no header the table comes from
 // the default database.
 func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
-	role, asked, table, ok := s.lookupWriteTable(writer, request, preferences, "UPDATE")
+	role, asked, admission, ok := s.lookupWriteTable(writer, request, preferences, "UPDATE")
 	if !ok {
 		return
 	}
+	snapshot, table := admission.snapshot, admission.table
 	written, ok := s.readWritePrefer(writer, preferences, writeKindPatch)
 	if !ok {
 		return
 	}
-	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, written, writeBoundRequired)
+	query, plan, ok := s.parseWriteQuery(writer, request, snapshot, role, asked, written, writeBoundRequired)
 	if !ok {
 		return
 	}
 
-	primaryKey := schemacache.PrimaryKeyOf(s.cache.KeysOf(asked))
-	options, ok := s.buildWriteOptions(writer, role, asked, written, primaryKey, writeKindPatch)
+	primaryKey := schemacache.PrimaryKeyOf(schemacache.KeysFrom(snapshot, asked))
+	options, ok := s.buildWriteOptions(writer, snapshot, role, asked, written, primaryKey, writeKindPatch)
 	if !ok {
 		return
 	}
@@ -257,21 +259,22 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request, 
 // Content-Profile selects the database; with no header the table comes from
 // the default database.
 func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
-	role, asked, table, ok := s.lookupWriteTable(writer, request, preferences, "DELETE")
+	role, asked, admission, ok := s.lookupWriteTable(writer, request, preferences, "DELETE")
 	if !ok {
 		return
 	}
+	snapshot, table := admission.snapshot, admission.table
 	written, ok := s.readWritePrefer(writer, preferences, writeKindDelete)
 	if !ok {
 		return
 	}
-	query, plan, ok := s.parseWriteQuery(writer, request, role, asked, written, writeBoundRequired)
+	query, plan, ok := s.parseWriteQuery(writer, request, snapshot, role, asked, written, writeBoundRequired)
 	if !ok {
 		return
 	}
 
-	primaryKey := schemacache.PrimaryKeyOf(s.cache.KeysOf(asked))
-	options, ok := s.buildWriteOptions(writer, role, asked, written, primaryKey, writeKindDelete)
+	primaryKey := schemacache.PrimaryKeyOf(schemacache.KeysFrom(snapshot, asked))
+	options, ok := s.buildWriteOptions(writer, snapshot, role, asked, written, primaryKey, writeKindDelete)
 	if !ok {
 		return
 	}
@@ -306,15 +309,16 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request, pr
 	if !ok {
 		return
 	}
-	role, asked, table, ok := s.lookupPutTable(writer, request, preferences, resolution)
+	role, asked, admission, ok := s.lookupPutTable(writer, request, preferences, resolution)
 	if !ok {
 		return
 	}
-	row, primaryKey, ok := readPutRow(writer, request, s.cache, asked)
+	snapshot, table := admission.snapshot, admission.table
+	row, primaryKey, ok := readPutRow(writer, request, snapshot, asked)
 	if !ok {
 		return
 	}
-	options, ok := s.buildWriteOptions(writer, role, asked, written, primaryKey, writeKindPut)
+	options, ok := s.buildWriteOptions(writer, snapshot, role, asked, written, primaryKey, writeKindPut)
 	if !ok {
 		return
 	}
@@ -392,6 +396,7 @@ func honoursMaxAffected(kind writeKind) bool {
 // buildWriteOptions checks representation honesty and builds database options.
 func (s *Service) buildWriteOptions(
 	writer http.ResponseWriter,
+	snapshot schemacache.Snapshot,
 	role schemacache.Role,
 	asked schemacache.TableID,
 	written writePrefer,
@@ -415,7 +420,7 @@ func (s *Service) buildWriteOptions(
 			writeUnsupportedFeature(writer, representationLimitMessage(kind))
 			return writequery.Options{}, false
 		}
-		if !s.cache.HasTablePrivilege(role, asked, "SELECT") {
+		if !schemacache.HasTablePrivilegeFrom(snapshot, role, asked, "SELECT") {
 			writeUnsupportedFeature(
 				writer,
 				"Prefer return=representation needs SELECT to return affected rows honestly",
@@ -460,27 +465,27 @@ func (s *Service) lookupPutTable(
 	request *http.Request,
 	preferences prefer.Preferences,
 	resolution UpsertResolution,
-) (schemacache.Role, schemacache.TableID, schemacache.Table, bool) {
-	role, asked, table, ok := s.lookupWriteTable(writer, request, preferences, "INSERT")
+) (schemacache.Role, schemacache.TableID, admissionResult, bool) {
+	role, asked, admission, ok := s.lookupWriteTable(writer, request, preferences, "INSERT")
 	if !ok {
-		return "", schemacache.TableID{}, schemacache.Table{}, false
+		return "", schemacache.TableID{}, admissionResult{}, false
 	}
 	if resolution == UpsertMergeDuplicates &&
-		!s.cache.HasTablePrivilege(role, asked, "UPDATE") {
+		!schemacache.HasTablePrivilegeFrom(admission.snapshot, role, asked, "UPDATE") {
 		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(asked))
-		return "", schemacache.TableID{}, schemacache.Table{}, false
+		return "", schemacache.TableID{}, admissionResult{}, false
 	}
-	return role, asked, table, true
+	return role, asked, admission, true
 }
 
 // readPutRow validates the primary-key filters and the single JSON object body.
 func readPutRow(
 	writer http.ResponseWriter,
 	request *http.Request,
-	cache *schemacache.Cache,
+	snapshot schemacache.Snapshot,
 	asked schemacache.TableID,
 ) (map[string]any, []string, bool) {
-	primaryKey := schemacache.PrimaryKeyOf(cache.KeysOf(asked))
+	primaryKey := schemacache.PrimaryKeyOf(schemacache.KeysFrom(snapshot, asked))
 	if len(primaryKey) == 0 {
 		writeFailure(
 			writer,
@@ -627,31 +632,32 @@ func readPutObject(writer http.ResponseWriter, request *http.Request) (map[strin
 
 // lookupWriteTable finds the table for a write under Content-Profile. It also
 // checks that a Writer is configured and that the role holds the privilege.
+// The admission it returns carries the snapshot the whole write answers from.
 func (s *Service) lookupWriteTable(
 	writer http.ResponseWriter,
 	request *http.Request,
 	preferences prefer.Preferences,
 	privilege string,
-) (schemacache.Role, schemacache.TableID, schemacache.Table, bool) {
+) (schemacache.Role, schemacache.TableID, admissionResult, bool) {
 	role, ok := s.requestRole(writer, request, preferences)
 	if !ok {
-		return "", schemacache.TableID{}, schemacache.Table{}, false
+		return "", schemacache.TableID{}, admissionResult{}, false
 	}
 	if s.writer == nil {
 		writeNoHandler(writer, request)
-		return "", schemacache.TableID{}, schemacache.Table{}, false
+		return "", schemacache.TableID{}, admissionResult{}, false
 	}
 	requested, ok := s.selectResource(
 		writer, request, role, headerContentProfile, request.PathValue("table"),
 	)
 	if !ok {
-		return "", schemacache.TableID{}, schemacache.Table{}, false
+		return "", schemacache.TableID{}, admissionResult{}, false
 	}
-	table, ok := s.admitWriteResource(writer, requested, privilege)
+	admission, ok := s.admitWriteResource(writer, requested, privilege)
 	if !ok {
-		return "", schemacache.TableID{}, schemacache.Table{}, false
+		return "", schemacache.TableID{}, admissionResult{}, false
 	}
-	return requested.role, requested.table(), table, true
+	return requested.role, requested.table(), admission, true
 }
 
 func refuseUnbounded(writer http.ResponseWriter, written writePrefer, query readquery.Query) bool {
@@ -800,6 +806,7 @@ const (
 func (s *Service) parseWriteQuery(
 	writer http.ResponseWriter,
 	request *http.Request,
+	snapshot schemacache.Snapshot,
 	role schemacache.Role,
 	origin schemacache.TableID,
 	written writePrefer,
@@ -813,7 +820,7 @@ func (s *Service) parseWriteQuery(
 	if bound == writeBoundRequired && refuseUnbounded(writer, written, query) {
 		return readquery.Query{}, nil, false
 	}
-	plan, ok := s.planWriteEmbeds(writer, role, origin, written, query)
+	plan, ok := planWriteEmbeds(writer, snapshot, role, origin, written, query)
 	if !ok {
 		return readquery.Query{}, nil, false
 	}
@@ -823,8 +830,9 @@ func (s *Service) parseWriteQuery(
 // planWriteEmbeds resolves nested select relationships before a write when
 // Prefer return=representation asks for an embed. A missing relationship
 // refuses here so myrest never invents one and never writes on a bad select.
-func (s *Service) planWriteEmbeds(
+func planWriteEmbeds(
 	writer http.ResponseWriter,
+	snapshot schemacache.Snapshot,
 	role schemacache.Role,
 	origin schemacache.TableID,
 	written writePrefer,
@@ -833,7 +841,7 @@ func (s *Service) planWriteEmbeds(
 	if written.Return != returnRepresentation || len(query.Embeds) == 0 {
 		return nil, true
 	}
-	plan, err := s.planEmbeds(role, origin, query.Embeds)
+	plan, err := planEmbeds(snapshot, role, origin, query.Embeds)
 	if err != nil {
 		if writeEmbedPlanFailure(writer, err) {
 			return nil, false
