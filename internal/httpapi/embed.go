@@ -20,39 +20,52 @@ const (
 	codeAmbiguousRelationship = "PGRST201"
 )
 
-// plannedEmbed is one embed resolved against the schema cache.
+// plannedEmbed is one embed resolved against the schema cache. It holds every
+// schema fact its execution reads, so execution never reads the cache again.
 type plannedEmbed struct {
 	ask          readquery.Embed
 	relationship schemacache.Relationship
 	target       schemacache.Table
+	// joinTable is the many-to-many join table, when the role can read it.
+	joinTable    schemacache.Table
+	joinReadable bool
 	children     []plannedEmbed
 }
 
-func (s *Service) planEmbeds(
+// planEmbeds resolves embeds from one schema-cache snapshot: the snapshot the
+// request was admitted from.
+func planEmbeds(
+	snapshot schemacache.Snapshot,
 	role schemacache.Role,
 	origin schemacache.TableID,
 	asks []readquery.Embed,
 ) ([]plannedEmbed, error) {
 	planned := make([]plannedEmbed, 0, len(asks))
 	for _, ask := range asks {
-		rel, err := s.cache.ResolveEmbed(role, origin, ask.Resource, ask.Hint)
+		rel, err := schemacache.ResolveEmbedIn(snapshot, role, origin, ask.Resource, ask.Hint)
 		if err != nil {
 			return nil, err
 		}
 		if err := checkSpreadAggregate(ask, rel); err != nil {
 			return nil, err
 		}
-		target, ok := s.cache.Resource(role, rel.Target)
+		target, ok := schemacache.TableWithPrivilegeFrom(snapshot, role, rel.Target, "SELECT")
 		if !ok {
 			return nil, schemacache.RelationshipMissing{Origin: origin, Target: ask.Resource}
 		}
-		children, err := s.planEmbeds(role, target.ID, ask.Embeds)
+		children, err := planEmbeds(snapshot, role, target.ID, ask.Embeds)
 		if err != nil {
 			return nil, err
 		}
-		planned = append(planned, plannedEmbed{
+		embed := plannedEmbed{
 			ask: ask, relationship: rel, target: target, children: children,
-		})
+		}
+		if rel.Cardinality == schemacache.ManyToMany {
+			embed.joinTable, embed.joinReadable = schemacache.TableWithPrivilegeFrom(
+				snapshot, role, rel.JoinTable, "SELECT",
+			)
+		}
+		planned = append(planned, embed)
 	}
 	return planned, nil
 }
@@ -354,8 +367,7 @@ func (s *Service) loadManyToManyLinks(
 	embed plannedEmbed,
 	parentKeys [][]any,
 ) ([]rows.Row, error) {
-	joinTable, found := s.cache.Resource(role, embed.relationship.JoinTable)
-	if !found {
+	if !embed.joinReadable {
 		return nil, schemacache.RelationshipMissing{
 			Origin: embed.relationship.Origin,
 			Target: embed.ask.Resource,
@@ -374,7 +386,7 @@ func (s *Service) loadManyToManyLinks(
 		Filters: joinFilters,
 		Groups:  joinGroups,
 	}
-	joinRead, err := s.reader.Read(ctx, role, joinTable, joinQuery)
+	joinRead, err := s.reader.Read(ctx, role, embed.joinTable, joinQuery)
 	if err != nil {
 		return nil, err
 	}

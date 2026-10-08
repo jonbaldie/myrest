@@ -38,7 +38,7 @@ func (s *Service) callRoutine(writer http.ResponseWriter, request *http.Request,
 	if !ok {
 		return
 	}
-	role, asked, routine, ok := s.lookupRoutine(writer, request, preferences)
+	role, asked, admission, ok := s.lookupRoutine(writer, request, preferences)
 	if !ok {
 		return
 	}
@@ -47,14 +47,14 @@ func (s *Service) callRoutine(writer http.ResponseWriter, request *http.Request,
 		writeQueryFailure(writer, err)
 		return
 	}
-	s.invokeRoutine(writer, request, preferences, role, asked, routine, args, query, rpcexec.CallModePost)
+	s.invokeRoutine(writer, request, preferences, role, asked, admission, args, query, rpcexec.CallModePost)
 }
 
 // getRoutine answers GET /rpc/<name>: named query-string arguments for the
 // routine parameters, and the remaining query keys as read features when the
 // routine is read-safe under MySQL SQL_DATA_ACCESS.
 func (s *Service) getRoutine(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
-	role, asked, routine, ok := s.lookupRoutine(writer, request, preferences)
+	role, asked, admission, ok := s.lookupRoutine(writer, request, preferences)
 	if !ok {
 		return
 	}
@@ -63,7 +63,7 @@ func (s *Service) getRoutine(writer http.ResponseWriter, request *http.Request, 
 		writeQueryFailure(writer, err)
 		return
 	}
-	args, readValues := splitRPCQuery(routine, values)
+	args, readValues := splitRPCQuery(admission.routine, values)
 	query, err := readquery.Parse(readValues, preferences.Count)
 	if err != nil {
 		writeQueryFailure(writer, err)
@@ -77,17 +77,17 @@ func (s *Service) getRoutine(writer http.ResponseWriter, request *http.Request, 
 		writeQueryFailure(writer, err)
 		return
 	}
-	s.invokeRoutine(writer, request, preferences, role, asked, routine, args, query, rpcexec.CallModeGet)
+	s.invokeRoutine(writer, request, preferences, role, asked, admission, args, query, rpcexec.CallModeGet)
 }
 
 func (s *Service) lookupRoutine(
 	writer http.ResponseWriter,
 	request *http.Request,
 	preferences prefer.Preferences,
-) (schemacache.Role, schemacache.RoutineID, schemacache.RoutineFact, bool) {
+) (schemacache.Role, schemacache.RoutineID, admissionResult, bool) {
 	role, ok := s.requestRole(writer, request, preferences)
 	if !ok {
-		return "", schemacache.RoutineID{}, schemacache.RoutineFact{}, false
+		return "", schemacache.RoutineID{}, admissionResult{}, false
 	}
 	header := headerContentProfile
 	if request.Method == http.MethodGet || request.Method == http.MethodHead {
@@ -97,13 +97,13 @@ func (s *Service) lookupRoutine(
 		writer, request, role, header, request.PathValue("name"),
 	)
 	if !ok {
-		return "", schemacache.RoutineID{}, schemacache.RoutineFact{}, false
+		return "", schemacache.RoutineID{}, admissionResult{}, false
 	}
-	routine, ok := s.admitRoutineResource(writer, requested)
+	admission, ok := s.admitRoutineResource(writer, requested)
 	if !ok {
-		return "", schemacache.RoutineID{}, schemacache.RoutineFact{}, false
+		return "", schemacache.RoutineID{}, admissionResult{}, false
 	}
-	return requested.role, requested.routine(), routine, true
+	return requested.role, requested.routine(), admission, true
 }
 
 func (s *Service) invokeRoutine(
@@ -112,7 +112,7 @@ func (s *Service) invokeRoutine(
 	preferences prefer.Preferences,
 	role schemacache.Role,
 	asked schemacache.RoutineID,
-	routine schemacache.RoutineFact,
+	admission admissionResult,
 	args map[string]any,
 	query readquery.Query,
 	callMode rpcexec.CallMode,
@@ -133,7 +133,7 @@ func (s *Service) invokeRoutine(
 	outcome, err := s.executor.Execute(
 		request.Context(),
 		rpcexec.Intent{
-			Routine:        routine,
+			Routine:        admission.routine,
 			Role:           role,
 			Args:           args,
 			CallMode:       callMode,
@@ -153,7 +153,9 @@ func (s *Service) invokeRoutine(
 	}
 
 	if outcome.Kind == rpcexec.ResultKindRowSet {
-		read, err := s.shapeRPCRowSet(request.Context(), role, asked.Database, outcome.Rows, query)
+		read, err := s.shapeRPCRowSet(
+			request.Context(), admission.snapshot, role, asked.Database, outcome.Rows, query,
+		)
 		if err != nil {
 			s.writeReadFailure(writer, schemacache.TableID{Database: asked.Database, Name: asked.Name}, role, err)
 			return
@@ -235,6 +237,7 @@ func writeScalarRPC(
 
 func (s *Service) shapeRPCRowSet(
 	ctx context.Context,
+	snapshot schemacache.Snapshot,
 	role schemacache.Role,
 	database string,
 	set []rows.Row,
@@ -245,11 +248,11 @@ func (s *Service) shapeRPCRowSet(
 		return readquery.Result{}, err
 	}
 	if len(query.Embeds) > 0 {
-		origin, err := s.rowSetOrigin(role, database, shaped.Rows, query.Embeds)
+		origin, err := rowSetOrigin(snapshot, role, database, shaped.Rows, query.Embeds)
 		if err != nil {
 			return readquery.Result{}, err
 		}
-		plan, err := s.planEmbeds(role, origin.ID, query.Embeds)
+		plan, err := planEmbeds(snapshot, role, origin.ID, query.Embeds)
 		if err != nil {
 			return readquery.Result{}, err
 		}
@@ -270,14 +273,15 @@ func (s *Service) shapeRPCRowSet(
 // rowSetOrigin finds the one table resource that can own the embed graph for
 // this row set: same database, SELECT for the role, every result column on the
 // table, and a successful embed plan whose join columns the rows hold.
-func (s *Service) rowSetOrigin(
+func rowSetOrigin(
+	snapshot schemacache.Snapshot,
 	role schemacache.Role,
 	database string,
 	set []rows.Row,
 	embeds []readquery.Embed,
 ) (schemacache.Table, error) {
 	columns := rowSetColumns(set)
-	matches, firstMissing := s.collectRowSetOrigins(role, database, columns, set, embeds)
+	matches, firstMissing := collectRowSetOrigins(snapshot, role, database, columns, set, embeds)
 	switch len(matches) {
 	case 1:
 		return matches[0], nil
@@ -288,7 +292,8 @@ func (s *Service) rowSetOrigin(
 	}
 }
 
-func (s *Service) collectRowSetOrigins(
+func collectRowSetOrigins(
+	snapshot schemacache.Snapshot,
 	role schemacache.Role,
 	database string,
 	columns []string,
@@ -297,12 +302,12 @@ func (s *Service) collectRowSetOrigins(
 ) ([]schemacache.Table, error) {
 	var matches []schemacache.Table
 	var firstMissing error
-	for _, id := range schemacache.TableIDs(s.cache) {
-		table, ok := s.candidateRowSetOrigin(role, database, id, columns)
+	for _, id := range schemacache.TableIDsFrom(snapshot) {
+		table, ok := candidateRowSetOrigin(snapshot, role, database, id, columns)
 		if !ok {
 			continue
 		}
-		plan, err := s.planEmbeds(role, table.ID, embeds)
+		plan, err := planEmbeds(snapshot, role, table.ID, embeds)
 		if err != nil {
 			if firstMissing == nil {
 				firstMissing = err
@@ -316,7 +321,8 @@ func (s *Service) collectRowSetOrigins(
 	return matches, firstMissing
 }
 
-func (s *Service) candidateRowSetOrigin(
+func candidateRowSetOrigin(
+	snapshot schemacache.Snapshot,
 	role schemacache.Role,
 	database string,
 	id schemacache.TableID,
@@ -325,7 +331,7 @@ func (s *Service) candidateRowSetOrigin(
 	if id.Database != database {
 		return schemacache.Table{}, false
 	}
-	table, ok := s.cache.Resource(role, id)
+	table, ok := schemacache.TableWithPrivilegeFrom(snapshot, role, id, "SELECT")
 	if !ok || !tableHasColumns(table, columns) {
 		return schemacache.Table{}, false
 	}
