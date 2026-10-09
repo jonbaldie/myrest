@@ -223,7 +223,8 @@ func TestTheAuthenticatorAloneCannotReadTheResource(t *testing.T) {
 // cache-003: after a catalog or grant change and an explicit reload, the new
 // exposure is visible over HTTP. A restart of the process is not required.
 func TestExplicitReloadShowsNewExposure(t *testing.T) {
-	pool, cache, service := serveWithPool(t, "myrest_fixture")
+	databases := []string{"myrest_fixture"}
+	pool, cache, service := serveWithPool(t, databases...)
 
 	for _, statement := range []string{
 		`CREATE TABLE myrest_fixture.reloaded (
@@ -245,11 +246,10 @@ func TestExplicitReloadShowsNewExposure(t *testing.T) {
 	response, body := get(t, service, "/reloaded")
 	apitest.AssertEnvelope(t, response, body, http.StatusNotFound, "PGRST205")
 
-	catalog, err := pool.Catalog(t.Context(), []string{"myrest_fixture"})
-	if err != nil {
-		t.Fatalf("read the catalog: %v", err)
+	reloader := schemacache.Reloader{Source: pool, Databases: databases, Cache: cache}
+	if err := reloader.Reload(t.Context()); err != nil {
+		t.Fatalf("reload the schema cache: %v", err)
 	}
-	cache.Replace(catalog)
 
 	response, body = get(t, service, "/reloaded")
 	if response.StatusCode != http.StatusOK {

@@ -54,7 +54,11 @@ func main() {
 		service.URL(), strings.Join(settings.DB.Schemas, ","),
 	)
 
-	go reloadOnSignal(pool, settings.DB.Schemas, cache)
+	go reloadOnSignal(schemacache.Reloader{
+		Source:    pool,
+		Databases: settings.DB.Schemas,
+		Cache:     cache,
+	})
 
 	if err := service.Serve(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("myrest: serve: %v", err)
@@ -64,16 +68,14 @@ func main() {
 // reloadOnSignal is the explicit schema-cache reload path. SIGUSR1 reloads the
 // cache from the live catalog. There is no Postgres NOTIFY bus, and config
 // changes still need a process restart.
-func reloadOnSignal(pool *mysqldb.Pool, databases []string, cache *schemacache.Cache) {
+func reloadOnSignal(reloader schemacache.Reloader) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGUSR1)
 	for range signals {
-		catalog, err := pool.Catalog(context.Background(), databases)
-		if err != nil {
+		if err := reloader.Reload(context.Background()); err != nil {
 			log.Printf("myrest: reload the schema cache: %v", err)
 			continue
 		}
-		cache.Replace(catalog)
 		log.Printf("myrest: reloaded the schema cache")
 	}
 }
