@@ -1,0 +1,20 @@
+2026/10/10 01:36:27 myrest listening on http://127.0.0.1:3111 (databases=myrest_fixture,myrest_hidden)
+2026/10/10 01:37:37 myrest: reloaded the schema cache
+2026/10/10 01:40:56 myrest: reloaded the schema cache
+2026/10/10 01:41:25 myrest: insert myrest_fixture.items as myrest_anon: Cannot insert into generated column name_len
+2026/10/10 01:41:25 myrest: reloaded the schema cache
+2026/10/10 01:41:26 myrest: reloaded the schema cache
+2026/10/10 01:41:27 myrest: reloaded the schema cache
+2026/10/10 01:42:11 myrest: read myrest_fixture.notes as myrest_anon: Error 1142 (42000): SELECT command denied to user 'authenticator'@'192.168.215.1' for table 'notes'
+2026/10/10 01:42:11 myrest: reloaded the schema cache
+2026/10/10 01:42:11 myrest: insert myrest_fixture.measurements as myrest_anon: column not found: reading
+2026/10/10 01:42:40 myrest: reloaded the schema cache
+2026/10/10 01:43:07 myrest listening on http://127.0.0.1:3111 (databases=myrest_fixture,myrest_hidden)
+2026/10/10 01:43:22 myrest listening on http://127.0.0.1:3111 (databases=myrest_fixture,myrest_hidden)
+2026/10/10 01:43:23 myrest: insert myrest_fixture.items as myrest_anon: Error 1644 (45000): pre-request refused
+2026/10/10 01:43:23 myrest: read myrest_fixture.items as myrest_anon: Error 1644 (45000): pre-request refused
+2026/10/10 01:43:37 myrest listening on http://127.0.0.1:3111 (databases=myrest_fixture,myrest_hidden)
+2026/10/10 01:46:49 myrest listening on http://127.0.0.1:3111 (databases=myrest_fixture,myrest_hidden)
+2026/10/10 01:46:50 myrest: reloaded the schema cache
+2026/10/10 01:46:54 myrest listening on http://127.0.0.1:3111 (databases=myrest_fixture,myrest_hidden)
+2026/10/10 01:46:55 myrest: reloaded the schema cache

@@ -1,0 +1,39 @@
+===== REPLAY 2 =====
+fixtures loaded
+===== Content-Profile is absent on a two-database read
+HTTP/1.1 200 OK
+(no Content-Profile line means the header is absent)
+===== Content-Profile is absent when Accept-Profile selects the second database
+HTTP/1.1 200 OK
+===== OpenAPI before a same-name table: default OPTIONS versus document
+HTTP/1.1 200 OK
+Allow: OPTIONS,GET,HEAD,POST,PUT,PATCH,DELETE
+===== add myrest_hidden.items with SELECT only, and a column-grant table
+mysql: [Warning] Using a password on the command line interface can be insecure.
+===== OPTIONS default /items
+HTTP/1.1 200 OK
+Allow: OPTIONS,GET,HEAD,POST,PUT,PATCH,DELETE
+===== OPTIONS hidden /items
+HTTP/1.1 200 OK
+Allow: OPTIONS,GET,HEAD
+profile (none) Content-Profile None
+  /items {'delete': {'responses': {'204': {'description': 'No Content'}}}, 'get': {'responses': {'200': {'description': 'OK'}}}, 'patch': {'responses': {'204': {'description': 'No Content'}}}, 'post': {'responses': {'201': {'description': 'Created'}}}, 'put': {'responses': {'201': {'description': 'Created'}}}}
+  has /outside_items True
+  has /orders True
+  path_count 35
+profile myrest_hidden Content-Profile None
+  /items {'delete': {'responses': {'204': {'description': 'No Content'}}}, 'get': {'responses': {'200': {'description': 'OK'}}}, 'patch': {'responses': {'204': {'description': 'No Content'}}}, 'post': {'responses': {'201': {'description': 'Created'}}}, 'put': {'responses': {'201': {'description': 'Created'}}}}
+  has /outside_items True
+  has /orders True
+  path_count 35
+===== column grant: API
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:46:55 GMT
+Content-Length: 131
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.pay_slips' in the schema cache","details":null,"hint":null}
+
+===== column grant: MySQL as authenticator after SET ROLE
+1	ada
+mysql: [Warning] Using a password on the command line interface can be insecure.
