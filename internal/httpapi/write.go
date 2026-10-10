@@ -647,9 +647,7 @@ func (s *Service) lookupWriteTable(
 		writeNoHandler(writer, request)
 		return "", schemacache.TableID{}, admissionResult{}, false
 	}
-	requested, ok := s.selectResource(
-		writer, request, role, headerContentProfile, request.PathValue("table"),
-	)
+	requested, ok := s.selectResource(writer, request, role, request.PathValue("table"))
 	if !ok {
 		return "", schemacache.TableID{}, admissionResult{}, false
 	}
@@ -913,6 +911,7 @@ func (s *Service) writeRepresentationResponse(
 		s.writeReadFailure(writer, table.ID, role, err)
 		return
 	}
+	s.setContentProfile(writer, request, table.ID.Database)
 	writeRows(writer, status, outcome.Repr, shaped, csvHeaderNames(outcome.Query, shaped))
 }
 

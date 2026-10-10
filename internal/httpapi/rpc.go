@@ -89,13 +89,7 @@ func (s *Service) lookupRoutine(
 	if !ok {
 		return "", schemacache.RoutineID{}, admissionResult{}, false
 	}
-	header := headerContentProfile
-	if request.Method == http.MethodGet || request.Method == http.MethodHead {
-		header = headerAcceptProfile
-	}
-	requested, ok := s.selectResource(
-		writer, request, role, header, request.PathValue("name"),
-	)
+	requested, ok := s.selectResource(writer, request, role, request.PathValue("name"))
 	if !ok {
 		return "", schemacache.RoutineID{}, admissionResult{}, false
 	}
@@ -160,10 +154,12 @@ func (s *Service) invokeRoutine(
 			s.writeReadFailure(writer, schemacache.TableID{Database: asked.Database, Name: asked.Name}, role, err)
 			return
 		}
+		s.setContentProfile(writer, request, asked.Database)
 		writeRead(writer, request.Method == http.MethodHead, query, read, repr)
 		return
 	}
 
+	s.setContentProfile(writer, request, asked.Database)
 	writeScalarRPC(writer, request, repr, outcome.Data)
 }
 

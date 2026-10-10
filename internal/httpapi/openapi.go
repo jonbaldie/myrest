@@ -35,12 +35,13 @@ func (s *Service) writeRoot(writer http.ResponseWriter, request *http.Request, p
 		return
 	}
 
-	database, ok := s.requestDatabase(writer, request, headerAcceptProfile)
+	database, ok := s.requestDatabase(writer, request)
 	if !ok {
 		return
 	}
 
 	doc := s.openAPIDocument(role, database)
+	s.setContentProfile(writer, request, database)
 	writer.Header().Set("Content-Type", openAPIContentType)
 	writer.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(writer).Encode(doc)

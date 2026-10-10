@@ -15,9 +15,7 @@ func (s *Service) optionsTable(writer http.ResponseWriter, request *http.Request
 	if !ok {
 		return
 	}
-	requested, ok := s.selectResource(
-		writer, request, role, headerAcceptProfile, request.PathValue("table"),
-	)
+	requested, ok := s.selectResource(writer, request, role, request.PathValue("table"))
 	if !ok {
 		return
 	}
@@ -37,9 +35,7 @@ func (s *Service) optionsRoutine(writer http.ResponseWriter, request *http.Reque
 	if !ok {
 		return
 	}
-	requested, ok := s.selectResource(
-		writer, request, role, headerAcceptProfile, request.PathValue("name"),
-	)
+	requested, ok := s.selectResource(writer, request, role, request.PathValue("name"))
 	if !ok {
 		return
 	}
