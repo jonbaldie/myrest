@@ -54,6 +54,17 @@ Prefer values already locked elsewhere (`return`, `count`, `resolution`,
 `missing`, `max-affected`, `handling`, `all-rows`, and the auth refusals
 `row-security` / `jwt-claims`) are not re-labelled here.
 
+## Content-Profile response header
+
+As in the parity target, a response names its database in `Content-Profile`
+only with the `Content-Type` of a successful body: a read (`GET` / `HEAD`), a
+write with `Prefer: return=representation`, an RPC result, and the OpenAPI
+document at `GET /`. It names the database when the database was negotiated by
+profile: the client sent a valid profile header, or `db-schemas` lists more
+than one database. With one database and no profile header, the response names
+none. A write with `return=minimal`, a `204` answer, `OPTIONS`, and every error
+envelope name no profile. A `db-root-spec` answer at `GET /` names none either.
+
 ## Full match rows
 
 | Item | Parity label | Scenarios |

@@ -50,15 +50,15 @@ type admissionResult struct {
 }
 
 // selectResource selects a requested Resource for a known database role. The
-// caller chooses the profile header and route name for its HTTP method.
+// profile header for the HTTP method selects the database; the caller chooses
+// the route name.
 func (s *Service) selectResource(
 	writer http.ResponseWriter,
 	request *http.Request,
 	role schemacache.Role,
-	profileHeader string,
 	name string,
 ) (requestedResource, bool) {
-	database, ok := s.requestDatabase(writer, request, profileHeader)
+	database, ok := s.requestDatabase(writer, request)
 	if !ok {
 		return requestedResource{}, false
 	}

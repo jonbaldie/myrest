@@ -50,11 +50,13 @@ type failure struct {
 // writeFailure answers with the error envelope. Only myrest writes the
 // message: what the database says goes to the log of the operator.
 func writeFailure(writer http.ResponseWriter, status int, code, message string) {
-	writeJSON(writer, status, failure{Code: code, Message: message})
+	writeFailureExtra(writer, status, code, message, nil, nil)
 }
 
-// writeFailureExtra answers with details and hint set.
+// writeFailureExtra answers with details and hint set. An error envelope
+// names no profile, as in the parity target, so it drops Content-Profile.
 func writeFailureExtra(writer http.ResponseWriter, status int, code, message string, details, hint any) {
+	writer.Header().Del(headerContentProfile)
 	writeJSON(writer, status, failure{Code: code, Message: message, Details: details, Hint: hint})
 }
 

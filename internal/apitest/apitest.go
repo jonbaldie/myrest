@@ -53,6 +53,14 @@ func Do(t *testing.T, method, url string, headers http.Header) (*http.Response, 
 	return do(t, method, url, headers, "")
 }
 
+// DoBody sends one request with headers and a body, and gives back the
+// response and its body.
+func DoBody(t *testing.T, method, url string, headers http.Header, body string) (*http.Response, []byte) {
+	t.Helper()
+
+	return do(t, method, url, headers, body)
+}
+
 func do(t *testing.T, method, url string, headers http.Header, body string) (*http.Response, []byte) {
 	t.Helper()
 
