@@ -427,6 +427,17 @@ func TestMySQLAccessErrorGivesThePublishedStatusAndGapCode(t *testing.T) {
 	apitest.AssertEnvelope(t, response, body, http.StatusForbidden, "MYREST002")
 }
 
+// A column outside the column grant of the role is access denied, as a table
+// outside the grants of the role is.
+func TestMySQLColumnDeniedGivesForbiddenAndGapCode(t *testing.T) {
+	t.Parallel()
+
+	source := &reader{failure: mysqlError(1143, "42000", "SELECT command denied for column")}
+	response, body := get(t, serve(t, source, settings()), "/items")
+
+	apitest.AssertEnvelope(t, response, body, http.StatusForbidden, "MYREST002")
+}
+
 // Missing EXECUTE on a routine (including db-pre-request) is access denied.
 func TestMySQLExecuteDeniedGivesForbiddenAndGapCode(t *testing.T) {
 	t.Parallel()
