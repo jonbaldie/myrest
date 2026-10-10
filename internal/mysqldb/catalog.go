@@ -79,7 +79,11 @@ const (
 )
 
 var (
-	tablePrivilegeSources   = []string{"ROLE_TABLE_GRANTS", "TABLE_PRIVILEGES"}
+	// A privilege on some columns of a table is a relevant privilege on the
+	// table too: MySQL enforces the column grant on each request.
+	tablePrivilegeSources = []string{
+		"ROLE_TABLE_GRANTS", "TABLE_PRIVILEGES", "ROLE_COLUMN_GRANTS", "COLUMN_PRIVILEGES",
+	}
 	routinePrivilegeSources = []string{"ROLE_ROUTINE_GRANTS"}
 )
 
@@ -119,14 +123,14 @@ func readCatalog(
 }
 
 type catalogObjects struct {
-	tables          []schemacache.TableID
-	views           []schemacache.TableID
-	updatableViews  []schemacache.TableID
-	comments        []schemacache.CommentFact
-	columns         []schemacache.ColumnFact
-	keys            []schemacache.KeyFact
-	foreignKeys     []schemacache.ForeignKeyFact
-	routines        []schemacache.RoutineFact
+	tables         []schemacache.TableID
+	views          []schemacache.TableID
+	updatableViews []schemacache.TableID
+	comments       []schemacache.CommentFact
+	columns        []schemacache.ColumnFact
+	keys           []schemacache.KeyFact
+	foreignKeys    []schemacache.ForeignKeyFact
+	routines       []schemacache.RoutineFact
 }
 
 func readCatalogObjects(

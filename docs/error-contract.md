@@ -90,7 +90,7 @@ this table. It then matches the SQLSTATE class. The number rule has priority.
 
 | MySQL error number or SQLSTATE | HTTP status | Meaning |
 | --- | --- | --- |
-| `1044`, `1045`, `1142`, `1227`, `1370` | 403 | Access denied (including missing EXECUTE) |
+| `1044`, `1045`, `1142`, `1143`, `1227`, `1370` | 403 | Access denied (including missing EXECUTE and a column outside a column grant) |
 | `1062`, `1451`, `1452`, `1213` | 409 | Duplicate key, foreign-key conflict, or deadlock |
 | `08*` | 503 | Connection error |
 | `22*`, `42*` | 400 | Data or syntax error |
