@@ -25,8 +25,8 @@ resource allow-list.
 
 | Knob | Parity label | Contract |
 | --- | --- | --- |
-| `openapi-mode=follow-privileges` (default) | **full match** | `GET /` serves an OpenAPI 2.0 document (`Content-Type: application/openapi+json`) that lists only resources the active role can use. Path methods follow the same grant rules as `OPTIONS`. |
-| `openapi-mode=ignore-privileges` | **full match** | The document lists every table and routine in the schema cache for configured databases, and advertises the served table methods (`get`/`post`/`put`/`patch`/`delete`) and routine methods from read-safety. |
+| `openapi-mode=follow-privileges` (default) | **full match** | `GET /` serves an OpenAPI 2.0 document (`Content-Type: application/openapi+json`) that lists only resources the active role can use in the request database: `Accept-Profile` selects it, and with no header it is the default database (first of `db-schemas`). A profile outside `db-schemas` answers 406 `PGRST106`. Path methods follow the same grant rules as `OPTIONS` for that database. |
+| `openapi-mode=ignore-privileges` | **full match** | The document lists every table and routine in the schema cache for the request database (selected as for `follow-privileges`), and advertises the served table methods (`get`/`post`/`put`/`patch`/`delete`) and routine methods from read-safety. |
 | `openapi-mode=disabled` | **full match** | `GET /` answers 404 with the no-handler envelope (`MYREST003`). |
 | `openapi-security-active` | **full match** | When true, the document holds `securityDefinitions.JWT` (apiKey in `Authorization`) and a matching `security` requirement. When false, those fields are omitted. |
 | `openapi-server-proxy-uri` | **full match** | When set, `host`, `schemes`, and `basePath` come from that URI (trailing `/` removed). Otherwise they come from the listen URL of the process. myrest does not read `X-Forwarded-*` or `Forwarded` for this value. |

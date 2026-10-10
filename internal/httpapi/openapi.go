@@ -15,9 +15,10 @@ import (
 
 const openAPIContentType = "application/openapi+json"
 
-// writeRoot answers GET /. It serves the OpenAPI document from the schema
-// cache and the privileges of the active database role, unless openapi-mode
-// is disabled or db-root-spec replaces the body.
+// writeRoot answers GET /. It serves the OpenAPI document of the request
+// database (Accept-Profile, else the default database) from the schema cache
+// and the privileges of the active database role, unless openapi-mode is
+// disabled or db-root-spec replaces the body.
 func (s *Service) writeRoot(writer http.ResponseWriter, request *http.Request, preferences prefer.Preferences) {
 	if s.settings.OpenAPI.Mode == config.OpenAPIModeDisabled {
 		writeNoHandler(writer, request)
@@ -34,7 +35,12 @@ func (s *Service) writeRoot(writer http.ResponseWriter, request *http.Request, p
 		return
 	}
 
-	doc := s.openAPIDocument(role)
+	database, ok := s.requestDatabase(writer, request, headerAcceptProfile)
+	if !ok {
+		return
+	}
+
+	doc := s.openAPIDocument(role, database)
 	writer.Header().Set("Content-Type", openAPIContentType)
 	writer.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(writer).Encode(doc)
@@ -85,8 +91,8 @@ func splitRootSpec(name string) (database, routine string, err error) {
 	return database, routine, nil
 }
 
-func (s *Service) openAPIDocument(role schemacache.Role) map[string]any {
-	paths := s.openAPIPaths(role)
+func (s *Service) openAPIDocument(role schemacache.Role, database string) map[string]any {
+	paths := s.openAPIPaths(role, database)
 	doc := map[string]any{
 		"swagger": "2.0",
 		"info": map[string]any{
@@ -101,7 +107,9 @@ func (s *Service) openAPIDocument(role schemacache.Role) map[string]any {
 	return doc
 }
 
-func (s *Service) openAPIPaths(role schemacache.Role) map[string]any {
+// openAPIPaths lists the Resources of one database only. Paths carry bare
+// names, so a second database would overwrite same-named Resources.
+func (s *Service) openAPIPaths(role schemacache.Role, database string) map[string]any {
 	snapshot := schemacache.ReadSnapshot(s.cache)
 	followPrivileges := s.settings.OpenAPI.Mode != config.OpenAPIModeIgnorePrivileges
 	paths := map[string]any{
@@ -114,24 +122,24 @@ func (s *Service) openAPIPaths(role schemacache.Role) map[string]any {
 			},
 		},
 	}
-	s.addOpenAPITables(paths, snapshot, role, followPrivileges)
-	s.addOpenAPIRoutines(paths, snapshot, role, followPrivileges)
+	addOpenAPITables(paths, snapshot, requestedResource{role: role, database: database}, followPrivileges)
+	addOpenAPIRoutines(paths, snapshot, requestedResource{role: role, database: database}, followPrivileges)
 	return paths
 }
 
-func (s *Service) addOpenAPITables(
+func addOpenAPITables(
 	paths map[string]any,
 	snapshot schemacache.Snapshot,
-	role schemacache.Role,
+	scope requestedResource,
 	followPrivileges bool,
 ) {
 	for _, id := range schemacache.TableIDsFrom(snapshot) {
-		if !s.settings.HasDatabase(id.Database) {
+		if id.Database != scope.database {
 			continue
 		}
 		methods := ignorePrivilegeTableMethods(snapshot, id)
 		if followPrivileges {
-			requested := requestedResource{role: role, database: id.Database, name: id.Name}
+			requested := requestedResource{role: scope.role, database: id.Database, name: id.Name}
 			methods = tableAllowMethods(snapshot, requested)
 		}
 		if len(methods) == 0 {
@@ -141,18 +149,18 @@ func (s *Service) addOpenAPITables(
 	}
 }
 
-func (s *Service) addOpenAPIRoutines(
+func addOpenAPIRoutines(
 	paths map[string]any,
 	snapshot schemacache.Snapshot,
-	role schemacache.Role,
+	scope requestedResource,
 	followPrivileges bool,
 ) {
 	for _, routine := range schemacache.RoutinesFrom(snapshot) {
-		if !s.settings.HasDatabase(routine.ID.Database) {
+		if routine.ID.Database != scope.database {
 			continue
 		}
 		if followPrivileges {
-			requested := requestedResource{role: role, database: routine.ID.Database, name: routine.ID.Name}
+			requested := requestedResource{role: scope.role, database: routine.ID.Database, name: routine.ID.Name}
 			admission := admitFrom(snapshot, admissionRequest{requested: requested, need: routineNeed})
 			if admission.refusal != noAdmissionRefusal {
 				continue
