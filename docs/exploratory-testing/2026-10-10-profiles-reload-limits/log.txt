@@ -1,0 +1,1411 @@
+
+### J1 ordinary default read /items
+$ curl -sS -D - -sS http://127.0.0.1:3111/items?select=id,name&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 49
+
+[{"id":1,"name":"alpha"},{"id":2,"name":"beta"}]
+
+
+### J1 default read of hidden table without profile
+$ curl -sS -D - -sS http://127.0.0.1:3111/outside_items
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 135
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.outside_items' in the schema cache","details":null,"hint":null}
+
+
+### J1 Accept-Profile hidden read
+$ curl -sS -D - -sS -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/outside_items
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 27
+
+[{"id":1,"name":"hidden"}]
+
+
+### J1 Accept-Profile fixture still reads items
+$ curl -sS -D - -sS -H Accept-Profile: myrest_fixture http://127.0.0.1:3111/items?select=id,name&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 49
+
+[{"id":1,"name":"alpha"},{"id":2,"name":"beta"}]
+
+
+### J1 Accept-Profile hidden does not see items
+$ curl -sS -D - -sS -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/items
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 126
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_hidden.items' in the schema cache","details":null,"hint":null}
+
+
+### J1 Content-Profile on GET does not select hidden
+$ curl -sS -D - -sS -H Content-Profile: myrest_hidden http://127.0.0.1:3111/outside_items
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 135
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.outside_items' in the schema cache","details":null,"hint":null}
+
+
+### J1 Accept-Profile on POST does not select hidden
+$ curl -sS -D - -sS -X POST -H Accept-Profile: myrest_hidden -H Content-Type: application/json -H Prefer: return=representation -d {"name":"wrong-header"} http://127.0.0.1:3111/outside_items
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 135
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.outside_items' in the schema cache","details":null,"hint":null}
+
+
+### J1 unknown Accept-Profile
+$ curl -sS -D - -sS -H Accept-Profile: tenant3 http://127.0.0.1:3111/items
+HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 130
+
+{"code":"PGRST106","message":"The schema must be one of the following: myrest_fixture, myrest_hidden","details":null,"hint":null}
+
+
+### J1 unknown Content-Profile
+$ curl -sS -D - -sS -X POST -H Content-Profile: tenant3 -H Content-Type: application/json -d {"name":"nope"} http://127.0.0.1:3111/items
+HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 130
+
+{"code":"PGRST106","message":"The schema must be one of the following: myrest_fixture, myrest_hidden","details":null,"hint":null}
+
+
+### J1 empty Accept-Profile
+$ curl -sS -D - -sS -H Accept-Profile:  http://127.0.0.1:3111/outside_items
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 135
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.outside_items' in the schema cache","details":null,"hint":null}
+
+
+### J1 quoted Accept-Profile
+$ curl -sS -D - -sS -H Accept-Profile: "myrest_hidden" http://127.0.0.1:3111/outside_items
+HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 130
+
+{"code":"PGRST106","message":"The schema must be one of the following: myrest_fixture, myrest_hidden","details":null,"hint":null}
+
+
+### J1 case Accept-Profile
+$ curl -sS -D - -sS -H Accept-Profile: Myrest_Hidden http://127.0.0.1:3111/outside_items
+HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 130
+
+{"code":"PGRST106","message":"The schema must be one of the following: myrest_fixture, myrest_hidden","details":null,"hint":null}
+
+
+### J1 spaced Accept-Profile
+$ curl -sS -D - -sS -H Accept-Profile: myrest_hidden  http://127.0.0.1:3111/outside_items
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 27
+
+[{"id":1,"name":"hidden"}]
+
+
+### J1 HEAD Accept-Profile hidden
+$ curl -sS -D - -sS -I -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/outside_items
+HTTP/1.1 200 OK
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Range: 0-0/*
+Content-Type: application/json
+Content-Type: application/json
+Range-Unit: items
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+
+
+
+
+### J1 OPTIONS hidden table without profile
+$ curl -sS -D - -sS -D - -o /dev/null -X OPTIONS http://127.0.0.1:3111/outside_items
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 135
+
+
+
+### J1 OPTIONS hidden table with Accept-Profile
+$ curl -sS -D - -sS -D - -o /dev/null -X OPTIONS -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/outside_items
+HTTP/1.1 200 OK
+Allow: OPTIONS,GET,HEAD,POST,PUT
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 0
+
+
+
+### J1 OPTIONS items default
+$ curl -sS -D - -sS -D - -o /dev/null -X OPTIONS http://127.0.0.1:3111/items
+HTTP/1.1 200 OK
+Allow: OPTIONS,GET,HEAD,POST,PUT,PATCH,DELETE
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 0
+
+
+
+### J1 OpenAPI root
+$ curl -sS -D - -sS http://127.0.0.1:3111/
+HTTP/1.1 200 OK
+Content-Type: application/openapi+json
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Transfer-Encoding: chunked
+
+{"basePath":"/rest","host":"api.example.com","info":{"description":"This is a dynamic API generated by myrest","title":"myrest API","version":"1.0"},"paths":{"/":{"get":{"produces":["application/openapi+json","application/json"],"responses":{"200":{"description":"OK"}},"summary":"OpenAPI description (this document)","tags":["Introspection"]}},"/addresses":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/colors":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/deliveries":{"get":{"responses":{"200":{"description":"OK"}}}},"/employees":{"get":{"responses":{"200":{"description":"OK"}}}},"/item_tags":{"get":{"responses":{"200":{"description":"OK"}}}},"/items":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/items_stats":{"get":{"responses":{"200":{"description":"OK"}}}},"/items_view":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/loose_notes":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/measurements":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/null_records":{"get":{"responses":{"200":{"description":"OK"}}}},"/orders":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/outside_items":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/pre_request_log":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/profiles":{"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/quoted_values":{"get":{"responses":{"200":{"description":"OK"}}}},"/rpc/add_them":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/before_request":{"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/before_request_fail":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/bump_label":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/echo_json":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/echo_json_func":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/echo_name":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/item_count":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_items":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_missing_items":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_null_records":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_one_item":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/mark_and_list":{"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/ping":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/write_marker":{"post":{"responses":{"201":{"description":"Created"}}}},"/stock_lines":{"get":{"responses":{"200":{"description":"OK"}}}},"/stock_moves":{"get":{"responses":{"200":{"description":"OK"}}}},"/tags":{"get":{"responses":{"200":{"description":"OK"}}}}},"schemes":["https"],"security":[{"JWT":[]}],"securityDefinitions":{"JWT":{"description":"Add the token prepending \"Bearer \" (without quotes) to it","in":"header","name":"Authorization","type":"apiKey"}},"swagger":"2.0"}
+
+
+### J1 OpenAPI with Accept-Profile hidden
+$ curl -sS -D - -sS -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/
+HTTP/1.1 200 OK
+Content-Type: application/openapi+json
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Transfer-Encoding: chunked
+
+{"basePath":"/rest","host":"api.example.com","info":{"description":"This is a dynamic API generated by myrest","title":"myrest API","version":"1.0"},"paths":{"/":{"get":{"produces":["application/openapi+json","application/json"],"responses":{"200":{"description":"OK"}},"summary":"OpenAPI description (this document)","tags":["Introspection"]}},"/addresses":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/colors":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/deliveries":{"get":{"responses":{"200":{"description":"OK"}}}},"/employees":{"get":{"responses":{"200":{"description":"OK"}}}},"/item_tags":{"get":{"responses":{"200":{"description":"OK"}}}},"/items":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/items_stats":{"get":{"responses":{"200":{"description":"OK"}}}},"/items_view":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/loose_notes":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/measurements":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/null_records":{"get":{"responses":{"200":{"description":"OK"}}}},"/orders":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/outside_items":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/pre_request_log":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/profiles":{"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/quoted_values":{"get":{"responses":{"200":{"description":"OK"}}}},"/rpc/add_them":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/before_request":{"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/before_request_fail":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/bump_label":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/echo_json":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/echo_json_func":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/echo_name":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/item_count":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_items":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_missing_items":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_null_records":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_one_item":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/mark_and_list":{"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/ping":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/write_marker":{"post":{"responses":{"201":{"description":"Created"}}}},"/stock_lines":{"get":{"responses":{"200":{"description":"OK"}}}},"/stock_moves":{"get":{"responses":{"200":{"description":"OK"}}}},"/tags":{"get":{"responses":{"200":{"description":"OK"}}}}},"schemes":["https"],"security":[{"JWT":[]}],"securityDefinitions":{"JWT":{"description":"Add the token prepending \"Bearer \" (without quotes) to it","in":"header","name":"Authorization","type":"apiKey"}},"swagger":"2.0"}
+
+
+### J1 CORS preflight profile headers
+$ curl -sS -D - -sS -D - -o /dev/null -X OPTIONS -H Origin: http://shop.example -H Access-Control-Request-Method: GET -H Access-Control-Request-Headers: accept-profile, content-profile, prefer, content-type http://127.0.0.1:3111/outside_items
+HTTP/1.1 200 OK
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Headers: Authorization, accept-profile, content-profile, prefer, content-type, Accept, Accept-Language, Content-Language
+Access-Control-Allow-Methods: GET, POST, PATCH, PUT, DELETE, OPTIONS, HEAD
+Access-Control-Allow-Origin: http://shop.example
+Access-Control-Max-Age: 86400
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 0
+
+
+
+### J1 CORS actual with Accept-Profile
+$ curl -sS -D - -sS -D - -H Origin: http://shop.example -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/outside_items
+HTTP/1.1 200 OK
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Origin: http://shop.example
+Access-Control-Expose-Headers: Content-Encoding, Content-Location, Content-Range, Content-Type, Date, Location, Server, Transfer-Encoding, Range-Unit
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 27
+
+[{"id":1,"name":"hidden"}]
+
+
+### J1 CORS refused origin
+$ curl -sS -D - -sS -D - -H Origin: http://evil.example -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/outside_items
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:36:39 GMT
+Content-Length: 27
+
+[{"id":1,"name":"hidden"}]
+
+
+### J1 POST hidden Content-Profile representation
+$ curl -sS -D - -sS -D - -X POST -H Content-Profile: myrest_hidden -H Content-Type: application/json -H Prefer: return=representation -d {"name":"profile-write"} http://127.0.0.1:3111/outside_items
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /outside_items?id=eq.2
+Preference-Applied: return=representation
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 34
+
+[{"id":2,"name":"profile-write"}]
+
+
+### J1 read back hidden
+$ curl -sS -D - -sS -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/outside_items?select=id,name&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 59
+
+[{"id":1,"name":"hidden"},{"id":2,"name":"profile-write"}]
+
+
+### J1 default db still has no outside_items
+$ curl -sS -D - -sS http://127.0.0.1:3111/outside_items
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 135
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.outside_items' in the schema cache","details":null,"hint":null}
+
+
+### J1 POST hidden does not land in fixture items
+$ curl -sS -D - -sS http://127.0.0.1:3111/items?name=eq.profile-write
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 3
+
+[]
+
+
+### J1 PATCH hidden name
+$ curl -sS -D - -sS -X PATCH -H Content-Profile: myrest_hidden -H Content-Type: application/json -H Prefer: return=representation -d {"name":"profile-patched"} http://127.0.0.1:3111/outside_items?name=eq.profile-write
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 134
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_hidden.outside_items' in the schema cache","details":null,"hint":null}
+
+
+### J1 PUT insert hidden
+$ curl -sS -D - -sS -X PUT -H Content-Profile: myrest_hidden -H Content-Type: application/json -H Prefer: return=minimal -d {"id":9,"name":"put-new"} http://127.0.0.1:3111/outside_items?id=eq.9
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 134
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_hidden.outside_items' in the schema cache","details":null,"hint":null}
+
+
+### J1 PUT update hidden same key
+$ curl -sS -D - -sS -X PUT -H Content-Profile: myrest_hidden -H Content-Type: application/json -d {"id":9,"name":"put-upd"} http://127.0.0.1:3111/outside_items?id=eq.9
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 134
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_hidden.outside_items' in the schema cache","details":null,"hint":null}
+
+
+### J1 DELETE hidden profile-write leftover
+$ curl -sS -D - -sS -X DELETE -H Content-Profile: myrest_hidden -H Prefer: return=representation http://127.0.0.1:3111/outside_items?name=eq.profile-write
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 134
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_hidden.outside_items' in the schema cache","details":null,"hint":null}
+
+
+### J1 tx rollback hidden insert
+$ curl -sS -D - -sS -X POST -H Content-Profile: myrest_hidden -H Content-Type: application/json -H Prefer: tx=rollback, return=representation -d {"name":"rolled"} http://127.0.0.1:3111/outside_items
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /outside_items?id=eq.3
+Preference-Applied: return=representation, tx=rollback
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 27
+
+[{"id":3,"name":"rolled"}]
+
+
+### J1 hidden after rollback
+$ curl -sS -D - -sS -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/outside_items?name=eq.rolled
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 3
+
+[]
+
+
+### J1 bulk insert hidden
+$ curl -sS -D - -sS -X POST -H Content-Profile: myrest_hidden -H Content-Type: application/json -H Prefer: return=representation -d [{"name":"bulk-a"},{"name":"bulk-b"}] http://127.0.0.1:3111/outside_items
+HTTP/1.1 201 Created
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 52
+
+[{"id":4,"name":"bulk-a"},{"id":5,"name":"bulk-b"}]
+
+
+### J1 RPC GET default
+$ curl -sS -D - -sS http://127.0.0.1:3111/rpc/add_them?a=2&b=3
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 2
+
+5
+
+
+### J1 RPC GET Accept-Profile hidden
+$ curl -sS -D - -sS -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/rpc/add_them?a=2&b=3
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 130
+
+{"code":"PGRST202","message":"Could not find the function myrest_hidden.add_them in the schema cache","details":null,"hint":null}
+
+
+### J1 RPC POST Content-Profile hidden
+$ curl -sS -D - -sS -X POST -H Content-Profile: myrest_hidden -H Content-Type: application/json -d {"a":2,"b":3} http://127.0.0.1:3111/rpc/add_them
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 130
+
+{"code":"PGRST202","message":"Could not find the function myrest_hidden.add_them in the schema cache","details":null,"hint":null}
+
+
+### J1 RPC GET Content-Profile hidden ignored
+$ curl -sS -D - -sS -H Content-Profile: myrest_hidden http://127.0.0.1:3111/rpc/add_them?a=2&b=3
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 2
+
+5
+
+
+### J1 RPC POST Accept-Profile hidden ignored
+$ curl -sS -D - -sS -X POST -H Accept-Profile: myrest_hidden -H Content-Type: application/json -d {"a":1,"b":1} http://127.0.0.1:3111/rpc/add_them
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 2
+
+2
+
+
+### J1 OPTIONS rpc hidden profile
+$ curl -sS -D - -sS -D - -o /dev/null -X OPTIONS -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/rpc/add_them
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 130
+
+
+
+### J1 OPTIONS rpc default
+$ curl -sS -D - -sS -D - -o /dev/null -X OPTIONS http://127.0.0.1:3111/rpc/add_them
+HTTP/1.1 200 OK
+Allow: OPTIONS,POST,GET,HEAD
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 0
+
+
+
+### J1 embed still works on default
+$ curl -sS -D - -sS http://127.0.0.1:3111/items?select=id,name,orders(id)&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 98
+
+[{"id":1,"name":"alpha","orders":[{"id":1},{"id":2}]},{"id":2,"name":"beta","orders":[{"id":3}]}]
+
+
+### J1 filter order page default
+$ curl -sS -D - -sS http://127.0.0.1:3111/items?select=id,name&id=gte.1&order=id.desc&limit=1
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 25
+
+[{"id":2,"name":"beta"}]
+
+
+### J1 singular hidden
+$ curl -sS -D - -sS -H Accept-Profile: myrest_hidden -H Accept: application/vnd.pgrst.object+json http://127.0.0.1:3111/outside_items?id=eq.1
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/vnd.pgrst.object+json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 25
+
+{"id":1,"name":"hidden"}
+
+
+### J1 csv hidden
+$ curl -sS -D - -sS -H Accept-Profile: myrest_hidden -H Accept: text/csv http://127.0.0.1:3111/outside_items?select=id,name&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-3/*
+Content-Type: text/csv; charset=utf-8
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 51
+
+id,name
+1,hidden
+2,profile-write
+4,bulk-a
+5,bulk-b
+
+
+### J1 count exact hidden
+$ curl -sS -D - -sS -D - -H Accept-Profile: myrest_hidden -H Prefer: count=exact http://127.0.0.1:3111/outside_items?select=id,name&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-3/4
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 109
+
+[{"id":1,"name":"hidden"},{"id":2,"name":"profile-write"},{"id":4,"name":"bulk-a"},{"id":5,"name":"bulk-b"}]
+
+
+### J1 JWT user default secrets
+$ curl -sS -D - -sS -H Authorization: Bearer REDACTED http://127.0.0.1:3111/secrets
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 34
+
+[{"id":1,"payload":"top-secret"}]
+
+
+### J1 JWT user hidden outside_items
+$ curl -sS -D - -sS -H Authorization: Bearer REDACTED -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/outside_items?select=id,name&order=id.asc
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 134
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_hidden.outside_items' in the schema cache","details":null,"hint":null}
+
+
+### J1 anon secrets still hidden
+$ curl -sS -D - -sS http://127.0.0.1:3111/secrets
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:37:09 GMT
+Content-Length: 129
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.secrets' in the schema cache","details":null,"hint":null}
+
+
+### J1 PATCH before reload still 404
+$ curl -sS -D - -sS -X PATCH -H Content-Profile: myrest_hidden -H Content-Type: application/json -d {"name":"before-reload"} http://127.0.0.1:3111/outside_items?id=eq.2
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:37:37 GMT
+Content-Length: 134
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_hidden.outside_items' in the schema cache","details":null,"hint":null}
+
+
+### J1 OPTIONS after grant reload
+$ curl -sS -D - -sS -D - -o /dev/null -X OPTIONS -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/outside_items
+HTTP/1.1 200 OK
+Allow: OPTIONS,GET,HEAD,POST,PUT,PATCH,DELETE
+Date: Sat, 10 Oct 2026 00:37:38 GMT
+Content-Length: 0
+
+
+
+### J1 PATCH after grant reload
+$ curl -sS -D - -sS -X PATCH -H Content-Profile: myrest_hidden -H Content-Type: application/json -H Prefer: return=representation -d {"name":"profile-patched"} http://127.0.0.1:3111/outside_items?id=eq.2
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 10 Oct 2026 00:37:38 GMT
+Content-Length: 36
+
+[{"id":2,"name":"profile-patched"}]
+
+
+### J1 PUT after grant reload
+$ curl -sS -D - -sS -X PUT -H Content-Profile: myrest_hidden -H Content-Type: application/json -d {"id":9,"name":"put-new"} http://127.0.0.1:3111/outside_items?id=eq.9
+HTTP/1.1 201 Created
+Date: Sat, 10 Oct 2026 00:37:38 GMT
+Content-Length: 0
+
+
+
+### J1 PUT update after grant
+$ curl -sS -D - -sS -X PUT -H Content-Profile: myrest_hidden -H Content-Type: application/json -H Prefer: return=minimal -d {"id":9,"name":"put-upd"} http://127.0.0.1:3111/outside_items?id=eq.9
+HTTP/1.1 204 No Content
+Preference-Applied: return=minimal
+Date: Sat, 10 Oct 2026 00:37:38 GMT
+
+
+
+### J1 read hidden after writes
+$ curl -sS -D - -sS -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/outside_items?select=id,name&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-4/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:37:38 GMT
+Content-Length: 137
+
+[{"id":1,"name":"hidden"},{"id":2,"name":"profile-patched"},{"id":4,"name":"bulk-a"},{"id":5,"name":"bulk-b"},{"id":9,"name":"put-upd"}]
+
+
+### J1 DELETE one bulk row
+$ curl -sS -D - -sS -X DELETE -H Content-Profile: myrest_hidden -H Prefer: return=representation http://127.0.0.1:3111/outside_items?name=eq.bulk-b
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 10 Oct 2026 00:37:38 GMT
+Content-Length: 27
+
+[{"id":5,"name":"bulk-b"}]
+
+
+### J1 read hidden after delete
+$ curl -sS -D - -sS -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/outside_items?select=id,name&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-3/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:37:38 GMT
+Content-Length: 112
+
+[{"id":1,"name":"hidden"},{"id":2,"name":"profile-patched"},{"id":4,"name":"bulk-a"},{"id":9,"name":"put-upd"}]
+
+
+### J1 OpenAPI before reload still old
+$ curl -sS -D - -sS http://127.0.0.1:3111/
+HTTP/1.1 200 OK
+Content-Type: application/openapi+json
+Date: Sat, 10 Oct 2026 00:40:56 GMT
+Transfer-Encoding: chunked
+
+{"basePath":"/rest","host":"api.example.com","info":{"description":"This is a dynamic API generated by myrest","title":"myrest API","version":"1.0"},"paths":{"/":{"get":{"produces":["application/openapi+json","application/json"],"responses":{"200":{"description":"OK"}},"summary":"OpenAPI description (this document)","tags":["Introspection"]}},"/addresses":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/colors":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/deliveries":{"get":{"responses":{"200":{"description":"OK"}}}},"/employees":{"get":{"responses":{"200":{"description":"OK"}}}},"/item_tags":{"get":{"responses":{"200":{"description":"OK"}}}},"/items":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/items_stats":{"get":{"responses":{"200":{"description":"OK"}}}},"/items_view":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/loose_notes":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/measurements":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/null_records":{"get":{"responses":{"200":{"description":"OK"}}}},"/orders":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/outside_items":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/pre_request_log":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/profiles":{"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/quoted_values":{"get":{"responses":{"200":{"description":"OK"}}}},"/rpc/add_them":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/before_request":{"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/before_request_fail":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/bump_label":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/echo_json":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/echo_json_func":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/echo_name":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/item_count":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_items":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_missing_items":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_null_records":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_one_item":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/mark_and_list":{"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/ping":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/write_marker":{"post":{"responses":{"201":{"description":"Created"}}}},"/stock_lines":{"get":{"responses":{"200":{"description":"OK"}}}},"/stock_moves":{"get":{"responses":{"200":{"description":"OK"}}}},"/tags":{"get":{"responses":{"200":{"description":"OK"}}}}},"schemes":["https"],"security":[{"JWT":[]}],"securityDefinitions":{"JWT":{"description":"Add the token prepending \"Bearer \" (without quotes) to it","in":"header","name":"Authorization","type":"apiKey"}},"swagger":"2.0"}
+
+
+### J1 OpenAPI after same-name table
+$ curl -sS -D - -sS http://127.0.0.1:3111/
+HTTP/1.1 200 OK
+Content-Type: application/openapi+json
+Date: Sat, 10 Oct 2026 00:40:57 GMT
+Transfer-Encoding: chunked
+
+{"basePath":"/rest","host":"api.example.com","info":{"description":"This is a dynamic API generated by myrest","title":"myrest API","version":"1.0"},"paths":{"/":{"get":{"produces":["application/openapi+json","application/json"],"responses":{"200":{"description":"OK"}},"summary":"OpenAPI description (this document)","tags":["Introspection"]}},"/addresses":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/colors":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/deliveries":{"get":{"responses":{"200":{"description":"OK"}}}},"/employees":{"get":{"responses":{"200":{"description":"OK"}}}},"/item_tags":{"get":{"responses":{"200":{"description":"OK"}}}},"/items":{"get":{"responses":{"200":{"description":"OK"}}}},"/items_stats":{"get":{"responses":{"200":{"description":"OK"}}}},"/items_view":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/loose_notes":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/measurements":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/null_records":{"get":{"responses":{"200":{"description":"OK"}}}},"/orders":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/outside_items":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/pre_request_log":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/profiles":{"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/quoted_values":{"get":{"responses":{"200":{"description":"OK"}}}},"/rpc/add_them":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/before_request":{"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/before_request_fail":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/bump_label":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/echo_json":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/echo_json_func":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/echo_name":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/item_count":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_items":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_missing_items":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_null_records":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_one_item":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/mark_and_list":{"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/ping":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/write_marker":{"post":{"responses":{"201":{"description":"Created"}}}},"/stock_lines":{"get":{"responses":{"200":{"description":"OK"}}}},"/stock_moves":{"get":{"responses":{"200":{"description":"OK"}}}},"/tags":{"get":{"responses":{"200":{"description":"OK"}}}}},"schemes":["https"],"security":[{"JWT":[]}],"securityDefinitions":{"JWT":{"description":"Add the token prepending \"Bearer \" (without quotes) to it","in":"header","name":"Authorization","type":"apiKey"}},"swagger":"2.0"}
+
+
+### J1 OpenAPI Accept-Profile hidden after collision
+$ curl -sS -D - -sS -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/
+HTTP/1.1 200 OK
+Content-Type: application/openapi+json
+Date: Sat, 10 Oct 2026 00:40:57 GMT
+Transfer-Encoding: chunked
+
+{"basePath":"/rest","host":"api.example.com","info":{"description":"This is a dynamic API generated by myrest","title":"myrest API","version":"1.0"},"paths":{"/":{"get":{"produces":["application/openapi+json","application/json"],"responses":{"200":{"description":"OK"}},"summary":"OpenAPI description (this document)","tags":["Introspection"]}},"/addresses":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/colors":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/deliveries":{"get":{"responses":{"200":{"description":"OK"}}}},"/employees":{"get":{"responses":{"200":{"description":"OK"}}}},"/item_tags":{"get":{"responses":{"200":{"description":"OK"}}}},"/items":{"get":{"responses":{"200":{"description":"OK"}}}},"/items_stats":{"get":{"responses":{"200":{"description":"OK"}}}},"/items_view":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/loose_notes":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/measurements":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/null_records":{"get":{"responses":{"200":{"description":"OK"}}}},"/orders":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/outside_items":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/pre_request_log":{"delete":{"responses":{"204":{"description":"No Content"}}},"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/profiles":{"get":{"responses":{"200":{"description":"OK"}}},"patch":{"responses":{"204":{"description":"No Content"}}},"post":{"responses":{"201":{"description":"Created"}}},"put":{"responses":{"201":{"description":"Created"}}}},"/quoted_values":{"get":{"responses":{"200":{"description":"OK"}}}},"/rpc/add_them":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/before_request":{"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/before_request_fail":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/bump_label":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/echo_json":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/echo_json_func":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/echo_name":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/item_count":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_items":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_missing_items":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_null_records":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/list_one_item":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/mark_and_list":{"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/ping":{"get":{"responses":{"200":{"description":"OK"}}},"post":{"responses":{"201":{"description":"Created"}}}},"/rpc/write_marker":{"post":{"responses":{"201":{"description":"Created"}}}},"/stock_lines":{"get":{"responses":{"200":{"description":"OK"}}}},"/stock_moves":{"get":{"responses":{"200":{"description":"OK"}}}},"/tags":{"get":{"responses":{"200":{"description":"OK"}}}}},"schemes":["https"],"security":[{"JWT":[]}],"securityDefinitions":{"JWT":{"description":"Add the token prepending \"Bearer \" (without quotes) to it","in":"header","name":"Authorization","type":"apiKey"}},"swagger":"2.0"}
+
+
+### J1 GET /items no profile after collision
+$ curl -sS -D - -sS http://127.0.0.1:3111/items?select=id,name&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:40:57 GMT
+Content-Length: 49
+
+[{"id":1,"name":"alpha"},{"id":2,"name":"beta"}]
+
+
+### J1 GET /items Accept-Profile hidden
+$ curl -sS -D - -sS -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/items?select=id,name,secret_note&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:40:57 GMT
+Content-Length: 61
+
+[{"id":1,"name":"hidden-alpha","secret_note":"hidden-note"}]
+
+
+### J1 OPTIONS /items no profile
+$ curl -sS -D - -sS -D - -o /dev/null -X OPTIONS http://127.0.0.1:3111/items
+HTTP/1.1 200 OK
+Allow: OPTIONS,GET,HEAD,POST,PUT,PATCH,DELETE
+Date: Sat, 10 Oct 2026 00:40:57 GMT
+Content-Length: 0
+
+
+
+### J1 OPTIONS /items hidden profile
+$ curl -sS -D - -sS -D - -o /dev/null -X OPTIONS -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/items
+HTTP/1.1 200 OK
+Allow: OPTIONS,GET,HEAD
+Date: Sat, 10 Oct 2026 00:40:57 GMT
+Content-Length: 0
+
+
+
+### J1 POST /items no profile still fixture
+$ curl -sS -D - -sS -X POST -H Content-Type: application/json -H Prefer: return=representation -d {"name":"gamma"} http://127.0.0.1:3111/items
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /items?id=eq.3
+Preference-Applied: return=representation
+Date: Sat, 10 Oct 2026 00:40:57 GMT
+Content-Length: 39
+
+[{"id":3,"name":"gamma","name_len":5}]
+
+
+### J1 POST /items Content-Profile hidden should lack INSERT
+$ curl -sS -D - -sS -X POST -H Content-Profile: myrest_hidden -H Content-Type: application/json -d {"name":"nope"} http://127.0.0.1:3111/items
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:40:57 GMT
+Content-Length: 126
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_hidden.items' in the schema cache","details":null,"hint":null}
+
+
+### J2 POST generated column in body
+$ curl -sS -D - -sS -X POST -H Content-Type: application/json -H Prefer: return=representation -d {"name":"delta","name_len":99} http://127.0.0.1:3111/items
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:41:25 GMT
+Content-Length: 105
+
+{"code":"MYREST001","message":"Cannot insert into generated column name_len","details":null,"hint":null}
+
+
+### J2 unknown preference lenient GET
+$ curl -sS -D - -sS -H Prefer: handling=lenient, timezone=UTC http://127.0.0.1:3111/items?select=id&limit=1
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:41:25 GMT
+Content-Length: 104
+
+{"code":"MYREST001","message":"Prefer timezone is not available with MySQL","details":null,"hint":null}
+
+
+### J2 unknown preference strict GET
+$ curl -sS -D - -sS -H Prefer: handling=strict, timezone=UTC http://127.0.0.1:3111/items?select=id&limit=1
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:41:25 GMT
+Content-Length: 104
+
+{"code":"MYREST001","message":"Prefer timezone is not available with MySQL","details":null,"hint":null}
+
+
+### J2 unknown preference strict no handling token order
+$ curl -sS -D - -sS -H Prefer: count=planned http://127.0.0.1:3111/items?select=id&limit=1
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:41:25 GMT
+Content-Length: 130
+
+{"code":"MYREST001","message":"Prefer count=planned and count=estimated are not available with MySQL","details":null,"hint":null}
+
+
+### J2 column grant select star
+$ curl -sS -D - -sS http://127.0.0.1:3111/pay_slips
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:41:26 GMT
+Content-Length: 131
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.pay_slips' in the schema cache","details":null,"hint":null}
+
+
+### J2 column grant select salary
+$ curl -sS -D - -sS http://127.0.0.1:3111/pay_slips?select=salary
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:41:26 GMT
+Content-Length: 131
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.pay_slips' in the schema cache","details":null,"hint":null}
+
+
+### J2 column grant select id,employee
+$ curl -sS -D - -sS http://127.0.0.1:3111/pay_slips?select=id,employee
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:41:26 GMT
+Content-Length: 131
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.pay_slips' in the schema cache","details":null,"hint":null}
+
+
+### J2 select new column before reload
+$ curl -sS -D - -sS http://127.0.0.1:3111/items?select=id,sku&id=eq.1
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:41:26 GMT
+Content-Length: 81
+
+{"code":"PGRST204","message":"column not found: sku","details":null,"hint":null}
+
+
+### J2 select new column after reload
+$ curl -sS -D - -sS http://127.0.0.1:3111/items?select=id,sku&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-2/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:41:26 GMT
+Content-Length: 65
+
+[{"id":1,"sku":"SKU-1"},{"id":2,"sku":null},{"id":3,"sku":null}]
+
+
+### J2 insert new column after reload
+$ curl -sS -D - -sS -X POST -H Content-Type: application/json -H Prefer: return=representation -d {"name":"echo","sku":"SKU-9"} http://127.0.0.1:3111/items
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /items?id=eq.4
+Preference-Applied: return=representation
+Date: Sat, 10 Oct 2026 00:41:26 GMT
+Content-Length: 52
+
+[{"id":4,"name":"echo","name_len":4,"sku":"SKU-9"}]
+
+
+### J2 notes before reload
+$ curl -sS -D - -sS http://127.0.0.1:3111/notes
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:41:27 GMT
+Content-Length: 127
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.notes' in the schema cache","details":null,"hint":null}
+
+
+### J2 notes after reload
+$ curl -sS -D - -sS http://127.0.0.1:3111/notes
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:41:27 GMT
+Content-Length: 26
+
+[{"id":1,"body":"hello"}]
+
+
+### J2 notes insert after reload
+$ curl -sS -D - -sS -X POST -H Content-Type: application/json -H Prefer: return=representation -d {"body":"second"} http://127.0.0.1:3111/notes
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /notes?id=eq.2
+Preference-Applied: return=representation
+Date: Sat, 10 Oct 2026 00:41:27 GMT
+Content-Length: 27
+
+[{"id":2,"body":"second"}]
+
+
+### J2 unknown prefer lenient
+$ curl -sS -D - -sS -H Prefer: handling=lenient, made-up=1 http://127.0.0.1:3111/items?select=id&limit=1
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:42:10 GMT
+Content-Length: 11
+
+[{"id":1}]
+
+
+### J2 unknown prefer strict
+$ curl -sS -D - -sS -H Prefer: handling=strict, made-up=1 http://127.0.0.1:3111/items?select=id&limit=1
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:42:10 GMT
+Content-Length: 134
+
+{"code":"PGRST122","message":"Invalid preferences given with handling=strict","details":"Invalid preferences: made-up=1","hint":null}
+
+
+### J2 strict missing handling on read unknown
+$ curl -sS -D - -sS -H Prefer: made-up=1 http://127.0.0.1:3111/items?select=id&limit=1
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:42:10 GMT
+Content-Length: 11
+
+[{"id":1}]
+
+
+### J2 notes still visible before revoke reload
+$ curl -sS -D - -sS http://127.0.0.1:3111/notes?select=id
+HTTP/1.1 403 Forbidden
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:42:11 GMT
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+
+### J2 notes hidden after revoke reload
+$ curl -sS -D - -sS http://127.0.0.1:3111/notes?select=id
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:42:11 GMT
+Content-Length: 127
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.notes' in the schema cache","details":null,"hint":null}
+
+
+### J2 view insert
+$ curl -sS -D - -sS -X POST -H Content-Type: application/json -H Prefer: return=representation -d {"name":"from-view"} http://127.0.0.1:3111/items_view
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:42:11 GMT
+Content-Length: 142
+
+{"code":"MYREST001","message":"Prefer return=representation needs a primary key to return inserted rows honestly","details":null,"hint":null}
+
+
+### J2 view read back
+$ curl -sS -D - -sS http://127.0.0.1:3111/items_view?name=eq.from-view
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:42:11 GMT
+Content-Length: 3
+
+[]
+
+
+### J2 stats view insert refused
+$ curl -sS -D - -sS -X POST -H Content-Type: application/json -d {"total":1} http://127.0.0.1:3111/items_stats
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:42:11 GMT
+Content-Length: 86
+
+{"code":"MYREST001","message":"The view is not updatable","details":null,"hint":null}
+
+
+### J2 unicode insert
+$ curl -sS -D - -sS -X POST -H Content-Type: application/json -H Prefer: return=representation -d {"name":"café 日本語"} http://127.0.0.1:3111/items
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /items?id=eq.5
+Preference-Applied: return=representation
+Date: Sat, 10 Oct 2026 00:42:11 GMT
+Content-Length: 60
+
+[{"id":5,"name":"café 日本語","name_len":8,"sku":null}]
+
+
+### J2 unicode filter
+$ curl -sS -D - -sS --get --data-urlencode name=eq.café 日本語 -H Accept: application/json http://127.0.0.1:3111/items?select=id,name
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:42:11 GMT
+Content-Length: 36
+
+[{"id":5,"name":"café 日本語"}]
+
+
+### J2 measurements read
+$ curl -sS -D - -sS http://127.0.0.1:3111/measurements?order=id.asc
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:42:11 GMT
+Content-Length: 3
+
+[]
+
+
+### J2 measurements insert decimal
+$ curl -sS -D - -sS -X POST -H Content-Type: application/json -H Prefer: return=representation -d {"reading":"1.2300"} http://127.0.0.1:3111/measurements
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:42:11 GMT
+Content-Length: 85
+
+{"code":"PGRST204","message":"column not found: reading","details":null,"hint":null}
+
+
+### J2 not eq
+$ curl -sS -D - -sS http://127.0.0.1:3111/items?select=id,name&name=not.eq.alpha&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-3/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:42:11 GMT
+Content-Length: 106
+
+[{"id":2,"name":"beta"},{"id":3,"name":"gamma"},{"id":4,"name":"echo"},{"id":5,"name":"café 日本語"}]
+
+
+### J2 in quoted
+$ curl -sS -D - -sS --get --data-urlencode name=in.("café 日本語",alpha) http://127.0.0.1:3111/items?select=id,name&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:42:11 GMT
+Content-Length: 60
+
+[{"id":1,"name":"alpha"},{"id":5,"name":"café 日本語"}]
+
+
+### J2 view insert minimal
+$ curl -sS -D - -sS -X POST -H Content-Type: application/json -d {"name":"from-view"} http://127.0.0.1:3111/items_view
+HTTP/1.1 201 Created
+Date: Sat, 10 Oct 2026 00:42:40 GMT
+Content-Length: 0
+
+
+
+### J2 view read after minimal insert
+$ curl -sS -D - -sS http://127.0.0.1:3111/items?name=eq.from-view&select=id,name
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:42:40 GMT
+Content-Length: 30
+
+[{"id":6,"name":"from-view"}]
+
+
+### J2 decimal insert
+$ curl -sS -D - -sS -X POST -H Content-Type: application/json -H Prefer: return=representation -d {"amount":"12345678901234567890.1234567890"} http://127.0.0.1:3111/measurements
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /measurements?id=eq.1
+Preference-Applied: return=representation
+Date: Sat, 10 Oct 2026 00:42:40 GMT
+Content-Length: 52
+
+[{"id":1,"amount":12345678901234567890.1234567890}]
+
+
+### J2 decimal read
+$ curl -sS -D - -sS http://127.0.0.1:3111/measurements?select=id,amount
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:42:40 GMT
+Content-Length: 52
+
+[{"id":1,"amount":12345678901234567890.1234567890}]
+
+
+### J2 pre-request GET items
+$ curl -sS -D - -sS http://127.0.0.1:3111/items?select=id&limit=1
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:07 GMT
+Content-Length: 11
+
+[{"id":1}]
+
+
+### J2 pre-request log after GET
+$ curl -sS -D - -sS http://127.0.0.1:3111/pre_request_log?select=id,note&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:07 GMT
+Content-Length: 48
+
+[{"id":1,"note":"hook"},{"id":2,"note":"hook"}]
+
+
+### J2 pre-request POST rollback
+$ curl -sS -D - -sS -X POST -H Content-Type: application/json -H Prefer: tx=rollback, return=representation -d {"name":"hook-rollback"} http://127.0.0.1:3111/items
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /items?id=eq.7
+Preference-Applied: return=representation, tx=rollback
+Date: Sat, 10 Oct 2026 00:43:07 GMT
+Content-Length: 59
+
+[{"id":7,"name":"hook-rollback","name_len":13,"sku":null}]
+
+
+### J2 item absent after hook rollback
+$ curl -sS -D - -sS http://127.0.0.1:3111/items?name=eq.hook-rollback&select=id,name
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:07 GMT
+Content-Length: 3
+
+[]
+
+
+### J2 log after rollback GET again
+$ curl -sS -D - -sS http://127.0.0.1:3111/pre_request_log?select=id,note&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-3/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:08 GMT
+Content-Length: 94
+
+[{"id":1,"note":"hook"},{"id":2,"note":"hook"},{"id":4,"note":"hook"},{"id":5,"note":"hook"}]
+
+
+### J2 pre-request POST commit
+$ curl -sS -D - -sS -X POST -H Content-Type: application/json -H Prefer: return=representation -d {"name":"hook-commit"} http://127.0.0.1:3111/items
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /items?id=eq.8
+Preference-Applied: return=representation
+Date: Sat, 10 Oct 2026 00:43:08 GMT
+Content-Length: 57
+
+[{"id":8,"name":"hook-commit","name_len":11,"sku":null}]
+
+
+### J2 item present after hook commit
+$ curl -sS -D - -sS http://127.0.0.1:3111/items?name=eq.hook-commit&select=id,name
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:08 GMT
+Content-Length: 32
+
+[{"id":8,"name":"hook-commit"}]
+
+
+### J2 log after commit
+$ curl -sS -D - -sS http://127.0.0.1:3111/pre_request_log?select=id,note&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-6/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:08 GMT
+Content-Length: 163
+
+[{"id":1,"note":"hook"},{"id":2,"note":"hook"},{"id":4,"note":"hook"},{"id":5,"note":"hook"},{"id":6,"note":"hook"},{"id":7,"note":"hook"},{"id":8,"note":"hook"}]
+
+
+### J2 pre-request hidden read
+$ curl -sS -D - -sS -H Accept-Profile: myrest_hidden http://127.0.0.1:3111/outside_items?select=id&limit=1
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:08 GMT
+Content-Length: 11
+
+[{"id":1}]
+
+
+### J2 log after hidden read
+$ curl -sS -D - -sS http://127.0.0.1:3111/pre_request_log?select=id,note&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-8/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:08 GMT
+Content-Length: 210
+
+[{"id":1,"note":"hook"},{"id":2,"note":"hook"},{"id":4,"note":"hook"},{"id":5,"note":"hook"},{"id":6,"note":"hook"},{"id":7,"note":"hook"},{"id":8,"note":"hook"},{"id":9,"note":"hook"},{"id":10,"note":"hook"}]
+
+
+### J2 failing hook blocks insert
+$ curl -sS -D - -sS -X POST -H Content-Type: application/json -H Prefer: return=representation -d {"name":"hook-fail"} http://127.0.0.1:3111/items
+HTTP/1.1 500 Internal Server Error
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:43:23 GMT
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+
+### J2 failing hook blocks read
+$ curl -sS -D - -sS http://127.0.0.1:3111/items?select=id&limit=1
+HTTP/1.1 500 Internal Server Error
+Content-Type: application/json
+Date: Sat, 10 Oct 2026 00:43:23 GMT
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+
+### J3 max-rows uncapped request
+$ curl -sS -D - -sS -D - http://127.0.0.1:3111/items?select=id,name&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+Content-Length: 26
+
+[{"id":1,"name":"alpha"}]
+
+
+### J3 max-rows limit=10
+$ curl -sS -D - -sS -D - http://127.0.0.1:3111/items?select=id,name&order=id.asc&limit=10
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+Content-Length: 26
+
+[{"id":1,"name":"alpha"}]
+
+
+### J3 max-rows limit=1 explicit
+$ curl -sS -D - -sS -D - http://127.0.0.1:3111/items?select=id,name&order=id.asc&limit=1
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+Content-Length: 26
+
+[{"id":1,"name":"alpha"}]
+
+
+### J3 max-rows offset
+$ curl -sS -D - -sS -D - http://127.0.0.1:3111/items?select=id,name&order=id.asc&offset=1
+HTTP/1.1 200 OK
+Content-Range: 1-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+Content-Length: 25
+
+[{"id":2,"name":"beta"}]
+
+
+### J3 max-rows count exact
+$ curl -sS -D - -sS -D - -H Prefer: count=exact http://127.0.0.1:3111/items?select=id,name&order=id.asc
+HTTP/1.1 206 Partial Content
+Content-Range: 0-0/7
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+Content-Length: 26
+
+[{"id":1,"name":"alpha"}]
+
+
+### J3 max-rows count exact limit 1
+$ curl -sS -D - -sS -D - -H Prefer: count=exact http://127.0.0.1:3111/items?select=id,name&order=id.asc&limit=1
+HTTP/1.1 206 Partial Content
+Content-Range: 0-0/7
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+Content-Length: 26
+
+[{"id":1,"name":"alpha"}]
+
+
+### J3 max-rows Range header
+$ curl -sS -D - -sS -D - -H Range: 0-9 http://127.0.0.1:3111/items?select=id,name&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+Content-Length: 26
+
+[{"id":1,"name":"alpha"}]
+
+
+### J3 max-rows csv
+$ curl -sS -D - -sS -D - -H Accept: text/csv http://127.0.0.1:3111/items?select=id,name&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: text/csv; charset=utf-8
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+Content-Length: 16
+
+id,name
+1,alpha
+
+
+### J3 max-rows embed
+$ curl -sS -D - -sS -D - http://127.0.0.1:3111/items?select=id,name,orders(id)&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+Content-Length: 55
+
+[{"id":1,"name":"alpha","orders":[{"id":1},{"id":2}]}]
+
+
+### J3 max-rows embed from orders parent
+$ curl -sS -D - -sS -D - http://127.0.0.1:3111/items?select=name,orders(id)&id=eq.1
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+Content-Length: 48
+
+[{"name":"alpha","orders":[{"id":1},{"id":2}]}]
+
+
+### J3 max-rows rpc row set
+$ curl -sS -D - -sS -D - http://127.0.0.1:3111/rpc/list_items
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+Content-Length: 26
+
+[{"id":1,"name":"alpha"}]
+
+
+### J3 max-rows rpc count
+$ curl -sS -D - -sS -D - -H Prefer: count=exact http://127.0.0.1:3111/rpc/list_items
+HTTP/1.1 206 Partial Content
+Content-Range: 0-0/7
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+Content-Length: 26
+
+[{"id":1,"name":"alpha"}]
+
+
+### J3 max-rows HEAD
+$ curl -sS -D - -sS -I http://127.0.0.1:3111/items?select=id,name&order=id.asc
+HTTP/1.1 200 OK
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Range: 0-0/*
+Content-Type: application/json
+Content-Type: application/json
+Range-Unit: items
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+
+
+
+
+### J3 max-rows hidden profile
+$ curl -sS -D - -sS -D - -H Accept-Profile: myrest_hidden -H Prefer: count=exact http://127.0.0.1:3111/outside_items?select=id,name&order=id.asc
+HTTP/1.1 206 Partial Content
+Content-Range: 0-0/4
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+Content-Length: 27
+
+[{"id":1,"name":"hidden"}]
+
+
+### J3 max-rows does not cap insert
+$ curl -sS -D - -sS -X POST -H Content-Type: application/json -H Prefer: return=representation -d [{"name":"cap-a"},{"name":"cap-b"}] http://127.0.0.1:3111/items
+HTTP/1.1 201 Created
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+Content-Length: 99
+
+[{"id":9,"name":"cap-a","name_len":5,"sku":null},{"id":10,"name":"cap-b","name_len":5,"sku":null}]
+
+
+### J3 max-rows aggregate
+$ curl -sS -D - -sS -D - http://127.0.0.1:3111/items?select=count()
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+Content-Length: 14
+
+[{"count":9}]
+
+
+### J3 max-rows singular over cap
+$ curl -sS -D - -sS -D - -H Accept: application/vnd.pgrst.object+json http://127.0.0.1:3111/items?select=id&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/vnd.pgrst.object+json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:43:38 GMT
+Content-Length: 9
+
+{"id":1}
+
+
+### J3 limit=0 with max-rows
+$ curl -sS -D - -sS -D - http://127.0.0.1:3111/items?limit=0&select=id
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:45:17 GMT
+Content-Length: 3
+
+[]
+
+
+### J3 limit=0 offset with max-rows
+$ curl -sS -D - -sS -D - http://127.0.0.1:3111/items?limit=0&offset=1&select=id
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Sat, 10 Oct 2026 00:45:17 GMT
+Content-Length: 3
+
+[]
+
