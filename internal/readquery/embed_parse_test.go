@@ -167,3 +167,33 @@ func TestParseEmbedRefusesEmptyLogicalGroups(t *testing.T) {
 		})
 	}
 }
+
+func TestParseMultiLevelEmbedParams(t *testing.T) {
+	t.Parallel()
+
+	query, err := readquery.Parse(url.Values{
+		"select":             []string{"id,orders(id,items(id))"},
+		"orders.items.id":    []string{"eq.1"},
+		"orders.items.order": []string{"id.asc"},
+		"orders.items.limit": []string{"1"},
+	}, readquery.CountNone)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(query.Embeds) != 1 || len(query.Embeds[0].Embeds) != 1 {
+		t.Fatalf("embeds = %#v, want orders with one nested items embed", query.Embeds)
+	}
+	items := query.Embeds[0].Embeds[0]
+	if len(items.Filters) != 1 || items.Filters[0].Column != "id" {
+		t.Fatalf("items filters = %#v", items.Filters)
+	}
+	if len(items.Order) != 1 || items.Order[0].Column != "id" {
+		t.Fatalf("items order = %#v", items.Order)
+	}
+	if items.Limit == nil || *items.Limit != 1 {
+		t.Fatalf("items limit = %v", items.Limit)
+	}
+	if len(query.Embeds[0].Filters) != 0 {
+		t.Fatalf("orders filters = %#v, want none", query.Embeds[0].Filters)
+	}
+}

@@ -3,6 +3,7 @@ package readquery
 import (
 	"fmt"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -96,14 +97,26 @@ func parseColumnFilters(values url.Values, query *Query) error {
 // attachEmbedParam applies orders.id=eq.1, orders.order=..., orders.limit=...,
 // and orders.offset=... to the matching embed (by alias or resource name).
 func attachEmbedParam(query *Query, key string, values []string) error {
-	head, rest, found := strings.Cut(key, ".")
-	if !found || rest == "" {
+	parts := strings.Split(key, ".")
+	if len(parts) < 2 || slices.Contains(parts, "") {
 		return ParseFailure{Message: "embed parameter '" + key + "' is incomplete"}
 	}
-	embed := findEmbed(query.Embeds, head)
+	embed := findEmbed(query.Embeds, parts[0])
 	if embed == nil {
-		return ParseFailure{Message: "no embed named '" + head + "' for parameter '" + key + "'"}
+		return ParseFailure{Message: "no embed named '" + parts[0] + "' for parameter '" + key + "'"}
 	}
+	// Walk down through nested embeds (orders.items.id): each segment that
+	// names a child embed moves the target down. The rest is the parameter or
+	// column on the embed reached.
+	i := 1
+	for ; i < len(parts)-1; i++ {
+		child := childEmbed(embed, parts[i])
+		if child == nil {
+			break
+		}
+		embed = child
+	}
+	rest := strings.Join(parts[i:], ".")
 	switch rest {
 	case "order":
 		return attachEmbedOrder(embed, values)
@@ -157,6 +170,16 @@ func attachEmbedFilters(embed *Embed, column string, values []string) error {
 			return err
 		}
 		embed.Filters = append(embed.Filters, filter)
+	}
+	return nil
+}
+
+// childEmbed returns the direct child of embed named name, or nil.
+func childEmbed(embed *Embed, name string) *Embed {
+	for i := range embed.Embeds {
+		if embed.Embeds[i].Key() == name || embed.Embeds[i].Resource == name {
+			return &embed.Embeds[i]
+		}
 	}
 	return nil
 }
