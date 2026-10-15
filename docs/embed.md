@@ -22,6 +22,12 @@ Nested filter, order, and page use the embed key as a prefix:
 /items?select=id,orders(id)&orders.id=gt.1&orders.order=id.desc&orders.limit=1
 ```
 
+A deeper embed takes the chain of embed keys from the top, as in PostgREST:
+
+```text
+/orders?select=id,items(id,orders(id))&items.orders.order=id.desc&items.orders.limit=1
+```
+
 ## Refusals
 
 | Case | Code | HTTP |

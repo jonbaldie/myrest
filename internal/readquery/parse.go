@@ -95,14 +95,12 @@ func parseColumnFilters(values url.Values, query *Query) error {
 
 // attachEmbedParam applies orders.id=eq.1, orders.order=..., orders.limit=...,
 // and orders.offset=... to the matching embed (by alias or resource name).
+// A chained key such as orders.items.id=eq.1 walks into the nested embed
+// items of orders before it applies the parameter.
 func attachEmbedParam(query *Query, key string, values []string) error {
-	head, rest, found := strings.Cut(key, ".")
-	if !found || rest == "" {
-		return ParseFailure{Message: "embed parameter '" + key + "' is incomplete"}
-	}
-	embed := findEmbed(query.Embeds, head)
-	if embed == nil {
-		return ParseFailure{Message: "no embed named '" + head + "' for parameter '" + key + "'"}
+	embed, rest, err := resolveEmbedParam(query.Embeds, key)
+	if err != nil {
+		return err
 	}
 	switch rest {
 	case "order":
@@ -114,6 +112,37 @@ func attachEmbedParam(query *Query, key string, values []string) error {
 	default:
 		return attachEmbedFilters(embed, rest, values)
 	}
+}
+
+// resolveEmbedParam walks the embed keys at the front of key and returns the
+// embed they name with the rest of key (a column or a directive).
+func resolveEmbedParam(embeds []Embed, key string) (*Embed, string, error) {
+	head, rest, found := strings.Cut(key, ".")
+	if !found || rest == "" {
+		return nil, "", ParseFailure{Message: "embed parameter '" + key + "' is incomplete"}
+	}
+	embed := findTopEmbed(embeds, head)
+	for embed != nil && !isEmbedDirective(rest) {
+		next, tail, chained := strings.Cut(rest, ".")
+		if !chained {
+			return embed, rest, nil
+		}
+		if tail == "" {
+			return nil, "", ParseFailure{Message: "embed parameter '" + key + "' is incomplete"}
+		}
+		head, rest = next, tail
+		embed = childEmbed(embed.Embeds, head)
+	}
+	if embed == nil {
+		return nil, "", ParseFailure{Message: "no embed named '" + head + "' for parameter '" + key + "'"}
+	}
+	return embed, rest, nil
+}
+
+// isEmbedDirective reports whether rest is a dotted logical-group key, not
+// a step into a nested embed.
+func isEmbedDirective(rest string) bool {
+	return rest == "not.and" || rest == "not.or"
 }
 
 func attachEmbedOrder(embed *Embed, values []string) error {
@@ -161,13 +190,27 @@ func attachEmbedFilters(embed *Embed, column string, values []string) error {
 	return nil
 }
 
-func findEmbed(embeds []Embed, name string) *Embed {
+// findTopEmbed finds name among the top-level embeds first. When no
+// top-level embed matches, it falls back to the first nested match in
+// depth-first order, so the short form items.id=eq.1 still reaches a nested
+// items embed.
+func findTopEmbed(embeds []Embed, name string) *Embed {
+	if embed := childEmbed(embeds, name); embed != nil {
+		return embed
+	}
+	for i := range embeds {
+		if nested := findTopEmbed(embeds[i].Embeds, name); nested != nil {
+			return nested
+		}
+	}
+	return nil
+}
+
+// childEmbed finds name among embeds only, not their nested embeds.
+func childEmbed(embeds []Embed, name string) *Embed {
 	for i := range embeds {
 		if embeds[i].Key() == name || embeds[i].Resource == name {
 			return &embeds[i]
-		}
-		if nested := findEmbed(embeds[i].Embeds, name); nested != nil {
-			return nested
 		}
 	}
 	return nil

@@ -167,3 +167,123 @@ func TestParseEmbedRefusesEmptyLogicalGroups(t *testing.T) {
 		})
 	}
 }
+
+func TestParseChainedEmbedParamsTargetNestedEmbed(t *testing.T) {
+	t.Parallel()
+
+	query, err := readquery.Parse(url.Values{
+		"select":              []string{"id,orders(id,items(id))"},
+		"orders.items.id":     []string{"eq.1"},
+		"orders.items.order":  []string{"id.desc"},
+		"orders.items.limit":  []string{"1"},
+		"orders.items.offset": []string{"2"},
+		"orders.items.and":    []string{"(id.gte.1)"},
+		"orders.items.not.or": []string{"(id.eq.3)"},
+	}, readquery.CountNone)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	orders := query.Embeds[0]
+	if len(orders.Filters) != 0 || len(orders.Order) != 0 || orders.Limit != nil || orders.Offset != 0 || len(orders.Groups) != 0 {
+		t.Fatalf("parent embed got child params: %#v", orders)
+	}
+	items := orders.Embeds[0]
+	if len(items.Filters) != 1 || items.Filters[0].Column != "id" || items.Filters[0].Op != readquery.OpEq {
+		t.Fatalf("child filters = %#v", items.Filters)
+	}
+	if len(items.Order) != 1 || items.Order[0].Column != "id" || !items.Order[0].Desc {
+		t.Fatalf("child order = %#v", items.Order)
+	}
+	if items.Limit == nil || *items.Limit != 1 || items.Offset != 2 {
+		t.Fatalf("child page = %v, %d", items.Limit, items.Offset)
+	}
+	if len(items.Groups) != 2 {
+		t.Fatalf("child groups = %#v", items.Groups)
+	}
+}
+
+func TestParseChainedEmbedParamPicksNamedBranch(t *testing.T) {
+	t.Parallel()
+
+	query, err := readquery.Parse(url.Values{
+		"select":             []string{"id,orders(id,items(id)),shipments(id,items(id))"},
+		"shipments.items.id": []string{"eq.1"},
+	}, readquery.CountNone)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := len(query.Embeds[0].Embeds[0].Filters); got != 0 {
+		t.Fatalf("orders.items filters = %d, want 0", got)
+	}
+	if got := len(query.Embeds[1].Embeds[0].Filters); got != 1 {
+		t.Fatalf("shipments.items filters = %d, want 1", got)
+	}
+}
+
+func TestParseChainedEmbedParamMatchesAliasOrResource(t *testing.T) {
+	t.Parallel()
+
+	for _, key := range []string{"orders.line.id", "orders.items.id"} {
+		query, err := readquery.Parse(url.Values{
+			"select": []string{"id,orders(id,line:items(id))"},
+			key:      []string{"eq.1"},
+		}, readquery.CountNone)
+		if err != nil {
+			t.Fatalf("%s: Parse: %v", key, err)
+		}
+		if got := len(query.Embeds[0].Embeds[0].Filters); got != 1 {
+			t.Fatalf("%s: nested filters = %d, want 1", key, got)
+		}
+	}
+}
+
+func TestParseShortEmbedParamPrefersTopLevelThenNested(t *testing.T) {
+	t.Parallel()
+
+	query, err := readquery.Parse(url.Values{
+		"select":   []string{"id,orders(id,items(id)),items(id)"},
+		"items.id": []string{"eq.1"},
+	}, readquery.CountNone)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if nested, top := len(query.Embeds[0].Embeds[0].Filters), len(query.Embeds[1].Filters); nested != 0 || top != 1 {
+		t.Fatalf("nested filters = %d, top filters = %d, want 0 and 1", nested, top)
+	}
+
+	query, err = readquery.Parse(url.Values{
+		"select":   []string{"id,tags(id),orders(id,items(id))"},
+		"items.id": []string{"eq.1"},
+	}, readquery.CountNone)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := len(query.Embeds[1].Embeds[0].Filters); got != 1 {
+		t.Fatalf("short form nested filters = %d, want 1", got)
+	}
+}
+
+func TestParseChainedEmbedParamRefusals(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		key     string
+		message string
+	}{
+		{key: "orders.", message: "embed parameter 'orders.' is incomplete"},
+		{key: "orders.items.", message: "embed parameter 'orders.items.' is incomplete"},
+		{key: "nope.id", message: "no embed named 'nope' for parameter 'nope.id'"},
+		{key: "orders.nope.id", message: "no embed named 'nope' for parameter 'orders.nope.id'"},
+		{key: "orders.items.nope.id", message: "no embed named 'nope' for parameter 'orders.items.nope.id'"},
+	}
+	for _, tc := range cases {
+		_, err := readquery.Parse(url.Values{
+			"select": []string{"id,orders(id,items(id))"},
+			tc.key:   []string{"eq.1"},
+		}, readquery.CountNone)
+		var failure readquery.ParseFailure
+		if !errors.As(err, &failure) || failure.Message != tc.message {
+			t.Fatalf("%s: err = %v, want %q", tc.key, err, tc.message)
+		}
+	}
+}

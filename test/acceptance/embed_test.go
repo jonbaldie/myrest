@@ -104,6 +104,50 @@ func TestEmbedNestedFilterOrderAndLimit(t *testing.T) {
 	}
 }
 
+// embed-002 / issue 245: a chained key reaches an embed two levels down.
+func TestEmbedChainedNestedFilterOrderAndLimit(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	response, body := get(
+		t,
+		service,
+		"/orders?select=id,items(id,orders(id))&id=eq.1&items.orders.order=id.desc&items.orders.limit=1",
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want := `[{"id":1,"items":{"id":1,"orders":[{"id":2}]}}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+
+	response, body = get(
+		t,
+		service,
+		"/orders?select=id,items(id,orders(id))&id=eq.1&items.orders.or=(id.eq.1,id.eq.3)",
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want = `[{"id":1,"items":{"id":1,"orders":[{"id":1}]}}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+
+	response, body = get(
+		t,
+		service,
+		"/items?select=id,orders(id,items(id))&id=eq.2&orders.items.id=eq.1",
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", response.StatusCode, http.StatusOK, body)
+	}
+	want = `[{"id":2,"orders":[{"id":3,"items":null}]}]`
+	if string(body) != want+"\n" {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
 // Many-to-many embed through a declared join table succeeds.
 func TestEmbedManyToManyThroughJoinTable(t *testing.T) {
 	response, body := get(
