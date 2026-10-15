@@ -188,17 +188,19 @@ func resolveColumns(table schemacache.Table, query readquery.Query) ([]resolvedC
 			// Only embeds: join columns should already be injected into Columns.
 			return []resolvedColumn{}, nil
 		}
-		out := make([]resolvedColumn, len(table.Columns))
-		for i, column := range table.Columns {
-			out[i] = resolvedColumn{
-				Expr:   quoteIdentifier(column.Name),
-				Output: column.Name,
-			}
-		}
-		return out, nil
+		return starColumns(table, nil), nil
 	}
 	out := make([]resolvedColumn, 0, len(asked))
+	named := namedResults(asked)
 	for _, column := range asked {
+		if column.Star {
+			expanded := starColumns(table, named)
+			for _, resolved := range expanded {
+				named[resolved.Output] = true
+			}
+			out = append(out, expanded...)
+			continue
+		}
 		resolved, err := resolveColumn(table, column)
 		if err != nil {
 			return nil, err
@@ -206,6 +208,34 @@ func resolveColumns(table schemacache.Table, query readquery.Query) ([]resolvedC
 		out = append(out, resolved)
 	}
 	return out, nil
+}
+
+// starColumns lists every table column in catalog order, except the names in
+// skip.
+func starColumns(table schemacache.Table, skip map[string]bool) []resolvedColumn {
+	out := make([]resolvedColumn, 0, len(table.Columns))
+	for _, column := range table.Columns {
+		if skip[column.Name] {
+			continue
+		}
+		out = append(out, resolvedColumn{
+			Expr:   quoteIdentifier(column.Name),
+			Output: column.Name,
+		})
+	}
+	return out
+}
+
+// namedResults holds the result names of the named columns, which a * part
+// beside them does not repeat.
+func namedResults(columns []readquery.Column) map[string]bool {
+	named := map[string]bool{}
+	for _, column := range columns {
+		if !column.Star {
+			named[column.ResultName()] = true
+		}
+	}
+	return named
 }
 
 func resolveColumn(table schemacache.Table, column readquery.Column) (resolvedColumn, error) {

@@ -282,7 +282,11 @@ func parseSelect(raw string, query *Query) error {
 	query.Embeds = make([]Embed, 0, embedCount)
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
-		if part == "" || part == "*" {
+		if part == "" {
+			continue
+		}
+		if part == "*" {
+			query.Columns = append(query.Columns, Column{Star: true})
 			continue
 		}
 		if isEmbedPart(part) {
@@ -299,29 +303,30 @@ func parseSelect(raw string, query *Query) error {
 		}
 		query.Columns = append(query.Columns, column)
 	}
-	recordSelectAll(parts, query)
+	recordSelectAll(query)
 	return nil
 }
 
-// recordSelectAll records select-all for a standalone * part. It expands to
-// every column of the resource and may sit beside embed parts, so it is not
-// the whole select value.
-func recordSelectAll(parts []string, query *Query) {
-	if len(query.Columns) != 0 {
+// recordSelectAll records select-all when every selected column is a * part.
+// Such a select may still hold embed parts. A * part beside named columns
+// stays in Columns, so it expands in place.
+func recordSelectAll(query *Query) {
+	if len(query.Columns) == 0 {
 		return
 	}
-	for _, part := range parts {
-		if strings.TrimSpace(part) == "*" {
-			query.SelectAll = true
+	for _, column := range query.Columns {
+		if !column.Star {
 			return
 		}
 	}
+	query.Columns = query.Columns[:0]
+	query.SelectAll = true
 }
 
 func countSelectParts(parts []string) (columns, embeds int) {
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
-		if part == "" || part == "*" {
+		if part == "" {
 			continue
 		}
 		if isEmbedPart(part) {

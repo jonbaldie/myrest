@@ -371,3 +371,30 @@ func TestKeyConditionShapesSingleAndCompositeKeys(t *testing.T) {
 		t.Fatal("no keys must report no condition")
 	}
 }
+
+// Issue #246: a * part beside named columns already holds every join and key
+// column, so no column is injected and dropped again, and the embed row keeps
+// every column.
+func TestStarBesideNamedColumnsSkipsInjectionAndProjection(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		Columns: []schemacache.Column{{Name: "id"}, {Name: "item_id"}},
+	}
+	starred := readquery.Query{Columns: []readquery.Column{{Name: "id"}, {Star: true}}}
+	plan := []plannedEmbed{{relationship: schemacache.Relationship{OriginColumns: []string{"item_id"}}}}
+	if got, injected := withJoinColumns(table, starred, plan); injected != nil || len(got.Columns) != 2 {
+		t.Fatalf("withJoinColumns = %#v injected %#v", got.Columns, injected)
+	}
+	if got, injected := ensureColumns(table, starred, []string{"item_id"}); injected != nil || len(got.Columns) != 2 {
+		t.Fatalf("ensureColumns = %#v injected %#v", got.Columns, injected)
+	}
+	row := rows.Row{Columns: []string{"id", "item_id"}, Values: []any{int64(1), int64(9)}}
+	got := projectEmbedRow(row, readquery.Embed{Columns: starred.Columns})
+	if len(got.Columns) != 2 || got.Columns[1] != "item_id" {
+		t.Fatalf("projected = %#v", got)
+	}
+	if names := csvHeaderNames(starred, nil); names != nil {
+		t.Fatalf("csvHeaderNames = %#v, want nil when * hides the names", names)
+	}
+}

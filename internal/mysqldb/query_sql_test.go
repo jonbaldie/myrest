@@ -364,3 +364,24 @@ func TestBuildSelectEmptyGroupDoesNotEmitAlwaysTrue(t *testing.T) {
 		t.Fatalf("statement = %q, want %q", parts.statement, want)
 	}
 }
+
+// Issue #246: a * part beside named columns expands in place to every table
+// column that no named column already gives.
+func TestBuildSelectExpandsStarBesideNamedColumns(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID:      schemacache.TableID{Database: "shop", Name: "items"},
+		Columns: []schemacache.Column{{Name: "id"}, {Name: "name"}, {Name: "name_len"}},
+	}
+	parts, err := buildSelect(table, readquery.Query{
+		Columns: []readquery.Column{{Name: "name"}, {Star: true}, {Name: "id", Alias: "key"}, {Star: true}},
+	})
+	if err != nil {
+		t.Fatalf("buildSelect: %v", err)
+	}
+	want := "SELECT `name`, `id`, `name_len`, `id` AS `key` FROM `shop`.`items`"
+	if parts.statement != want {
+		t.Fatalf("statement = %q, want %q", parts.statement, want)
+	}
+}

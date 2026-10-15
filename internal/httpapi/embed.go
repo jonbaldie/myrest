@@ -183,7 +183,7 @@ func cardinalityName(cardinality schemacache.Cardinality) string {
 // withJoinColumns adds the parent columns an embed plan needs, and returns the
 // names that were injected so the response can drop them again.
 func withJoinColumns(table schemacache.Table, query readquery.Query, plan []plannedEmbed) (readquery.Query, []string) {
-	if len(plan) == 0 || (len(query.Columns) == 0 && query.SelectAll) {
+	if len(plan) == 0 || selectsEveryColumn(query) {
 		return query, nil
 	}
 	needed := originColumnsNeeded(plan)
@@ -198,6 +198,12 @@ func withJoinColumns(table schemacache.Table, query readquery.Query, plan []plan
 		have[column.Name] = true
 	}
 	return query, injected
+}
+
+// selectsEveryColumn reports whether the select already holds every table
+// column, so no column needs injection.
+func selectsEveryColumn(query readquery.Query) bool {
+	return (len(query.Columns) == 0 && query.SelectAll) || readquery.HasStar(query.Columns)
 }
 
 func originColumnsNeeded(plan []plannedEmbed) map[string]bool {
@@ -615,7 +621,7 @@ func exceptNames(names, keep []string) []string {
 // ensureColumns adds named columns to the select list when the client did not
 // ask for every column.
 func ensureColumns(table schemacache.Table, query readquery.Query, names []string) (readquery.Query, []string) {
-	if len(query.Columns) == 0 && query.SelectAll {
+	if selectsEveryColumn(query) {
 		return query, nil
 	}
 	have := selectedNames(query.Columns)
@@ -645,7 +651,7 @@ func columnOf(table schemacache.Table, name string) (schemacache.Column, bool) {
 
 // projectEmbedRow keeps the columns the client asked for, plus nested embeds.
 func projectEmbedRow(row rows.Row, ask readquery.Embed) rows.Row {
-	if len(ask.Columns) == 0 {
+	if len(ask.Columns) == 0 || readquery.HasStar(ask.Columns) {
 		return row
 	}
 	keep := map[string]bool{}
