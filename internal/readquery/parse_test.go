@@ -329,6 +329,18 @@ func TestParseStarPartWithColumnKeepsStarInPlace(t *testing.T) {
 	}
 }
 
+func TestParseOnlyEmbedPartsKeepSelectAllOff(t *testing.T) {
+	t.Parallel()
+
+	query, err := readquery.Parse(url.Values{"select": []string{"orders(id)"}}, readquery.CountNone)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if query.SelectAll || len(query.Columns) != 0 {
+		t.Fatalf("SelectAll = %v, columns = %#v, want no parent column", query.SelectAll, query.Columns)
+	}
+}
+
 func TestParseOnlyStarPartsRecordSelectAll(t *testing.T) {
 	t.Parallel()
 
