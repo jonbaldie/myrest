@@ -2,6 +2,7 @@ package readquery_test
 
 import (
 	"net/url"
+	"reflect"
 	"testing"
 
 	"github.com/jonbaldie/myrest/internal/readquery"
@@ -202,5 +203,30 @@ func TestShapeNullFilterParity(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Issue #246: a * part beside named columns keeps every row column. The
+// named columns keep their place and names, and * does not repeat them.
+func TestProjectExpandsStarBesideNamedColumns(t *testing.T) {
+	t.Parallel()
+
+	set := []rows.Row{{
+		Columns: []string{"id", "name", "orders", "note"},
+		Values:  []any{int64(1), "alpha", "embedded", "x"},
+	}}
+	projected, err := readquery.Project(set, readquery.Query{
+		Columns: []readquery.Column{{Name: "name", Alias: "label"}, {Star: true}, {Star: true}, {Name: "id", Alias: "key"}},
+		Embeds:  []readquery.Embed{{Resource: "orders"}},
+	})
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	want := rows.Row{
+		Columns: []string{"label", "id", "name", "note", "key", "orders"},
+		Values:  []any{"alpha", int64(1), "alpha", "x", int64(1), "embedded"},
+	}
+	if len(projected) != 1 || !reflect.DeepEqual(projected[0], want) {
+		t.Fatalf("projected = %#v, want %#v", projected, want)
 	}
 }

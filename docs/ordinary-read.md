@@ -31,7 +31,10 @@ Also full match on this path:
 
 - `not.` before an operator
 - top-level `and=(...)` and `or=(...)` groups (including nested groups)
-- column `select` (with optional `alias:column`)
+- column `select` (with optional `alias:column`). A `*` part beside named
+  columns, as in `select=name,*`, adds every other column of the resource in
+  catalog order at its place. It does not repeat a JSON key that a named part
+  already gives.
 - `order=column.asc|desc`
 - `limit` / `offset` pagination and `Content-Range`
 - the `Range` request header as the same window: `first-last` with both ends

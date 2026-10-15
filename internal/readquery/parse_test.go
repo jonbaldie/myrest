@@ -3,6 +3,7 @@ package readquery_test
 import (
 	"errors"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -307,18 +308,51 @@ func TestParseStarPartWithEmbedRecordsSelectAll(t *testing.T) {
 	}
 }
 
-func TestParseStarPartWithColumnKeepsExplicitSelect(t *testing.T) {
+// Issue #246: a * part beside named columns stays in place, so it expands
+// to every column after the named ones.
+func TestParseStarPartWithColumnKeepsStarInPlace(t *testing.T) {
 	t.Parallel()
 
-	query, err := readquery.Parse(url.Values{"select": []string{"*,name"}}, readquery.CountNone)
+	query, err := readquery.Parse(url.Values{"select": []string{"name,*,orders(id)"}}, readquery.CountNone)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	if query.SelectAll {
-		t.Fatalf("SelectAll = true, want false when an explicit column part coexists with *")
+		t.Fatalf("SelectAll = true, want false beside a named column")
 	}
-	if len(query.Columns) != 1 || query.Columns[0].Name != "name" {
-		t.Fatalf("columns = %#v, want name", query.Columns)
+	want := []readquery.Column{{Name: "name"}, {Star: true}}
+	if !reflect.DeepEqual(query.Columns, want) {
+		t.Fatalf("columns = %#v, want %#v", query.Columns, want)
+	}
+	if len(query.Embeds) != 1 || query.Embeds[0].Resource != "orders" {
+		t.Fatalf("embeds = %#v, want orders", query.Embeds)
+	}
+}
+
+func TestParseOnlyEmbedPartsKeepSelectAllOff(t *testing.T) {
+	t.Parallel()
+
+	query, err := readquery.Parse(url.Values{"select": []string{"orders(id)"}}, readquery.CountNone)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if query.SelectAll || len(query.Columns) != 0 {
+		t.Fatalf("SelectAll = %v, columns = %#v, want no parent column", query.SelectAll, query.Columns)
+	}
+}
+
+func TestParseOnlyStarPartsRecordSelectAll(t *testing.T) {
+	t.Parallel()
+
+	query, err := readquery.Parse(url.Values{"select": []string{"*,*,orders(*)"}}, readquery.CountNone)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if !query.SelectAll || len(query.Columns) != 0 {
+		t.Fatalf("SelectAll = %v, columns = %#v, want select-all with no columns", query.SelectAll, query.Columns)
+	}
+	if len(query.Embeds) != 1 || len(query.Embeds[0].Columns) != 0 {
+		t.Fatalf("embeds = %#v, want orders with every column", query.Embeds)
 	}
 }
 

@@ -12,7 +12,8 @@ import (
 // Query is one ordinary read of a resource.
 type Query struct {
 	// Columns are the selected columns. Empty means every column of the
-	// resource, in catalog order.
+	// resource, in catalog order. A Star column beside named columns expands
+	// in place to every column that no other selected column already names.
 	Columns []Column
 	// Embeds are nested related resources asked for in select.
 	Embeds []Embed
@@ -28,8 +29,8 @@ type Query struct {
 	Offset uint64
 	// ExactCount asks for the total matching row count.
 	ExactCount bool
-	// SelectAll is true when the client omitted select, used *, or used a
-	// standalone * part beside embed parts.
+	// SelectAll is true when the client omitted select, used *, or used
+	// only * parts beside embed parts.
 	SelectAll bool
 	// MaxRows is the hard row cap from db-max-rows. Nil means no hard cap.
 	MaxRows *uint64
@@ -77,6 +78,18 @@ type Column struct {
 	// Agg is the aggregate applied to the column. Empty means no aggregate.
 	// Bare count() keeps Name empty.
 	Agg Aggregate
+	// Star is a * part beside named columns. It keeps Name empty.
+	Star bool
+}
+
+// HasStar reports whether columns hold a * part.
+func HasStar(columns []Column) bool {
+	for _, column := range columns {
+		if column.Star {
+			return true
+		}
+	}
+	return false
 }
 
 // ResultName is the JSON key of the column in the response.

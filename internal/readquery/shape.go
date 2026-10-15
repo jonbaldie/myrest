@@ -69,10 +69,48 @@ func embedKeys(embeds []Embed) map[string]bool {
 	return keys
 }
 
+// namedResults holds the result names of the named columns, which a * part
+// beside them does not repeat.
+func namedResults(columns []Column) map[string]bool {
+	named := map[string]bool{}
+	for _, column := range columns {
+		if !column.Star {
+			named[column.ResultName()] = true
+		}
+	}
+	return named
+}
+
+// appendStarColumns expands a * part to the row columns that no named column
+// or embed key gives. It records them in named, so a later * adds nothing.
+func appendStarColumns(
+	row rows.Row,
+	names []string,
+	values []any,
+	named map[string]bool,
+	keepEmbed map[string]bool,
+) ([]string, []any) {
+	for _, column := range row.Columns {
+		if named[column] || keepEmbed[column] {
+			continue
+		}
+		value, _ := lookupColumn(row, column)
+		named[column] = true
+		names = append(names, column)
+		values = append(values, value)
+	}
+	return names, values
+}
+
 func projectOne(row rows.Row, columns []Column, keepEmbed map[string]bool) (rows.Row, error) {
 	names := make([]string, 0, len(columns)+len(keepEmbed))
 	values := make([]any, 0, len(columns)+len(keepEmbed))
+	named := namedResults(columns)
 	for _, column := range columns {
+		if column.Star {
+			names, values = appendStarColumns(row, names, values, named, keepEmbed)
+			continue
+		}
 		if column.Path != nil {
 			return rows.Row{}, UnsupportedFeature{Message: "JSON path select on RPC row sets is not available yet"}
 		}

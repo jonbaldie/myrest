@@ -72,7 +72,7 @@ func csvHeaderNames(query readquery.Query, bodyRows []rows.Row) []string {
 	if len(bodyRows) > 0 {
 		return bodyRows[0].Columns
 	}
-	if query.SelectAll || len(query.Columns) == 0 {
+	if query.SelectAll || len(query.Columns) == 0 || readquery.HasStar(query.Columns) {
 		return nil
 	}
 	names := make([]string, len(query.Columns))
