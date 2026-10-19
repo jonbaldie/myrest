@@ -80,6 +80,18 @@ Each refusal uses the stable error envelope and the myrest gap code
 | `read-007` | `fts` / `plfts` / `phfts` / `wfts` (and `not.` forms) | not supported |
 | `read-008` | Postgres array/range operators `cs` `cd` `ov` `sl` `sr` `nxr` `nxl` `adj` | not supported |
 | `read-009` / `repr-003` | `Prefer: count=planned` or `count=estimated` | not supported |
+| `read-014` | `order=col.nullsfirst` / `col.nullslast`, with or without `asc` / `desc` | not supported |
+
+### Null-placement ordering (not supported)
+
+**Normative scenario `read-014`:** A request with `order=id.asc.nullsfirst`,
+`id.asc.nullslast`, `id.desc.nullsfirst`, `id.desc.nullslast`,
+`id.nullsfirst`, or `id.nullslast` returns HTTP 400 with code `MYREST001`
+and message `Order nulls options are not available with MySQL`.
+The same refusal applies to JSON paths such as `order=payload->>key.nullsfirst`.
+No database read runs. myrest does not emulate explicit null placement with
+SQL expressions. Ordering without null-placement options keeps its current
+behaviour, including default MySQL NULL sorting.
 
 MySQL full-text search and approximate table stats exist, but they do not
 match the PostgREST operators or Prefer modes above, so myrest refuses them
@@ -94,3 +106,4 @@ instead of renaming them.
 | FTS operators | not supported | read-007, smoke-006 |
 | Postgres array/range operators | not supported | read-008 |
 | Prefer count=planned or estimated | not supported | read-009, repr-003 |
+| Null-placement order options | not supported | read-014 |

@@ -35,7 +35,8 @@ Also full match on this path:
   columns, as in `select=name,*`, adds every other column of the resource in
   catalog order at its place. It does not repeat a JSON key that a named part
   already gives.
-- `order=column.asc|desc`
+- `order=column.asc|desc` (explicit `nullsfirst` / `nullslast` options are
+  **not supported**; see [Read parity boundaries](read-parity-boundaries.md))
 - `limit` / `offset` pagination and `Content-Range`
 - the `Range` request header as the same window: `first-last` with both ends
   inclusive and `last` optional, `GET` only, and no `Range-Unit` request

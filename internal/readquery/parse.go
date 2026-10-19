@@ -499,8 +499,11 @@ func parseOrderPart(part string) (Order, error) {
 	case "desc":
 		order.Desc = true
 		return order, nil
-	case "asc.nullsfirst", "asc.nullslast", "desc.nullsfirst", "desc.nullslast":
-		return Order{}, ParseFailure{Message: "nulls order options are not available in this ordinary-read ticket"}
+	case "asc.nullsfirst", "asc.nullslast", "desc.nullsfirst", "desc.nullslast", "nullsfirst", "nullslast":
+		return Order{}, ParseFailure{
+			Message: "Order nulls options are not available with MySQL",
+			Gap:     true,
+		}
 	default:
 		return Order{}, ParseFailure{Message: fmt.Sprintf("unknown order direction '%s'", direction)}
 	}
@@ -510,7 +513,7 @@ func splitOrderDirection(part string) (field, direction string, err error) {
 	lower := strings.ToLower(part)
 	for _, suffix := range []string{
 		".asc.nullsfirst", ".asc.nullslast", ".desc.nullsfirst", ".desc.nullslast",
-		".asc", ".desc",
+		".nullsfirst", ".nullslast", ".asc", ".desc",
 	} {
 		if strings.HasSuffix(lower, suffix) {
 			return part[:len(part)-len(suffix)], strings.TrimPrefix(suffix, "."), nil
