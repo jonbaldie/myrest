@@ -83,6 +83,7 @@ cross-area smoke set. Capability-area chapters stay the source of truth for
 | `read-011` | read | full match | refuse |
 | `read-012` | read | full match | success |
 | `read-013` | read | not supported | refuse |
+| `read-014` | read | not supported | refuse |
 | `embed-001` | embed | full match | success |
 | `embed-002` | embed | full match | success |
 | `embed-003` | embed | not supported | refuse |
@@ -200,6 +201,7 @@ re-derive; `go test ./internal/verification` fails when this table drifts.
 | read-parity-boundaries.md | FTS operators | not supported | read-007, smoke-006 |
 | read-parity-boundaries.md | Postgres array/range operators | not supported | read-008 |
 | read-parity-boundaries.md | Prefer count=planned or estimated | not supported | read-009, repr-003 |
+| read-parity-boundaries.md | Null-placement order options | not supported | read-014 |
 | rpc-body-modes.md | Single unnamed `json` / `jsonb` whole-body argument | not supported | rpc-007 |
 | rpc-body-modes.md | Single unnamed `bytea` whole-body argument | not supported | rpc-008 |
 | rpc-body-modes.md | Single unnamed `text` whole-body argument | not supported | rpc-009 |
