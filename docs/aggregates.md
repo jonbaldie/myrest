@@ -37,7 +37,7 @@ refuses with `PGRST123` and the message
 | Aggregate grouped by an embedded resource over a cache **relationship** | full match |
 | Aggregate inside a one-to-many or many-to-many spread (`...resource(...)`) | not supported (`PGRST127`) |
 
-Spread embeds beyond that refuse path are not part of this ticket.
+Ordinary spread embeds beyond that refuse path are not supported; see [Embed over declared foreign keys](embed.md).
 
 ## Full match rows
 
