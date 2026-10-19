@@ -88,7 +88,7 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request,
 	if !ok {
 		return
 	}
-	query, plan, ok := s.parseWriteQuery(writer, request, snapshot, role, asked, written, writeBoundOptional)
+	query, plan, ok := s.parseInsertQuery(writer, request, snapshot, role, asked, written)
 	if !ok {
 		return
 	}
@@ -798,6 +798,38 @@ const (
 	writeBoundOptional writeBound = false
 	writeBoundRequired writeBound = true
 )
+
+// parseInsertQuery reads the mutate query for POST. The on_conflict query
+// option is recognized before generic filter parsing and refused with MYREST001,
+// because MySQL cannot target specific conflict constraints. Issue #153.
+func (s *Service) parseInsertQuery(
+	writer http.ResponseWriter,
+	request *http.Request,
+	snapshot schemacache.Snapshot,
+	role schemacache.Role,
+	origin schemacache.TableID,
+	written writePrefer,
+) (readquery.Query, []plannedEmbed, bool) {
+	values, err := requestQuery(request)
+	if err != nil {
+		writeQueryFailure(writer, err)
+		return readquery.Query{}, nil, false
+	}
+	if values.Has("on_conflict") {
+		writeUnsupportedFeature(writer, "PostgREST on_conflict is not available with MySQL")
+		return readquery.Query{}, nil, false
+	}
+	query, err := readquery.Parse(values, readquery.CountNone)
+	if err != nil {
+		writeQueryFailure(writer, err)
+		return readquery.Query{}, nil, false
+	}
+	plan, ok := planWriteEmbeds(writer, snapshot, role, origin, written, query)
+	if !ok {
+		return readquery.Query{}, nil, false
+	}
+	return query, plan, true
+}
 
 // parseWriteQuery reads the mutate query, optional unbounded-write gate, and
 // embed plan for Prefer return=representation.

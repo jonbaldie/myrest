@@ -412,6 +412,21 @@ func TestMalformedPercentEscapeInWriteQueryRefuses(t *testing.T) {
 		nil,
 	)
 	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST100")
+
+	response, body = apitest.PostJSON(
+		t,
+		service.URL()+"/items?id=gte.1&name=eq.red%zz",
+		`{"name":"gamma"}`,
+	)
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST100")
+
+	response, body = apitest.PostJSON(
+		t,
+		service.URL()+"/items?limit=notanint",
+		`{"name":"gamma"}`,
+	)
+	apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST100")
+
 	if sink.called != "" {
 		t.Fatalf("writer must not run for a malformed query; called %q", sink.called)
 	}
@@ -2116,6 +2131,117 @@ func TestWriteJSONNumberPrecision(t *testing.T) {
 			t.Fatalf("status = %d, want %d", res.StatusCode, http.StatusBadRequest)
 		}
 	})
+}
+
+// write-015: POST ?on_conflict= is not supported and refuses with 400 MYREST001.
+// Issue #153: on_conflict query option is recognized before generic filter
+// parsing and refused with MYREST001, whether the target is real or nonexistent,
+// with or without resolution preferences, and alongside normal filters.
+func TestPostOnConflictRefusesWithMYREST001(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		query  string
+		prefer string
+		body   string
+	}{
+		{
+			name:  "real column without prefer",
+			query: "on_conflict=id",
+			body:  `{"name":"alpha"}`,
+		},
+		{
+			name:  "nonexistent column without prefer",
+			query: "on_conflict=nope",
+			body:  `{"name":"alpha"}`,
+		},
+		{
+			name:   "real column with merge-duplicates",
+			query:  "on_conflict=id",
+			prefer: "resolution=merge-duplicates",
+			body:   `{"name":"alpha"}`,
+		},
+		{
+			name:   "nonexistent column with merge-duplicates",
+			query:  "on_conflict=nope",
+			prefer: "resolution=merge-duplicates",
+			body:   `{"name":"alpha"}`,
+		},
+		{
+			name:   "real column with ignore-duplicates",
+			query:  "on_conflict=id",
+			prefer: "resolution=ignore-duplicates",
+			body:   `{"name":"alpha"}`,
+		},
+		{
+			name:  "empty on_conflict value",
+			query: "on_conflict=",
+			body:  `{"name":"alpha"}`,
+		},
+		{
+			name:  "bare on_conflict flag",
+			query: "on_conflict",
+			body:  `{"name":"alpha"}`,
+		},
+		{
+			name:  "multiple target columns",
+			query: "on_conflict=id,name",
+			body:  `{"name":"alpha"}`,
+		},
+		{
+			name:   "alongside select query param",
+			query:  "on_conflict=id&select=id",
+			prefer: "return=representation",
+			body:   `{"name":"alpha"}`,
+		},
+		{
+			name:  "invalid body still refuses query first",
+			query: "on_conflict=id",
+			body:  `not-valid-json`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			sink := &writer{}
+			service := serveWrite(t, &reader{}, sink)
+
+			req, err := http.NewRequest(
+				http.MethodPost,
+				service.URL()+"/items?"+tc.query,
+				strings.NewReader(tc.body),
+			)
+			if err != nil {
+				t.Fatalf("new request: %v", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			if tc.prefer != "" {
+				req.Header.Set("Prefer", tc.prefer)
+			}
+
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("POST: %v", err)
+			}
+			t.Cleanup(func() { _ = res.Body.Close() })
+			body, err := io.ReadAll(res.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+
+			failure := apitest.AssertEnvelope(t, res, body, http.StatusBadRequest, "MYREST001")
+			wantMsg := "PostgREST on_conflict is not available with MySQL"
+			if failure.Message != wantMsg {
+				t.Fatalf("message = %q, want %q", failure.Message, wantMsg)
+			}
+			if sink.called != "" {
+				t.Fatalf("writer must not run for on_conflict; called %q", sink.called)
+			}
+		})
+	}
 }
 
 
