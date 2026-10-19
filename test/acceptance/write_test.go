@@ -1299,3 +1299,127 @@ func jsonNumberField(t *testing.T, body []byte, field string) string {
 		return fmt.Sprint(typed)
 	}
 }
+
+// write-015: POST ?on_conflict= is not supported and refuses with 400 MYREST001.
+// Issue #153: on_conflict query option is recognized before generic filter
+// parsing and refused with MYREST001, whether the target is real or nonexistent,
+// with or without resolution preferences, and alongside normal filters and supported upserts.
+func TestPostOnConflictRefusesWithMYREST001OverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	cases := []struct {
+		name   string
+		table  string
+		query  string
+		prefer string
+		body   string
+	}{
+		{
+			name:  "real column without prefer",
+			table: "/items",
+			query: "on_conflict=id",
+			body:  `{"name":"conflict-1"}`,
+		},
+		{
+			name:  "nonexistent column without prefer",
+			table: "/items",
+			query: "on_conflict=nope",
+			body:  `{"name":"conflict-2"}`,
+		},
+		{
+			name:   "real column with merge-duplicates",
+			table:  "/items",
+			query:  "on_conflict=id",
+			prefer: "resolution=merge-duplicates",
+			body:   `{"name":"conflict-3"}`,
+		},
+		{
+			name:   "nonexistent column on colors with merge-duplicates",
+			table:  "/colors",
+			query:  "on_conflict=nope",
+			prefer: "resolution=merge-duplicates",
+			body:   `{"name":"conflict-4"}`,
+		},
+		{
+			name:   "real column with ignore-duplicates",
+			table:  "/items",
+			query:  "on_conflict=id",
+			prefer: "resolution=ignore-duplicates",
+			body:   `{"name":"conflict-5"}`,
+		},
+		{
+			name:  "empty on_conflict value",
+			table: "/items",
+			query: "on_conflict=",
+			body:  `{"name":"conflict-6"}`,
+		},
+		{
+			name:   "alongside normal select filter",
+			table:  "/items",
+			query:  "on_conflict=id&select=id",
+			prefer: "return=representation",
+			body:   `{"name":"conflict-7"}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(
+				http.MethodPost,
+				service.URL()+tc.table+"?"+tc.query,
+				strings.NewReader(tc.body),
+			)
+			if err != nil {
+				t.Fatalf("new request: %v", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			if tc.prefer != "" {
+				req.Header.Set("Prefer", tc.prefer)
+			}
+
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("POST: %v", err)
+			}
+			t.Cleanup(func() { _ = res.Body.Close() })
+			body, err := io.ReadAll(res.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+
+			failure := apitest.AssertEnvelope(t, res, body, http.StatusBadRequest, "MYREST001")
+			wantMsg := "PostgREST on_conflict is not available with MySQL"
+			if failure.Message != wantMsg {
+				t.Fatalf("message = %q, want %q", failure.Message, wantMsg)
+			}
+		})
+	}
+
+	// Verify supported upsert without on_conflict succeeds alongside on the same table.
+	t.Run("supported upsert without on_conflict succeeds", func(t *testing.T) {
+		req, err := http.NewRequest(
+			http.MethodPost,
+			service.URL()+"/items",
+			strings.NewReader(`{"id":1,"name":"alpha-upsert"}`),
+		)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Prefer", "resolution=merge-duplicates")
+
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("POST: %v", err)
+		}
+		t.Cleanup(func() { _ = res.Body.Close() })
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if res.StatusCode != http.StatusCreated && res.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 201 or 200; body = %s", res.StatusCode, body)
+		}
+	})
+}
+

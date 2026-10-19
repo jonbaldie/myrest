@@ -63,6 +63,25 @@ not only the primary key. The client contract still requires primary-key
 filters, as the parity target does. Operators should treat secondary unique
 keys as part of that MySQL conflict surface.
 
+### Conflict target on_conflict (not supported)
+
+In PostgREST, upsert targeting is specified with the `on_conflict` query option
+(`POST /{table}?on_conflict=<columns>`). In the parity target, specifying
+`on_conflict` without an explicit Prefer resolution defaults to
+`resolution=merge-duplicates`.
+
+MySQL `ON DUPLICATE KEY UPDATE` and `INSERT IGNORE` fire on any unique key or
+primary key conflict; MySQL cannot target a specific constraint or column set.
+Rather than inventing a partial conflict-target contract, myrest refuses the
+`POST` `on_conflict` query option with status 400, code `MYREST001`, and
+message `PostgREST on_conflict is not available with MySQL` (parity label:
+**not supported**). The `on_conflict` parameter is recognized before generic
+filter parsing so it is never treated as a column filter.
+
+Supported upserts on MySQL use explicit `Prefer: resolution=merge-duplicates`
+or `Prefer: resolution=ignore-duplicates` headers without the `on_conflict`
+query parameter.
+
 ## Prefer: return
 
 | Value | Label | Behaviour |
@@ -176,3 +195,4 @@ surfaces the same refusal as a PostgreSQL datatype error.
 | Prefer `return=representation` honesty limit | partial match | write-008, write-009, smoke-003 |
 | Embed after write without a cache relationship | not supported | write-012 |
 | Nested JSON in the write body on JSON and non-JSON columns | partial match | write-013, write-014 |
+| POST on_conflict query option | not supported | write-015 |
