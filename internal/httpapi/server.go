@@ -47,11 +47,6 @@ type Service struct {
 
 // Listen binds the address of the options and returns a Service ready to Serve.
 func Listen(options Options) (*Service, error) {
-	listener, err := net.Listen("tcp", options.Addr)
-	if err != nil {
-		return nil, err
-	}
-
 	logger := options.Log
 	if logger == nil {
 		logger = log.Default()
@@ -59,18 +54,16 @@ func Listen(options Options) (*Service, error) {
 
 	var verifier *jwt.Verifier
 	if options.Settings.JWT.Secret != "" {
-		built, err := jwt.New(jwt.Options{
-			Secret:          options.Settings.JWT.Secret,
-			SecretIsBase64:  options.Settings.JWT.SecretIsBase64,
-			Aud:             options.Settings.JWT.Aud,
-			RoleClaimKey:    options.Settings.JWT.RoleClaimKey,
-			CacheMaxEntries: options.Settings.JWT.CacheMaxEntries,
-		})
+		built, err := jwt.New(options.Settings.JWT.Options())
 		if err != nil {
-			_ = listener.Close()
 			return nil, fmt.Errorf("jwt settings: %w", err)
 		}
 		verifier = built
+	}
+
+	listener, err := net.Listen("tcp", options.Addr)
+	if err != nil {
+		return nil, err
 	}
 
 	executor := options.Executor

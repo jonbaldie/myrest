@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/jonbaldie/myrest/internal/mysqlname"
 )
 
 // execContext runs a statement that needs no result rows.
@@ -51,7 +53,7 @@ func (p *Pool) runPreRequest(ctx context.Context, exec execContext) error {
 // preRequestCallStatement is the CALL for a zero-argument procedure named as
 // database.routine (the PostgREST db-pre-request shape on MySQL).
 func preRequestCallStatement(name string) (string, error) {
-	database, routine, err := splitPreRequest(name)
+	database, routine, err := mysqlname.SplitPreRequest(name)
 	if err != nil {
 		return "", err
 	}
@@ -60,12 +62,4 @@ func preRequestCallStatement(name string) (string, error) {
 		quoteIdentifier(database),
 		quoteIdentifier(routine),
 	), nil
-}
-
-func splitPreRequest(name string) (database, routine string, err error) {
-	parts := strings.Split(name, ".")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", "", fmt.Errorf("db-pre-request %q must be database.routine", name)
-	}
-	return parts[0], parts[1], nil
 }
