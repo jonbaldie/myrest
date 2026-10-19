@@ -78,6 +78,47 @@ func TestProcessDoesNotServeWhenTheMinimumRunSetIsIncomplete(t *testing.T) {
 	}
 }
 
+// Local knob faults must take priority over database login, separately and
+// together. No process with these faults can announce a listener.
+func TestProcessChecksLocalConfigBeforeDatabaseLogin(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		values map[string]string
+		knobs  []string
+	}{
+		{"pre-request", map[string]string{"MYREST_DB_PRE_REQUEST": "nodot"}, []string{"db-pre-request"}},
+		{"anonymous role", map[string]string{"MYREST_DB_ANON_ROLE": "bad'role"}, []string{"db-anon-role"}},
+		{"JWT secret", map[string]string{"MYREST_JWT_SECRET": "%%%not-base64", "MYREST_JWT_SECRET_IS_BASE64": "true"}, []string{"jwt-secret"}},
+		{"all faults", map[string]string{"MYREST_DB_PRE_REQUEST": "nodot", "MYREST_DB_ANON_ROLE": "bad'role", "MYREST_JWT_SECRET": "%%%not-base64", "MYREST_JWT_SECRET_IS_BASE64": "true"}, []string{"db-pre-request", "db-anon-role", "jwt-secret"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := map[string]string{"MYREST_DB_URI": "mysql://authenticator:private-password@127.0.0.1:1/", "MYREST_DB_SCHEMAS": "myrest_fixture", "MYREST_DB_ANON_ROLE": "myrest_anon"}
+			for key, value := range tc.values {
+				env[key] = value
+			}
+			messages, err := runUntilStop(t, env)
+			if err == nil {
+				t.Fatalf("process accepted invalid settings: %s", messages)
+			}
+			previous := -1
+			for _, knob := range tc.knobs {
+				at := strings.Index(messages, knob)
+				if at <= previous {
+					t.Fatalf("missing or unordered %s: %s", knob, messages)
+				}
+				previous = at
+			}
+			for _, forbidden := range []string{"log in as", "connection refused", "listening", "private-password", "%%%not-base64"} {
+				if strings.Contains(messages, forbidden) {
+					t.Errorf("messages contain %q: %s", forbidden, messages)
+				}
+			}
+		})
+	}
+}
+
 // cfg-002: MYREST_* variables alone must behave as a config file alone.
 func TestProcessBehavesTheSameFromEnvironmentVariablesAsFromAConfigFile(t *testing.T) {
 	t.Parallel()

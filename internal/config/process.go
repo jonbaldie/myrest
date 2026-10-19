@@ -7,8 +7,9 @@ import (
 )
 
 // ForProcess resolves the settings of a myrest process from its arguments and
-// its environment, and passes the serve gate. The one optional argument is the
-// path of the config file, as the parity target does it. A process that gets an
+// its environment, and checks the minimum run set and local knob shapes.
+// The one optional argument is the path of the config file, as the parity
+// target does it. A process that gets an
 // error from ForProcess must not serve the API.
 func ForProcess(args []string, env Environment) (Settings, error) {
 	text, err := readConfigFile(args)
@@ -19,7 +20,7 @@ func ForProcess(args []string, env Environment) (Settings, error) {
 	if err != nil {
 		return Settings{}, err
 	}
-	if err := settings.ServeGate(); err != nil {
+	if err := settings.Validate(); err != nil {
 		return Settings{}, err
 	}
 	return settings, nil

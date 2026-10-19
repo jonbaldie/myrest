@@ -9,6 +9,23 @@ reload stays separate.
 See [ADR 0007](adr/0007-config-surface-mapping.md) and
 [ADR 0009](adr/0009-config-file-format-and-precedence.md).
 
+## Startup checks
+
+After file and environment values are resolved, myrest checks the minimum run
+set and local knob shapes before database login or listener creation. It reports
+all these faults together, in a fixed order, without secret values:
+
+- `db-pre-request`: empty, or a `database.routine` name. Back quotes in either
+  identifier remain valid; the database adapter escapes them.
+- `db-anon-role`: a name or `name@host`. Names and explicit hosts must not be
+  empty or contain quote, escape, or control characters.
+- `jwt-secret`: a nonempty secret must decode as standard base64 when
+  `jwt-secret-is-base64` is `true`. Raw secrets and anonymous-only operation
+  remain valid.
+
+These checks do not test database connectivity, object existence, or privileges.
+A malformed setting that previously failed each request now stops startup.
+
 ## Full match rows
 
 | Item | Parity label | Scenarios | Client-visible error |

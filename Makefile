@@ -30,7 +30,7 @@ messgo:
 # mutation coverage of the command comes from the packages it calls.
 mutago:
 	mutago --coverage --min-covered-msi 80 --quiet --no-diffs \
-		./internal/config ./internal/httpapi ./internal/jwt ./internal/mysqldb \
+		./internal/config ./internal/httpapi ./internal/jwt ./internal/mysqldb ./internal/mysqlname \
 		./internal/prefer ./internal/readquery ./internal/representation ./internal/rows ./internal/schemacache \
 		./internal/verification
 

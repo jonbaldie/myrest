@@ -568,6 +568,25 @@ func TestListenRefusesAnAddressThatIsTaken(t *testing.T) {
 	}
 }
 
+func TestListenChecksJWTBeforeBinding(t *testing.T) {
+	t.Parallel()
+	taken, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = taken.Close() })
+	cfg := settings()
+	cfg.JWT.Secret = "%%%not-base64"
+	cfg.JWT.SecretIsBase64 = true
+	_, err = httpapi.Listen(httpapi.Options{Addr: taken.Addr().String(), Settings: cfg})
+	if err == nil || !strings.Contains(err.Error(), "jwt-secret") {
+		t.Fatalf("want JWT fault before bind fault, got %v", err)
+	}
+	if strings.Contains(err.Error(), cfg.JWT.Secret) {
+		t.Fatalf("secret in error: %v", err)
+	}
+}
+
 func TestCloseStopsTheService(t *testing.T) {
 	t.Parallel()
 
