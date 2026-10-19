@@ -284,6 +284,20 @@ func TestComputedRelationshipEmbedRefuses(t *testing.T) {
 	}
 }
 
+// embed-006: ordinary spread embeds refuse with MYREST001 over MySQL.
+func TestSpreadEmbedRefusesOverMySQL(t *testing.T) {
+	response, body := get(
+		t,
+		serve(t, "myrest_fixture"),
+		"/orders?select=id,...items(name)",
+	)
+	failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+	wantMessage := "PostgREST spread embeds are not available with MySQL"
+	if failure.Message != wantMessage {
+		t.Fatalf("message = %q, want %q", failure.Message, wantMessage)
+	}
+}
+
 func TestEmbedNegatedLogicalGroups(t *testing.T) {
 	service := serve(t, "myrest_fixture")
 

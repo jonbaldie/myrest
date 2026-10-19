@@ -36,9 +36,12 @@ A deeper embed takes the chain of embed keys from the top, as in PostgREST:
 | More than one relationship, no `!hint` | `PGRST201` | 300 |
 | Computed relationship (routine name as embed) | `MYREST001` | 400 |
 | Aggregate inside a to-many or many-to-many spread | `PGRST127` | 400 |
+| Ordinary spread embed | `MYREST001` | 400 |
 
 myrest never invents a relationship. A view chain with no declared foreign key
-is not supported. A computed relationship is not supported.
+is not supported. A computed relationship is not supported. Ordinary spread
+embeds (`...table(...)`) are not supported; they refuse with `MYREST001`
+(`PostgREST spread embeds are not available with MySQL`).
 
 ## Self-referential foreign keys
 
@@ -68,6 +71,7 @@ Aggregate plus embed is owned by the Read area. See [Aggregates](aggregates.md).
 | --- | --- | --- |
 | Embed with no declared foreign-key path | not supported | embed-003 |
 | Computed relationship embed | not supported | embed-004 |
+| Ordinary spread embed | not supported | embed-006 |
 
 ## Embed after write
 

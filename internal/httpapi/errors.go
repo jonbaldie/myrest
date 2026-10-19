@@ -35,7 +35,7 @@ const (
 	msgAggregatesDisabled  = "Use of aggregate functions is not allowed"
 	msgSpreadAggregate     = "Feature not implemented"
 	detailsSpreadAggregate = "Aggregates are not implemented for one-to-many or many-to-many spreads."
-	msgSpreadNotSupported  = "PostgREST spread embeds are not available in this aggregate ticket"
+	msgSpreadNotSupported  = "PostgREST spread embeds are not available with MySQL"
 )
 
 // failure is the error envelope of the parity target. Every field is written,

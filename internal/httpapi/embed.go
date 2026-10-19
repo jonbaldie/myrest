@@ -76,7 +76,7 @@ type spreadAggregateRefused struct{}
 
 func (spreadAggregateRefused) Error() string { return msgSpreadAggregate }
 
-// spreadNotSupported is a spread embed shape this ticket does not implement.
+// spreadNotSupported is an ordinary spread embed, which myrest does not support.
 type spreadNotSupported struct{}
 
 func (spreadNotSupported) Error() string { return msgSpreadNotSupported }
