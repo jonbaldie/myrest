@@ -90,11 +90,20 @@ func (s *Service) admitReadQuery(
 	if refuseInvalidPrefer(writer, preferences, prefer.SurfaceRead) {
 		return readquery.Query{}, false
 	}
-	if readquery.HasAggregates(query) && !s.settings.DB.AggregatesEnabled {
-		writeFailure(writer, http.StatusBadRequest, codeAggregatesDisabled, msgAggregatesDisabled)
+	if s.refuseDisabledAggregates(writer, query) {
 		return readquery.Query{}, false
 	}
 	return query, true
+}
+
+// refuseDisabledAggregates applies the same feature gate before any read,
+// routine call, or mutation, including writes without a response body.
+func (s *Service) refuseDisabledAggregates(writer http.ResponseWriter, query readquery.Query) bool {
+	if s.settings.DB.AggregatesEnabled || !readquery.HasAggregates(query) {
+		return false
+	}
+	writeFailure(writer, http.StatusBadRequest, codeAggregatesDisabled, msgAggregatesDisabled)
+	return true
 }
 
 func (s *Service) readWithEmbeds(

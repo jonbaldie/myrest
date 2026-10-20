@@ -314,7 +314,7 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request, pr
 		return
 	}
 	snapshot, table := admission.snapshot, admission.table
-	row, primaryKey, ok := readPutRow(writer, request, snapshot, asked)
+	row, primaryKey, ok := s.readPutRow(writer, request, snapshot, asked)
 	if !ok {
 		return
 	}
@@ -479,7 +479,7 @@ func (s *Service) lookupPutTable(
 }
 
 // readPutRow validates the primary-key filters and the single JSON object body.
-func readPutRow(
+func (s *Service) readPutRow(
 	writer http.ResponseWriter,
 	request *http.Request,
 	snapshot schemacache.Snapshot,
@@ -498,6 +498,9 @@ func readPutRow(
 	query, err := parseMutateQuery(request)
 	if err != nil {
 		writeQueryFailure(writer, err)
+		return nil, nil, false
+	}
+	if s.refuseDisabledAggregates(writer, query) {
 		return nil, nil, false
 	}
 	pkValues, ok := putPrimaryKeyValues(writer, query, primaryKey)
@@ -824,6 +827,9 @@ func (s *Service) parseInsertQuery(
 		writeQueryFailure(writer, err)
 		return readquery.Query{}, nil, false
 	}
+	if s.refuseDisabledAggregates(writer, query) {
+		return readquery.Query{}, nil, false
+	}
 	plan, ok := planWriteEmbeds(writer, snapshot, role, origin, written, query)
 	if !ok {
 		return readquery.Query{}, nil, false
@@ -872,6 +878,9 @@ func (s *Service) parseWriteQuery(
 	query, err := readquery.Parse(values, readquery.CountNone)
 	if err != nil {
 		writeQueryFailure(writer, err)
+		return readquery.Query{}, nil, false
+	}
+	if s.refuseDisabledAggregates(writer, query) {
 		return readquery.Query{}, nil, false
 	}
 	if bound == writeBoundRequired && refuseUnbounded(writer, written, query) {

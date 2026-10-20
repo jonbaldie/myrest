@@ -47,6 +47,9 @@ func (s *Service) callRoutine(writer http.ResponseWriter, request *http.Request,
 		writeQueryFailure(writer, err)
 		return
 	}
+	if s.refuseDisabledAggregates(writer, query) {
+		return
+	}
 	s.invokeRoutine(writer, request, preferences, role, asked, admission, args, query, rpcexec.CallModePost)
 }
 
@@ -75,6 +78,9 @@ func (s *Service) getRoutine(writer http.ResponseWriter, request *http.Request, 
 	}
 	if err := applyRequestRange(request, &query); err != nil {
 		writeQueryFailure(writer, err)
+		return
+	}
+	if s.refuseDisabledAggregates(writer, query) {
 		return
 	}
 	s.invokeRoutine(writer, request, preferences, role, asked, admission, args, query, rpcexec.CallModeGet)
