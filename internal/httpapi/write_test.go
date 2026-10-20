@@ -2345,3 +2345,29 @@ func TestPatchWithoutBoundStillWrites(t *testing.T) {
 		t.Fatalf("writer called %q, want update", sink.called)
 	}
 }
+
+// A PATCH or DELETE with a filter that does not parse refuses before the
+// writer runs, after the bounded-write check.
+func TestWriteWithBadFilterRefusesBeforeWriter(t *testing.T) {
+	t.Parallel()
+
+	for _, method := range []string{http.MethodPatch, http.MethodDelete} {
+		t.Run(method, func(t *testing.T) {
+			t.Parallel()
+
+			sink := &writer{}
+			service := serveWrite(t, &reader{}, sink)
+
+			headers := http.Header{}
+			headers.Set("Content-Type", "application/json")
+			headers.Set("Prefer", "all-rows")
+			res, body := apitest.DoBody(
+				t, method, service.URL()+"/items?id=bogus.1", headers, `{"name":"bad"}`,
+			)
+			apitest.AssertEnvelope(t, res, body, http.StatusBadRequest, "PGRST100")
+			if sink.called != "" {
+				t.Fatalf("writer must not run for a bad filter; called %q", sink.called)
+			}
+		})
+	}
+}
