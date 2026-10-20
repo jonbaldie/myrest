@@ -105,6 +105,7 @@ cross-area smoke set. Capability-area chapters stay the source of truth for
 | `write-013` | write | partial match | success |
 | `write-014` | write | partial match | refuse |
 | `write-015` | write | not supported | refuse |
+| `write-016` | write | not supported | refuse |
 | `rpc-001` | rpc | full match | success |
 | `rpc-002` | rpc | full match | success |
 | `rpc-003` | rpc | partial match | success |
@@ -220,4 +221,5 @@ re-derive; `go test ./internal/verification` fails when this table drifts.
 | write.md | Embed after write without a cache relationship | not supported | write-012 |
 | write.md | Nested JSON in the write body on JSON and non-JSON columns | partial match | write-013, write-014 |
 | write.md | POST on_conflict query option | not supported | write-015 |
+| write.md | PATCH and DELETE limit, offset, and order query options | not supported | write-016 |
 <!-- gap-list:end -->

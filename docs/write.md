@@ -174,6 +174,21 @@ surfaces the same refusal as a PostgreSQL datatype error.
 `PATCH` and `DELETE` use the same filter surface as ordinary read. See
 [Ordinary read](ordinary-read.md).
 
+### Bounded PATCH and DELETE (not supported)
+
+PostgREST v14.16 can bound a `PATCH` or `DELETE` with the `limit` and `order`
+query options (`DELETE /{table}?id=gte.1&limit=1&order=id.asc`). myrest does
+not apply a bound to the MySQL write. It refuses a `PATCH` or `DELETE` with a
+top-level `limit`, `offset`, or `order` query option with status 400, code
+`MYREST001`, and message
+`PostgREST limit, offset, and order on PATCH and DELETE are not available with MySQL`
+(parity label: **not supported**). The refusal comes before generic query
+parsing and before any SQL write, for every `Prefer: return` value and with or
+without `Prefer: all-rows`. No row changes.
+
+Embed options such as `select=id,children(id)&children.limit=1` only shape the
+representation rows; they are not a top-level bound.
+
 ## Full match rows
 
 | Item | Parity label | Scenarios | Client-visible error |
@@ -196,3 +211,4 @@ surfaces the same refusal as a PostgreSQL datatype error.
 | Embed after write without a cache relationship | not supported | write-012 |
 | Nested JSON in the write body on JSON and non-JSON columns | partial match | write-013, write-014 |
 | POST on_conflict query option | not supported | write-015 |
+| PATCH and DELETE limit, offset, and order query options | not supported | write-016 |
