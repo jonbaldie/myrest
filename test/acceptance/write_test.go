@@ -1423,3 +1423,82 @@ func TestPostOnConflictRefusesWithMYREST001OverMySQL(t *testing.T) {
 	})
 }
 
+// write-016: PATCH and DELETE with top-level limit, offset, or order refuse
+// with 400 MYREST001 and leave every row unchanged. Issue #210: these options
+// were dropped, so a bounded write changed every matching row.
+func TestBoundedMutationRefusesOverMySQL(t *testing.T) {
+	service := serve(t, "myrest_fixture")
+
+	response, body := apitest.PostJSON(
+		t,
+		service.URL()+"/colors",
+		`[{"name":"bounded-1"},{"name":"bounded-2"},{"name":"bounded-3"}]`,
+	)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("seed status = %d; body = %s", response.StatusCode, body)
+	}
+	const readBack = "/colors?select=name,tone&name=like.bounded-*&order=name.asc"
+	want := `[{"name":"bounded-1","tone":"plain"},{"name":"bounded-2","tone":"plain"},{"name":"bounded-3","tone":"plain"}]` + "\n"
+
+	queries := []string{
+		"name=like.bounded-*&limit=1&order=id.asc",
+		"name=like.bounded-*&limit=1",
+		"name=like.bounded-*&order=id.asc",
+		"name=like.bounded-*&offset=1",
+		"limit=1&order=id.asc",
+	}
+	prefers := []string{
+		"return=minimal",
+		"return=representation",
+		"all-rows, return=minimal",
+		"all-rows, return=representation",
+	}
+	for _, method := range []string{http.MethodPatch, http.MethodDelete} {
+		for _, query := range queries {
+			for _, prefer := range prefers {
+				t.Run(method+" "+query+" "+prefer, func(t *testing.T) {
+					headers := http.Header{}
+					headers.Set("Content-Type", "application/json")
+					headers.Set("Prefer", prefer)
+					response, body := apitest.DoBody(
+						t, method, service.URL()+"/colors?"+query, headers, `{"tone":"bounded"}`,
+					)
+					failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "MYREST001")
+					wantMsg := "PostgREST limit, offset, and order on PATCH and DELETE are not available with MySQL"
+					if failure.Message != wantMsg {
+						t.Fatalf("message = %q, want %q", failure.Message, wantMsg)
+					}
+
+					_, body = get(t, service, readBack)
+					if string(body) != want {
+						t.Fatalf("rows changed after refusal: %s, want %s", body, want)
+					}
+				})
+			}
+		}
+	}
+
+	// An ordinary filtered PATCH without a bound still changes every match.
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	response, body = apitest.DoBody(
+		t, http.MethodPatch, service.URL()+"/colors?name=like.bounded-*", headers, `{"tone":"bounded"}`,
+	)
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("unbounded PATCH status = %d; body = %s", response.StatusCode, body)
+	}
+	_, body = get(t, service, readBack)
+	want = `[{"name":"bounded-1","tone":"bounded"},{"name":"bounded-2","tone":"bounded"},{"name":"bounded-3","tone":"bounded"}]` + "\n"
+	if string(body) != want {
+		t.Fatalf("unbounded PATCH read-back = %s, want %s", body, want)
+	}
+
+	response, body = apitest.Do(t, http.MethodDelete, service.URL()+"/colors?name=like.bounded-*", nil)
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("unbounded DELETE status = %d; body = %s", response.StatusCode, body)
+	}
+	_, body = get(t, service, readBack)
+	if string(body) != "[]\n" {
+		t.Fatalf("unbounded DELETE read-back = %s, want []", body)
+	}
+}

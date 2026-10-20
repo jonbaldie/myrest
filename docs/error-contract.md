@@ -82,7 +82,8 @@ does not hold JSON uses the same gap code. See [Ordinary write](write.md) and
 [Procedure RPC response shape](rpc-procedures.md).
 Prefer `timezone` uses the same gap code. See
 [Media types and the remaining Prefer values](media-types-and-prefer.md).
-The `POST` `on_conflict` query option also uses `MYREST001`. See
+The `POST` `on_conflict` query option also uses `MYREST001`. So do the
+`PATCH` and `DELETE` `limit`, `offset`, and `order` query options. See
 [Ordinary write](write.md).
 
 ## MySQL SQLSTATE to HTTP status

@@ -831,8 +831,27 @@ func (s *Service) parseInsertQuery(
 	return query, plan, true
 }
 
+// boundedWriteOptions are the top-level query options that would bound or
+// sort a PATCH or DELETE. myrest does not apply them to the MySQL write, so it
+// refuses them with MYREST001 instead of changing every matching row. Issue #210.
+var boundedWriteOptions = []string{"limit", "offset", "order"}
+
+func refuseBoundedWrite(writer http.ResponseWriter, values url.Values) bool {
+	for _, option := range boundedWriteOptions {
+		if values.Has(option) {
+			writeUnsupportedFeature(
+				writer,
+				"PostgREST limit, offset, and order on PATCH and DELETE are not available with MySQL",
+			)
+			return true
+		}
+	}
+	return false
+}
+
 // parseWriteQuery reads the mutate query, optional unbounded-write gate, and
-// embed plan for Prefer return=representation.
+// embed plan for Prefer return=representation. Top-level limit, offset, and
+// order refuse before generic query parsing.
 func (s *Service) parseWriteQuery(
 	writer http.ResponseWriter,
 	request *http.Request,
@@ -842,7 +861,15 @@ func (s *Service) parseWriteQuery(
 	written writePrefer,
 	bound writeBound,
 ) (readquery.Query, []plannedEmbed, bool) {
-	query, err := parseMutateQuery(request)
+	values, err := requestQuery(request)
+	if err != nil {
+		writeQueryFailure(writer, err)
+		return readquery.Query{}, nil, false
+	}
+	if refuseBoundedWrite(writer, values) {
+		return readquery.Query{}, nil, false
+	}
+	query, err := readquery.Parse(values, readquery.CountNone)
 	if err != nil {
 		writeQueryFailure(writer, err)
 		return readquery.Query{}, nil, false

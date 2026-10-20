@@ -2244,5 +2244,104 @@ func TestPostOnConflictRefusesWithMYREST001(t *testing.T) {
 	}
 }
 
+// write-016: PATCH and DELETE with top-level limit, offset, or order are not
+// supported and refuse with 400 MYREST001 before the writer runs. Issue #210:
+// these query options were parsed and then dropped, so a bounded write changed
+// every matching row.
+func TestBoundedMutationRefusesWithMYREST001(t *testing.T) {
+	t.Parallel()
 
+	queries := []string{
+		"id=gte.1&limit=1&order=id.asc",
+		"id=gte.1&limit=1",
+		"id=gte.1&order=id.desc",
+		"id=gte.1&offset=1",
+		"id=gte.1&offset=0",
+		"limit=1&order=id.asc",
+		"limit=",
+	}
+	prefers := []string{
+		"",
+		"return=representation",
+		"all-rows",
+		"all-rows, return=representation",
+	}
+	methods := []string{http.MethodPatch, http.MethodDelete}
 
+	for _, method := range methods {
+		for _, query := range queries {
+			for _, prefer := range prefers {
+				name := method + " " + query + " prefer=" + prefer
+				t.Run(name, func(t *testing.T) {
+					t.Parallel()
+
+					sink := &writer{}
+					service := serveWrite(t, &reader{}, sink)
+
+					req, err := http.NewRequest(
+						method,
+						service.URL()+"/items?"+query,
+						strings.NewReader(`{"name":"bounded"}`),
+					)
+					if err != nil {
+						t.Fatalf("new request: %v", err)
+					}
+					req.Header.Set("Content-Type", "application/json")
+					if prefer != "" {
+						req.Header.Set("Prefer", prefer)
+					}
+
+					res, err := http.DefaultClient.Do(req)
+					if err != nil {
+						t.Fatalf("%s: %v", method, err)
+					}
+					t.Cleanup(func() { _ = res.Body.Close() })
+					body, err := io.ReadAll(res.Body)
+					if err != nil {
+						t.Fatalf("read body: %v", err)
+					}
+
+					failure := apitest.AssertEnvelope(t, res, body, http.StatusBadRequest, "MYREST001")
+					wantMsg := "PostgREST limit, offset, and order on PATCH and DELETE are not available with MySQL"
+					if failure.Message != wantMsg {
+						t.Fatalf("message = %q, want %q", failure.Message, wantMsg)
+					}
+					if sink.called != "" {
+						t.Fatalf("writer must not run for a bounded write; called %q", sink.called)
+					}
+				})
+			}
+		}
+	}
+}
+
+// write-016: a filtered PATCH without limit, offset, or order keeps its
+// ordinary behavior next to the bounded-write refusal.
+func TestPatchWithoutBoundStillWrites(t *testing.T) {
+	t.Parallel()
+
+	sink := &writer{updated: 1}
+	service := serveWrite(t, &reader{}, sink)
+
+	req, err := http.NewRequest(
+		http.MethodPatch,
+		service.URL()+"/items?id=eq.1&select=id",
+		strings.NewReader(`{"name":"plain"}`),
+	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	t.Cleanup(func() { _ = res.Body.Close() })
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", res.StatusCode)
+	}
+	if sink.called != "update" {
+		t.Fatalf("writer called %q, want update", sink.called)
+	}
+}
