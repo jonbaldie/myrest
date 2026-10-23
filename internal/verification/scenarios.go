@@ -57,6 +57,7 @@ func readScenarios() ScenarioIndex {
 		{ID: "read-012", Area: "read", Label: FullMatch, Outcome: Success},
 		{ID: "read-013", Area: "read", Label: NotSupported, Outcome: Refuse},
 		{ID: "read-014", Area: "read", Label: NotSupported, Outcome: Refuse},
+		{ID: "read-015", Area: "read", Label: FullMatch, Outcome: Success},
 	}
 }
 

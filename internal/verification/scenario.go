@@ -24,7 +24,10 @@ type Scenario struct {
 // ScenarioIndex is the Verification roll-up of every normative scenario.
 type ScenarioIndex []Scenario
 
-var scenarioIDPattern = regexp.MustCompile(`^[a-z]+-[0-9]{3}$`)
+// scenarioIDForm is the stable area-nnn shape of a scenario id.
+const scenarioIDForm = `[a-z]+-[0-9]{3}`
+
+var scenarioIDPattern = regexp.MustCompile(`^` + scenarioIDForm + `$`)
 
 // smokeIDs is the fixed cross-area smoke set.
 var smokeIDs = []string{

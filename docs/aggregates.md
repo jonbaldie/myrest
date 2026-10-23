@@ -22,6 +22,8 @@ When `db-aggregates-enabled` is true, this ticket claims these forms as
 
 Automatic `GROUP BY` applies to every selected column that has no aggregate.
 Filters, order on group columns, and limit/offset stay available on this path.
+With `Prefer: count=exact`, the total in `Content-Range` counts the grouped
+result rows, not the table rows.
 
 ## Gate when off
 
@@ -45,6 +47,7 @@ Ordinary spread embeds beyond that refuse path are not supported; see [Embed ove
 | --- | --- | --- |
 | Aggregate forms, automatic grouping, and disabled gate | full match | read-010, read-011 |
 | Aggregate with an allowed embed relationship | full match | read-012 |
+| `Prefer: count=exact` with aggregates counts grouped rows | full match | read-015 |
 
 ## Gap list rows
 

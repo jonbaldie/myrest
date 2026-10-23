@@ -187,7 +187,7 @@ func TestAggregateInToManySpreadRefusesOverMySQL(t *testing.T) {
 	}
 }
 
-// read-014: Prefer count=exact reports grouped result count instead of table row count.
+// read-015: Prefer count=exact reports grouped result count instead of table row count.
 func TestPreferCountExactWithAggregateOverMySQL(t *testing.T) {
 	service := serveWithAggregates(t, "myrest_fixture")
 
