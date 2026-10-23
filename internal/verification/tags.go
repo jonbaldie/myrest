@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // TaggedTest is one test function whose comments name a scenario id.
@@ -22,7 +24,7 @@ type TaggedTest struct {
 // ScenarioTags maps a scenario id to the tests that tag it.
 type ScenarioTags map[string][]TaggedTest
 
-var scenarioTagPattern = regexp.MustCompile(`\b[a-z]+-[0-9]{3}\b`)
+var scenarioTagPattern = regexp.MustCompile(`\b` + scenarioIDForm + `\b`)
 
 // LoadScenarioTags reads every *_test.go file below roots in fsys. It returns
 // each scenario id named in a comment on or inside a Test function.
@@ -57,7 +59,7 @@ func addFileTags(fsys fs.FS, name string, tags ScenarioTags) error {
 	}
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Recv != nil || !strings.HasPrefix(fn.Name.Name, "Test") {
+		if !ok || fn.Recv != nil || !isTestName(fn.Name.Name) {
 			continue
 		}
 		test := TaggedTest{File: name, Func: fn.Name.Name}
@@ -66,6 +68,16 @@ func addFileTags(fsys fs.FS, name string, tags ScenarioTags) error {
 		}
 	}
 	return nil
+}
+
+// isTestName reports whether name is a go test function name other than TestMain.
+func isTestName(name string) bool {
+	suffix, ok := strings.CutPrefix(name, "Test")
+	if !ok || name == "TestMain" {
+		return false
+	}
+	first, _ := utf8.DecodeRuneInString(suffix)
+	return !unicode.IsLower(first)
 }
 
 // testTagIDs returns the distinct ids in the doc comment and body comments of fn.

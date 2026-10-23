@@ -86,6 +86,12 @@ type suite struct{}
 
 // read-005: a method is not a top-level test.
 func (suite) TestM(t *testing.T) {}
+
+// read-006: TestMain runs the tests and proves no scenario.
+func TestMain(m *testing.M) {}
+
+// read-007: a lowercase letter after Test makes no test.
+func Testable(t *testing.T) {}
 `)},
 		"pkg/prod.go": {Data: []byte(`package pkg
 

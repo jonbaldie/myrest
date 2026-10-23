@@ -42,6 +42,7 @@ func TestDerivedGapListMatchesVerificationDoc(t *testing.T) {
 	if err := verification.CheckBehaviourCoverage(fullMatches, index); err != nil {
 		t.Fatalf("full match coverage: %v", err)
 	}
+	// Keep these roots in step with the make scenarios packages in the Makefile.
 	repoRoot := filepath.Join("..", "..")
 	tags, err := verification.LoadScenarioTags(
 		os.DirFS(repoRoot),
