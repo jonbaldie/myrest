@@ -19,6 +19,10 @@ cross-area smoke set. Capability-area chapters stay the source of truth for
   - **not supported** — one stable refuse and no success claim for that behaviour. Refuse is an error envelope, or a stable non-offer when the chapter names no client input path.
 - Scenario bodies live in capability-area chapters and in the HTTP acceptance
   tests under `test/acceptance`. This page indexes them by stable `area-nnn` id.
+- A test proves a scenario when a comment on or inside its `Test` function names
+  the id (`// area-nnn: ...`). `go test ./internal/verification` reads the
+  `make scenarios` packages and fails when an index id has no tagged test or
+  a tag has no index row.
 
 ## Done rules
 
@@ -84,6 +88,7 @@ cross-area smoke set. Capability-area chapters stay the source of truth for
 | `read-012` | read | full match | success |
 | `read-013` | read | not supported | refuse |
 | `read-014` | read | not supported | refuse |
+| `read-015` | read | full match | success |
 | `embed-001` | embed | full match | success |
 | `embed-002` | embed | full match | success |
 | `embed-003` | embed | not supported | refuse |

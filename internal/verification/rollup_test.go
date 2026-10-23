@@ -42,6 +42,19 @@ func TestDerivedGapListMatchesVerificationDoc(t *testing.T) {
 	if err := verification.CheckBehaviourCoverage(fullMatches, index); err != nil {
 		t.Fatalf("full match coverage: %v", err)
 	}
+	repoRoot := filepath.Join("..", "..")
+	tags, err := verification.LoadScenarioTags(
+		os.DirFS(repoRoot),
+		"cmd/myrest",
+		"internal/httpapi",
+		"test/acceptance",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verification.CheckScenarioTags(index, tags); err != nil {
+		t.Fatalf("scenario tags:\n%v", err)
+	}
 
 	body, err := os.ReadFile(filepath.Join(docsDir, "verification.md"))
 	if err != nil {
