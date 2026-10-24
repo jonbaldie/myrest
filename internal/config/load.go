@@ -42,7 +42,11 @@ func applyFile(settings Settings, assignments []assignment) (Settings, error) {
 		if !known {
 			return Settings{}, atLine(item.line, fmt.Errorf("%s is not a myrest knob", item.knob))
 		}
-		applied, err := definition.apply(settings, item.value)
+		value, err := parseValue(item.value, definition.allowBare)
+		if err != nil {
+			return Settings{}, atLine(item.line, fmt.Errorf("%s: %w", item.knob, err))
+		}
+		applied, err := definition.apply(settings, value)
 		if err != nil {
 			return Settings{}, atLine(item.line, fmt.Errorf("%s: %w", item.knob, err))
 		}

@@ -9,8 +9,9 @@ import (
 // knob is one entry on the normative surface: its kebab-case PostgREST name
 // and how a raw text value becomes a Settings field.
 type knob struct {
-	name  string
-	apply func(Settings, string) (Settings, error)
+	name      string
+	allowBare bool // Only booleans and integers can be bare in a config file.
+	apply     func(Settings, string) (Settings, error)
 }
 
 // variable is the MYREST_* environment variable name of the knob.
@@ -60,7 +61,7 @@ func minimumRunSetKnobs() []knob {
 // jwtKnobs carry the JWT detail of the parity target.
 func jwtKnobs() []knob {
 	return []knob{
-		{name: "jwt-secret-is-base64", apply: setter(parseBoolean, func(s Settings, value bool) Settings {
+		{name: "jwt-secret-is-base64", allowBare: true, apply: setter(parseBoolean, func(s Settings, value bool) Settings {
 			s.JWT.SecretIsBase64 = value
 			return s
 		})},
@@ -72,7 +73,7 @@ func jwtKnobs() []knob {
 			s.JWT.RoleClaimKey = value
 			return s
 		})},
-		{name: "jwt-cache-max-entries", apply: setter(parseCount, func(s Settings, value int) Settings {
+		{name: "jwt-cache-max-entries", allowBare: true, apply: setter(parseCount, func(s Settings, value int) Settings {
 			s.JWT.CacheMaxEntries = value
 			return s
 		})},
@@ -82,11 +83,11 @@ func jwtKnobs() []knob {
 // behaviourGateKnobs are the client-visible gates on the normative map.
 func behaviourGateKnobs() []knob {
 	return []knob{
-		{name: "db-aggregates-enabled", apply: setter(parseBoolean, func(s Settings, value bool) Settings {
+		{name: "db-aggregates-enabled", allowBare: true, apply: setter(parseBoolean, func(s Settings, value bool) Settings {
 			s.DB.AggregatesEnabled = value
 			return s
 		})},
-		{name: "db-max-rows", apply: setter(parseRowLimit, func(s Settings, value RowLimit) Settings {
+		{name: "db-max-rows", allowBare: true, apply: setter(parseRowLimit, func(s Settings, value RowLimit) Settings {
 			s.DB.MaxRows = value
 			return s
 		})},
@@ -112,7 +113,7 @@ func openAPIKnobs() []knob {
 			s.OpenAPI.Mode = value
 			return s
 		})},
-		{name: "openapi-security-active", apply: setter(parseBoolean, func(s Settings, value bool) Settings {
+		{name: "openapi-security-active", allowBare: true, apply: setter(parseBoolean, func(s Settings, value bool) Settings {
 			s.OpenAPI.SecurityActive = value
 			return s
 		})},

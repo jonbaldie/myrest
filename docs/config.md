@@ -9,6 +9,24 @@ reload stays separate.
 See [ADR 0007](adr/0007-config-surface-mapping.md) and
 [ADR 0009](adr/0009-config-file-format-and-precedence.md).
 
+## File values
+
+Use double quotes for text values, including comma-separated lists and choices:
+
+```text
+db-schemas = "myrest_fixture"
+db-tx-end = "commit"
+db-aggregates-enabled = true
+db-max-rows = 500
+```
+
+Text without double quotes, including single-quoted text, is refused with the
+file line number and knob name. Only boolean and integer knobs accept bare
+values. Put comments on separate lines that start with `#`; inline comments are
+not supported. A `#` inside double quotes is part of the text.
+
+`MYREST_*` environment values do not need these file quotes.
+
 ## Startup checks
 
 After file and environment values are resolved, myrest checks the minimum run
