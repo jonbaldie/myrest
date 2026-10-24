@@ -38,6 +38,7 @@ A deeper embed takes the chain of embed keys from the top, as in PostgREST:
 | Aggregate inside a to-many or many-to-many spread | `PGRST127` | 400 |
 | Ordinary spread embed | `MYREST001` | 400 |
 | Explicit join type (`!inner` or `!left`), with or without an FK hint | `MYREST001` | 400 |
+| Embed presence filter (`orders=is.null` or `orders=not.is.null`) | `MYREST001` | 400 |
 
 myrest never invents a relationship. A view chain with no declared foreign key
 is not supported. A computed relationship is not supported. Ordinary spread
@@ -50,6 +51,12 @@ in either order. These requests refuse with `MYREST001`
 (`PostgREST embed join types !inner and !left are not supported`), not a
 missing-relationship error. Use a plain embed for the default left behaviour.
 A nested filter on a plain embed does not remove parent rows.
+
+Embed presence filters (`orders=is.null` and `orders=not.is.null`) are
+**not supported**. These requests refuse with `MYREST001`
+(`PostgREST embed presence filters are not supported`), not a missing-column
+error. This applies to selected embed keys, including aliases, nested embeds,
+and logical groups. Ordinary column null checks are not affected.
 
 ## Self-referential foreign keys
 
@@ -81,6 +88,7 @@ Aggregate plus embed is owned by the Read area. See [Aggregates](aggregates.md).
 | Computed relationship embed | not supported | embed-004 |
 | Ordinary spread embed | not supported | embed-006 |
 | Explicit embed join types (`!inner` and `!left`) | not supported | embed-007 |
+| Embed presence filters (`is.null` and `not.is.null`) | not supported | embed-008 |
 
 ## Embed after write
 
