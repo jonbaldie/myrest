@@ -37,11 +37,19 @@ A deeper embed takes the chain of embed keys from the top, as in PostgREST:
 | Computed relationship (routine name as embed) | `MYREST001` | 400 |
 | Aggregate inside a to-many or many-to-many spread | `PGRST127` | 400 |
 | Ordinary spread embed | `MYREST001` | 400 |
+| Explicit join type (`!inner` or `!left`), with or without an FK hint | `MYREST001` | 400 |
 
 myrest never invents a relationship. A view chain with no declared foreign key
 is not supported. A computed relationship is not supported. Ordinary spread
 embeds (`...table(...)`) are not supported; they refuse with `MYREST001`
 (`PostgREST spread embeds are not available with MySQL`).
+
+Explicit embed join types (`!inner` and `!left`) are not supported. This also
+applies to an alias, a nested embed, and a join type combined with an FK hint
+in either order. These requests refuse with `MYREST001`
+(`PostgREST embed join types !inner and !left are not supported`), not a
+missing-relationship error. Use a plain embed for the default left behaviour.
+A nested filter on a plain embed does not remove parent rows.
 
 ## Self-referential foreign keys
 
@@ -72,6 +80,7 @@ Aggregate plus embed is owned by the Read area. See [Aggregates](aggregates.md).
 | Embed with no declared foreign-key path | not supported | embed-003 |
 | Computed relationship embed | not supported | embed-004 |
 | Ordinary spread embed | not supported | embed-006 |
+| Explicit embed join types (`!inner` and `!left`) | not supported | embed-007 |
 
 ## Embed after write
 
