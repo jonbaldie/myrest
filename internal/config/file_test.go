@@ -46,6 +46,66 @@ func TestLoadRefusesAValueWithAnUnclosedQuote(t *testing.T) {
 	}
 }
 
+func TestLoadRefusesUnquotedFileText(t *testing.T) {
+	t.Parallel()
+
+	for name, text := range map[string]string{
+		"db-uri":                      "mysql://authenticator@127.0.0.1:3306/",
+		"db-schemas":                  "myrest_fixture",
+		"db-anon-role":                "myrest_anon",
+		"jwt-secret":                  "secret",
+		"jwt-aud":                     "audience",
+		"jwt-role-claim-key":          ".role",
+		"db-pre-request":              "app.check_request",
+		"db-tx-end":                   "commit",
+		"server-cors-allowed-origins": "https://example.com",
+		"openapi-mode":                "disabled",
+		"openapi-server-proxy-uri":    "https://example.com",
+		"db-root-spec":                "app.root",
+	} {
+		for _, value := range []string{"'" + text + "'", text + " # main db", text, ""} {
+			t.Run(name+"/"+value, func(t *testing.T) {
+				t.Parallel()
+
+				_, err := config.Load("# config\n"+name+" = "+value+"\n", config.Environment{})
+				if err == nil {
+					t.Fatal("Load accepted text without double quotes")
+				}
+				for _, want := range []string{"line 2", name, "quoted"} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("error %q does not contain %q", err, want)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestLoadKeepsQuotedTextCharacters(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		value string
+		want  string
+	}{
+		{value: `"'myrest_fixture' # literal"`, want: "'myrest_fixture' # literal"},
+		{value: `""`, want: ""},
+		{value: `"a\"b\\c"`, want: "a\"b\\c"},
+	} {
+		t.Run(testCase.value, func(t *testing.T) {
+			t.Parallel()
+
+			settings, err := config.Load("jwt-secret = "+testCase.value, config.Environment{})
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if settings.JWT.Secret != testCase.want {
+				t.Fatalf("JWT.Secret = %q, want %q", settings.JWT.Secret, testCase.want)
+			}
+		})
+	}
+}
+
 func TestLoadIgnoresCommentsAndBlankLines(t *testing.T) {
 	t.Parallel()
 

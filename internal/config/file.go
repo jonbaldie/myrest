@@ -38,7 +38,7 @@ func atLine(number int, err error) error {
 	return fmt.Errorf("config file line %d: %w", number, err)
 }
 
-// parseAssignment splits one line into its knob name and its text value.
+// parseAssignment splits one line into its knob name and its raw file value.
 func parseAssignment(line string) (string, string, error) {
 	name, rawValue, found := strings.Cut(line, "=")
 	if !found {
@@ -48,16 +48,15 @@ func parseAssignment(line string) (string, string, error) {
 	if knob == "" {
 		return "", "", errors.New("the line has no knob name")
 	}
-	value, err := parseValue(strings.TrimSpace(rawValue))
-	if err != nil {
-		return "", "", fmt.Errorf("%s: %w", knob, err)
-	}
-	return knob, value, nil
+	return knob, strings.TrimSpace(rawValue), nil
 }
 
 // parseValue reads a value that is either a quoted string or a bare token.
-func parseValue(raw string) (string, error) {
+func parseValue(raw string, allowBare bool) (string, error) {
 	if !strings.HasPrefix(raw, `"`) {
+		if !allowBare {
+			return "", errors.New("text must be a double-quoted value")
+		}
 		return raw, nil
 	}
 	value, err := strconv.Unquote(raw)
