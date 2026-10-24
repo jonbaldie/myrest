@@ -818,6 +818,9 @@ func (s *Service) parseInsertQuery(
 		writeQueryFailure(writer, err)
 		return readquery.Query{}, nil, false
 	}
+	if refuseWriteColumns(writer, values) {
+		return readquery.Query{}, nil, false
+	}
 	if values.Has("on_conflict") {
 		writeUnsupportedFeature(writer, "PostgREST on_conflict is not available with MySQL")
 		return readquery.Query{}, nil, false
@@ -837,12 +840,25 @@ func (s *Service) parseInsertQuery(
 	return query, plan, true
 }
 
+// refuseWriteColumns prevents writes of body keys that columns would exclude.
+// Column selection is not supported; never silently discard it. Issue #265.
+func refuseWriteColumns(writer http.ResponseWriter, values url.Values) bool {
+	if !values.Has("columns") {
+		return false
+	}
+	writeUnsupportedFeature(writer, "PostgREST columns on POST and PATCH is not supported")
+	return true
+}
+
 // boundedWriteOptions are the top-level query options that would bound or
 // sort a PATCH or DELETE. myrest does not apply them to the MySQL write, so it
 // refuses them with MYREST001 instead of changing every matching row. Issue #210.
 var boundedWriteOptions = []string{"limit", "offset", "order"}
 
-func refuseBoundedWrite(writer http.ResponseWriter, values url.Values) bool {
+func refuseMutationOptions(writer http.ResponseWriter, method string, values url.Values) bool {
+	if method == http.MethodPatch && refuseWriteColumns(writer, values) {
+		return true
+	}
 	for _, option := range boundedWriteOptions {
 		if values.Has(option) {
 			writeUnsupportedFeature(
@@ -872,7 +888,7 @@ func (s *Service) parseWriteQuery(
 		writeQueryFailure(writer, err)
 		return readquery.Query{}, nil, false
 	}
-	if refuseBoundedWrite(writer, values) {
+	if refuseMutationOptions(writer, request.Method, values) {
 		return readquery.Query{}, nil, false
 	}
 	query, err := readquery.Parse(values, readquery.CountNone)

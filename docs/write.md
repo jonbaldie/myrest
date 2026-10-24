@@ -19,6 +19,16 @@ Exposure of a **resource** does not imply every method. A write without the
 matching grant is denied with `PGRST205`, the same privilege-filtering rule as
 a missing table.
 
+## Body column selection (not supported)
+
+myrest does not support the PostgREST `columns` query parameter on `POST` or
+`PATCH`. It refuses requests that contain this parameter with status 400,
+code `MYREST001`, and message
+`PostgREST columns on POST and PATCH is not supported`.
+The refusal includes empty and repeated values and occurs before any write.
+No rows change. Body keys are never silently written when `columns` would
+exclude them. Omit `columns` to use the ordinary write path.
+
 ## Views
 
 A view in a configured database is a **resource** under the same exposure rule
@@ -212,3 +222,4 @@ representation rows; they are not a top-level bound.
 | Nested JSON in the write body on JSON and non-JSON columns | partial match | write-013, write-014 |
 | POST on_conflict query option | not supported | write-015 |
 | PATCH and DELETE limit, offset, and order query options | not supported | write-016 |
+| POST and PATCH columns query parameter | not supported | write-017 |
