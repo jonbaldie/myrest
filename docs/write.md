@@ -19,6 +19,16 @@ Exposure of a **resource** does not imply every method. A write without the
 matching grant is denied with `PGRST205`, the same privilege-filtering rule as
 a missing table.
 
+## Bulk POST object keys
+
+Without `Prefer: missing=default`, all objects in a bulk `POST` must have the
+same keys. Different key sets return status 400, code `PGRST102`, and message
+`All object keys must match` before any write. Key order and values can differ;
+an explicit JSON `null` counts as a supplied key.
+
+With `Prefer: missing=default`, key sets can differ. Omitted columns use their
+SQL `DEFAULT`.
+
 ## Body column selection (not supported)
 
 myrest does not support the PostgREST `columns` query parameter on `POST` or

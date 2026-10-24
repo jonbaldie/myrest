@@ -279,6 +279,61 @@ func TestPostInsertsJSONArray(t *testing.T) {
 	}
 }
 
+// Bulk POST must refuse different key sets before the database writer runs.
+func TestPostMismatchedObjectKeysRefuses(t *testing.T) {
+	t.Parallel()
+
+	for _, body := range []string{
+		`[{"name":"a"},{"id":2}]`,
+		`[{"name":"a"},{"name":"b","id":2}]`,
+		`[{"name":"a","id":1},{"name":"b"}]`,
+		`[{"name":"a"},{"name":"b"},{"id":3}]`,
+		`[{}, {"name":"a"}]`,
+		`[{"name":"a"}, {}]`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			t.Parallel()
+			sink := &writer{}
+			response, payload := apitest.PostJSON(t, serveWrite(t, &reader{}, sink).URL()+"/items", body)
+			failure := apitest.AssertEnvelope(t, response, payload, http.StatusBadRequest, "PGRST102")
+			if failure.Message != "All object keys must match" {
+				t.Fatalf("message = %q", failure.Message)
+			}
+			if sink.called != "" {
+				t.Fatalf("writer must not run; called %q", sink.called)
+			}
+		})
+	}
+}
+
+// Matching keys can have different values, JSON key order, or explicit nulls.
+// Prefer missing=default keeps support for omitted keys.
+func TestPostObjectKeysAccepted(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, body, prefer string
+	}{
+		{"one row", `{"name":"a"}`, ""},
+		{"same keys", `[{"name":"a"},{"name":"b"}]`, ""},
+		{"key order", `[{"id":1,"name":"a"},{"name":"b","id":2}]`, ""},
+		{"explicit null", `[{"name":"a"},{"name":null}]`, ""},
+		{"missing default", `[{"name":"a"},{"id":2}]`, "missing=default"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sink := &writer{}
+			headers := http.Header{}
+			headers.Set("Content-Type", "application/json")
+			headers.Set("Prefer", tc.prefer)
+			response, _ := apitest.DoBody(t, http.MethodPost, serveWrite(t, &reader{}, sink).URL()+"/items", headers, tc.body)
+			if response.StatusCode != http.StatusCreated || sink.called != "insert" {
+				t.Fatalf("status = %d, writer called %q", response.StatusCode, sink.called)
+			}
+		})
+	}
+}
+
 // POST of an empty JSON object must refuse as PGRST102 Empty body, like PATCH
 // and PUT. See issue #121.
 func TestPostEmptyJSONObjectRefuses(t *testing.T) {
