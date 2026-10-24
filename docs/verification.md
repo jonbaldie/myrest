@@ -96,6 +96,7 @@ cross-area smoke set. Capability-area chapters stay the source of truth for
 | `embed-005` | embed | full match | success |
 | `embed-006` | embed | not supported | refuse |
 | `embed-007` | embed | not supported | refuse |
+| `embed-008` | embed | not supported | refuse |
 | `write-001` | write | full match | success |
 | `write-002` | write | full match | success |
 | `write-003` | write | full match | success |
@@ -198,6 +199,7 @@ re-derive; `go test ./internal/verification` fails when this table drifts.
 | embed.md | Computed relationship embed | not supported | embed-004 |
 | embed.md | Ordinary spread embed | not supported | embed-006 |
 | embed.md | Explicit embed join types (`!inner` and `!left`) | not supported | embed-007 |
+| embed.md | Embed presence filters (`is.null` and `not.is.null`) | not supported | embed-008 |
 | error-contract.md | MySQL SQLSTATE to HTTP published subset and fallback | partial match | err-004, err-005 |
 | media-types-and-prefer.md | `application/geo+json` | not supported | repr-007 |
 | media-types-and-prefer.md | Plan media types | not supported | repr-007 |

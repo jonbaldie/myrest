@@ -68,6 +68,9 @@ func Parse(values url.Values, count CountMode) (Query, error) {
 	if err := parseLogicalGroups(values, &query); err != nil {
 		return Query{}, err
 	}
+	if err := refuseEmbedPresence(query); err != nil {
+		return Query{}, err
+	}
 	return query, nil
 }
 
