@@ -1,0 +1,272 @@
+
+### C1 base
+$ env  MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/base.conf
+  | db-uri = "mysql://authenticator:secret@127.0.0.1:32891/"
+  | db-schemas = "myrest_fixture"
+  | db-anon-role = "myrest_anon"
+running; GET /items:
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 39
+
+[{"id":1,"name":"alpha","name_len":5}]
+
+exit after kill
+  > 2026/10/24 01:37:37 myrest listening on http://127.0.0.1:3126 (databases=myrest_fixture)
+
+### C2 inline comment
+$ env  MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/inline-comment.conf
+  | db-uri = "mysql://authenticator:secret@127.0.0.1:32891/"
+  | db-schemas = "myrest_fixture" # main db
+  | db-anon-role = "myrest_anon"
+exit=1
+  > 2026/10/24 01:37:37 myrest: config file line 2: db-schemas: "myrest_fixture" # main db is not a quoted value
+
+### C3 typo knob
+$ env  MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/typo-knob.conf
+  | db-uri = "mysql://authenticator:secret@127.0.0.1:32891/"
+  | db-schema = "myrest_fixture"
+  | db-anon-role = "myrest_anon"
+exit=1
+  > 2026/10/24 01:37:38 myrest: config file line 2: db-schema is not a myrest knob
+
+### C4 bad bool
+$ env  MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/bad-bool.conf
+  | db-uri = "mysql://authenticator:secret@127.0.0.1:32891/"
+  | db-schemas = "myrest_fixture"
+  | db-anon-role = "myrest_anon"
+  | db-aggregates-enabled = yes
+exit=1
+  > 2026/10/24 01:37:38 myrest: config file line 4: db-aggregates-enabled: yes is not true or false
+
+### C5 missing database
+$ env  MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/missing-db.conf
+  | db-uri = "mysql://authenticator:secret@127.0.0.1:32891/"
+  | db-schemas = "nope_db"
+  | db-anon-role = "myrest_anon"
+running; GET /items:
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Content-Length: 120
+
+{"code":"PGRST205","message":"Could not find the table 'nope_db.items' in the schema cache","details":null,"hint":null}
+
+exit after kill
+  > 2026/10/24 01:37:38 myrest listening on http://127.0.0.1:3126 (databases=nope_db)
+
+### C6 bad password
+$ env  MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/bad-password.conf
+  | db-uri = "mysql://authenticator:wrong@127.0.0.1:32891/"
+  | db-schemas = "myrest_fixture"
+  | db-anon-role = "myrest_anon"
+exit=1
+  > 2026/10/24 01:37:38 myrest: log in as the authenticator: Error 1045 (28000): Access denied for user 'authenticator'@'192.168.215.1' (using password: YES)
+
+### C7 single quotes
+$ env  MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/single-quotes.conf
+  | db-uri = 'mysql://authenticator:secret@127.0.0.1:32891/'
+  | db-schemas = 'myrest_fixture'
+  | db-anon-role = 'myrest_anon'
+exit=1
+  > 2026/10/24 01:37:39 myrest: db-anon-role: the database role name holds a character which myrest cannot quote
+
+### C8 single-quoted uri and schemas
+$ env  MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/single-quotes-uri-schemas.conf
+  | db-uri = 'mysql://authenticator:secret@127.0.0.1:32891/'
+  | db-schemas = 'myrest_fixture'
+  | db-anon-role = "myrest_anon"
+exit=1
+  > 2026/10/24 01:37:55 myrest: db-uri: parse "'mysql://authenticator:secret@127.0.0.1:32891/'": first path segment in URL cannot contain colon
+
+### C9 bare value with inline comment
+$ env  MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/bare-inline-comment.conf
+  | db-uri = "mysql://authenticator:secret@127.0.0.1:32891/"
+  | db-schemas = myrest_fixture # main db
+  | db-anon-role = "myrest_anon"
+running; GET /items:
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Content-Length: 137
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture # main db.items' in the schema cache","details":null,"hint":null}
+
+exit after kill
+  > 2026/10/24 01:37:56 myrest listening on http://127.0.0.1:3126 (databases=myrest_fixture # main db)
+
+### C10 single-quoted schemas only
+$ env  MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/single-quoted-schemas.conf
+  | db-uri = "mysql://authenticator:secret@127.0.0.1:32891/"
+  | db-schemas = 'myrest_fixture'
+  | db-anon-role = "myrest_anon"
+running; GET /items:
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Content-Length: 129
+
+{"code":"PGRST205","message":"Could not find the table ''myrest_fixture'.items' in the schema cache","details":null,"hint":null}
+
+exit after kill
+  > 2026/10/24 01:37:56 myrest listening on http://127.0.0.1:3126 (databases='myrest_fixture')
+
+### C11 env overrides file db-max-rows
+$ env MYREST_DB_MAX_ROWS=1 MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/base.conf
+  | db-uri = "mysql://authenticator:secret@127.0.0.1:32891/"
+  | db-schemas = "myrest_fixture"
+  | db-anon-role = "myrest_anon"
+running; GET /items:
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 39
+
+[{"id":1,"name":"alpha","name_len":5}]
+
+exit after kill
+  > 2026/10/24 01:38:06 myrest listening on http://127.0.0.1:3126 (databases=myrest_fixture)
+
+### C12 empty env does not wipe
+$ env MYREST_DB_SCHEMAS= MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/base.conf
+  | db-uri = "mysql://authenticator:secret@127.0.0.1:32891/"
+  | db-schemas = "myrest_fixture"
+  | db-anon-role = "myrest_anon"
+running; GET /items:
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 39
+
+[{"id":1,"name":"alpha","name_len":5}]
+
+exit after kill
+  > 2026/10/24 01:38:06 myrest listening on http://127.0.0.1:3126 (databases=myrest_fixture)
+
+### C13 env-only, no file
+$ env MYREST_DB_URI=mysql://authenticator:secret@127.0.0.1:32891/ MYREST_DB_SCHEMAS=myrest_fixture MYREST_DB_ANON_ROLE=myrest_anon MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest 
+running; GET /items:
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 39
+
+[{"id":1,"name":"alpha","name_len":5}]
+
+exit after kill
+  > 2026/10/24 01:38:07 myrest listening on http://127.0.0.1:3126 (databases=myrest_fixture)
+
+### C14 bad env bool
+$ env MYREST_DB_AGGREGATES_ENABLED=yes MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/base.conf
+  | db-uri = "mysql://authenticator:secret@127.0.0.1:32891/"
+  | db-schemas = "myrest_fixture"
+  | db-anon-role = "myrest_anon"
+exit=1
+  > 2026/10/24 01:38:07 myrest: MYREST_DB_AGGREGATES_ENABLED: yes is not true or false
+
+### C15 env schemas quoted
+$ env MYREST_DB_SCHEMAS="myrest_fixture" MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/base.conf
+  | db-uri = "mysql://authenticator:secret@127.0.0.1:32891/"
+  | db-schemas = "myrest_fixture"
+  | db-anon-role = "myrest_anon"
+running; GET /items:
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Content-Length: 131
+
+{"code":"PGRST205","message":"Could not find the table '\"myrest_fixture\".items' in the schema cache","details":null,"hint":null}
+
+exit after kill
+  > 2026/10/24 01:38:07 myrest listening on http://127.0.0.1:3126 (databases="myrest_fixture")
+
+### C16 no role, no secret
+$ env MYREST_DB_URI=mysql://authenticator:secret@127.0.0.1:32891/ MYREST_DB_SCHEMAS=myrest_fixture MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest 
+exit=1
+  > 2026/10/24 01:38:07 myrest: myrest must not serve the API: the minimum run set needs jwt-secret and/or db-anon-role
+
+### C17 missing file path
+$ env  MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/does-not-exist.conf
+exit=1
+  > 2026/10/24 01:38:08 myrest: read config file: open docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/does-not-exist.conf: no such file or directory
+
+### C18 bad listen
+$ env PORT=notaport MYREST_LISTEN=127.0.0.1:3126 ./bin/myrest docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/base.conf
+  | db-uri = "mysql://authenticator:secret@127.0.0.1:32891/"
+  | db-schemas = "myrest_fixture"
+  | db-anon-role = "myrest_anon"
+running; GET /items:
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 39
+
+[{"id":1,"name":"alpha","name_len":5}]
+
+exit after kill
+  > 2026/10/24 01:38:08 myrest listening on http://127.0.0.1:3126 (databases=myrest_fixture)
+
+### C11b env MYREST_DB_MAX_ROWS=1 overrides file db-max-rows = 5
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 39
+
+[{"id":1,"name":"alpha","name_len":5}]
+
+
+### C18b bad MYREST_LISTEN
+2026/10/24 01:38:20 myrest: listen: listen tcp: lookup tcp/notaport: unknown port
+exit=1
+
+### C19 short jwt-secret
+config: docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/short-secret.conf
+token payload: {"role":"myrest_user"}
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 34
+
+[{"id":1,"payload":"top-secret"}]
+
+  > 2026/10/24 01:38:41 myrest listening on http://127.0.0.1:3126 (databases=myrest_fixture)
+
+### C20 nested role claim key
+config: docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/claim-key.conf
+token payload: {"app":{"db_role":"myrest_user"}}
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 34
+
+[{"id":1,"payload":"top-secret"}]
+
+  > 2026/10/24 01:38:42 myrest listening on http://127.0.0.1:3126 (databases=myrest_fixture)
+
+### C21 expired
+config: docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/claim-key.conf
+token payload: {"app":{"db_role":"myrest_user"},"exp":1000}
+HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+Www-Authenticate: Bearer error="invalid_token", error_description="JWT expired"
+Content-Length: 71
+
+{"code":"PGRST303","message":"JWT expired","details":null,"hint":null}
+
+  > 2026/10/24 01:38:44 myrest listening on http://127.0.0.1:3126 (databases=myrest_fixture)
+
+### C22 role not granted to authenticator
+config: docs/exploratory-testing/2026-10-24-embeds-upserts-config/config/claim-key.conf
+token payload: {"app":{"db_role":"root"}}
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Content-Length: 129
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture.secrets' in the schema cache","details":null,"hint":null}
+
+  > 2026/10/24 01:38:45 myrest listening on http://127.0.0.1:3126 (databases=myrest_fixture)

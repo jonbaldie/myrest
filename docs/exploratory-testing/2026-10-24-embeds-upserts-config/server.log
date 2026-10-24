@@ -1,0 +1,13 @@
+2026/10/24 01:33:19 myrest listening on http://127.0.0.1:3124 (databases=myrest_fixture)
+2026/10/24 01:34:19 myrest: insert myrest_fixture.colors as myrest_anon: Error 1048 (23000): Column 'tone' cannot be null
+2026/10/24 01:34:19 myrest: insert myrest_fixture.colors as myrest_anon: Error 1048 (23000): Column 'tone' cannot be null
+2026/10/24 01:34:35 myrest: insert myrest_fixture.colors as myrest_anon: Error 1048 (23000): Column 'tone' cannot be null
+2026/10/24 01:34:35 myrest: insert myrest_fixture.colors as myrest_anon: Error 1364 (HY000): Field 'name' doesn't have a default value
+2026/10/24 01:34:35 myrest: insert myrest_fixture.colors as myrest_anon: Error 1048 (23000): Column 'tone' cannot be null
+2026/10/24 01:34:35 myrest: insert myrest_fixture.colors as myrest_anon: Error 1048 (23000): Column 'tone' cannot be null
+2026/10/24 01:34:35 myrest: insert myrest_fixture.orders as myrest_anon: Error 1452 (23000): Cannot add or update a child row: a foreign key constraint fails (`myrest_fixture`.`orders`, CONSTRAINT `orders_item` FOREIGN KEY (`item_id`) REFERENCES `items` (`id`))
+2026/10/24 01:34:35 myrest: insert myrest_fixture.items as myrest_anon: Error 1062 (23000): Duplicate entry '1' for key 'items.PRIMARY'
+2026/10/24 01:34:35 myrest: insert myrest_fixture.colors as myrest_anon: Error 1406 (22001): Data too long for column 'name' at row 1
+2026/10/24 01:34:35 myrest: insert myrest_fixture.measurements as myrest_anon: Error 1366 (HY000): Incorrect decimal value: 'abc' for column 'amount' at row 1
+2026/10/24 01:36:02 myrest: reloaded the schema cache
+2026/10/24 01:36:14 myrest: insert myrest_fixture.notes as myrest_anon: column not found: extra

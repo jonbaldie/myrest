@@ -1,0 +1,9 @@
+24/Oct/2026:01:35:43 +0100: Starting PostgREST 13.0.4...
+24/Oct/2026:01:35:43 +0100: API server listening on 127.0.0.1:3125
+24/Oct/2026:01:35:43 +0100: Listening for database notifications on the "pgrst" channel
+24/Oct/2026:01:35:43 +0100: Successfully connected to PostgreSQL 17.11 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+24/Oct/2026:01:35:43 +0100: Connection Pool initialized with a maximum size of 10 connections
+24/Oct/2026:01:35:43 +0100: Config reloaded
+24/Oct/2026:01:35:43 +0100: Schema cache queried in 3.4 milliseconds
+24/Oct/2026:01:35:43 +0100: Schema cache loaded 4 Relations, 2 Relationships, 0 Functions, 0 Domain Representations, 4 Media Type Handlers, 599 Timezones
+24/Oct/2026:01:35:43 +0100: Schema cache loaded in 2.9 milliseconds

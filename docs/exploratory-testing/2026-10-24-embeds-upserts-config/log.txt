@@ -1,0 +1,587 @@
+
+### smoke
+$ curl -sS -D - http://127.0.0.1:3124/items
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 75
+
+[{"id":1,"name":"alpha","name_len":5},{"id":2,"name":"beta","name_len":4}]
+
+
+### J1 m2o
+$ curl -sS -D - -g http://127.0.0.1:3124/orders?select=id,items(id,name)&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-2/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 124
+
+[{"id":1,"items":{"id":1,"name":"alpha"}},{"id":2,"items":{"id":1,"name":"alpha"}},{"id":3,"items":{"id":2,"name":"beta"}}]
+
+
+### J1 o2m
+$ curl -sS -D - -g http://127.0.0.1:3124/items?select=id,orders(id)&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 69
+
+[{"id":1,"orders":[{"id":1},{"id":2}]},{"id":2,"orders":[{"id":3}]}]
+
+
+### J1 m2m
+$ curl -sS -D - -g http://127.0.0.1:3124/items?select=id,tags(name)&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 84
+
+[{"id":1,"tags":[{"name":"hot"},{"name":"cold"}]},{"id":2,"tags":[{"name":"hot"}]}]
+
+
+### J1 nested filter/order/limit
+$ curl -sS -D - -g http://127.0.0.1:3124/items?select=id,orders(id)&orders.id=gt.1&orders.order=id.desc&orders.limit=1&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 60
+
+[{"id":1,"orders":[{"id":2}]},{"id":2,"orders":[{"id":3}]}]
+
+
+### J1 deep
+$ curl -sS -D - -g http://127.0.0.1:3124/orders?select=id,items(id,orders(id))&items.orders.order=id.desc&items.orders.limit=1&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-2/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 140
+
+[{"id":1,"items":{"id":1,"orders":[{"id":2}]}},{"id":2,"items":{"id":1,"orders":[{"id":2}]}},{"id":3,"items":{"id":2,"orders":[{"id":3}]}}]
+
+
+### J1 alias
+$ curl -sS -D - -g http://127.0.0.1:3124/orders?select=id,thing:items(label:name)&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-2/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 106
+
+[{"id":1,"thing":{"label":"alpha"}},{"id":2,"thing":{"label":"alpha"}},{"id":3,"thing":{"label":"beta"}}]
+
+
+### J1 inner
+$ curl -sS -D - -g http://127.0.0.1:3124/items?select=id,orders!inner(id)&orders.id=eq.3
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 138
+
+{"code":"PGRST200","message":"Could not find a relationship between 'items' and 'orders' in the schema cache","details":null,"hint":null}
+
+
+### J1 m2m filter
+$ curl -sS -D - -g http://127.0.0.1:3124/items?select=id,tags(name)&tags.name=eq.cold&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 55
+
+[{"id":1,"tags":[{"name":"cold"}]},{"id":2,"tags":[]}]
+
+
+### J1 composite
+$ curl -sS -D - -g http://127.0.0.1:3124/stock_moves?select=id,qty,stock_lines(label)&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-3/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 202
+
+[{"id":1,"qty":5,"stock_lines":{"label":"one-aa"}},{"id":2,"qty":6,"stock_lines":{"label":"one-aa"}},{"id":3,"qty":7,"stock_lines":{"label":"one-bb"}},{"id":4,"qty":8,"stock_lines":{"label":"two-aa"}}]
+
+
+### J1 composite o2m
+$ curl -sS -D - -g http://127.0.0.1:3124/stock_lines?select=sku,tenant_id,stock_moves(qty)&order=tenant_id.asc,sku.asc
+HTTP/1.1 200 OK
+Content-Range: 0-2/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 171
+
+[{"sku":"aa","tenant_id":1,"stock_moves":[{"qty":5},{"qty":6}]},{"sku":"bb","tenant_id":1,"stock_moves":[{"qty":7}]},{"sku":"aa","tenant_id":2,"stock_moves":[{"qty":8}]}]
+
+
+### J1 manager
+$ curl -sS -D - -g http://127.0.0.1:3124/employees?select=name,manager:employees!employees_manager(name)&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-3/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 153
+
+[{"name":"ada","manager":null},{"name":"bob","manager":{"name":"ada"}},{"name":"carl","manager":{"name":"ada"}},{"name":"dee","manager":{"name":"bob"}}]
+
+
+### J1 reports
+$ curl -sS -D - -g http://127.0.0.1:3124/employees?select=name,reports:employees!manager_id(name)&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-3/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 159
+
+[{"name":"ada","reports":[{"name":"bob"},{"name":"carl"}]},{"name":"bob","reports":[{"name":"dee"}]},{"name":"carl","reports":[]},{"name":"dee","reports":[]}]
+
+
+### J1 inner no filter
+$ curl -sS -D - -g http://127.0.0.1:3124/items?select=id,orders!inner(id)
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 138
+
+{"code":"PGRST200","message":"Could not find a relationship between 'items' and 'orders' in the schema cache","details":null,"hint":null}
+
+
+### J1 left
+$ curl -sS -D - -g http://127.0.0.1:3124/items?select=id,orders!left(id)
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 138
+
+{"code":"PGRST200","message":"Could not find a relationship between 'items' and 'orders' in the schema cache","details":null,"hint":null}
+
+
+### J1 hint+inner
+$ curl -sS -D - -g http://127.0.0.1:3124/deliveries?select=id,addresses!deliveries_from!inner(label)
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 146
+
+{"code":"PGRST200","message":"Could not find a relationship between 'deliveries' and 'addresses' in the schema cache","details":null,"hint":null}
+
+
+### J1 embed null filter
+$ curl -sS -D - -g http://127.0.0.1:3124/items?select=id,orders(id)&orders.id=eq.3&orders=not.is.null
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 84
+
+{"code":"PGRST204","message":"column not found: orders","details":null,"hint":null}
+
+
+### J1 embed or
+$ curl -sS -D - -g http://127.0.0.1:3124/items?select=id,orders(id)&orders.or=(id.eq.1,id.eq.3)&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 60
+
+[{"id":1,"orders":[{"id":1}]},{"id":2,"orders":[{"id":3}]}]
+
+
+### J1 embed offset
+$ curl -sS -D - -g http://127.0.0.1:3124/items?select=id,orders(id)&orders.offset=1&orders.order=id.asc&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 52
+
+[{"id":1,"orders":[{"id":2}]},{"id":2,"orders":[]}]
+
+
+### J1 o2m filter parent by embed col (top-level)
+$ curl -sS -D - -g http://127.0.0.1:3124/items?select=id,orders(id)&orders.item_id=eq.2
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 52
+
+[{"id":1,"orders":[]},{"id":2,"orders":[{"id":3}]}]
+
+
+### J1 embed unknown col
+$ curl -sS -D - -g http://127.0.0.1:3124/items?select=id,orders(nope)
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 82
+
+{"code":"PGRST204","message":"column not found: nope","details":null,"hint":null}
+
+
+### J1 embed star
+$ curl -sS -D - -g http://127.0.0.1:3124/orders?select=*,items(*)&order=id.asc&limit=1
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 68
+
+[{"id":1,"item_id":1,"items":{"id":1,"name":"alpha","name_len":5}}]
+
+
+### J1 m2m via join explicit
+$ curl -sS -D - -g http://127.0.0.1:3124/items?select=id,item_tags(tag_id,tags(name))&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 154
+
+[{"id":1,"item_tags":[{"tag_id":1,"tags":{"name":"hot"}},{"tag_id":2,"tags":{"name":"cold"}}]},{"id":2,"item_tags":[{"tag_id":1,"tags":{"name":"hot"}}]}]
+
+
+### J1 embed csv
+$ curl -sS -D - -H Accept: text/csv -g http://127.0.0.1:3124/orders?select=id,items(name)&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-2/*
+Content-Type: text/csv; charset=utf-8
+Range-Unit: items
+Content-Length: 83
+
+id,items
+1,"{""name"":""alpha""}"
+2,"{""name"":""alpha""}"
+3,"{""name"":""beta""}"
+
+
+### J2 bulk POST rep
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [{"name":"red"},{"name":"blue","tone":"dark"}] http://127.0.0.1:3124/colors
+HTTP/1.1 409 Conflict
+Content-Type: application/json
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+
+### J2 POST missing=default bulk mixed keys
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation,missing=default -d [{"name":"green"},{"name":"teal","tone":"deep"}] http://127.0.0.1:3124/colors
+HTTP/1.1 201 Created
+Content-Type: application/json
+Preference-Applied: return=representation, missing=default
+Content-Length: 78
+
+[{"id":1,"name":"green","tone":"plain"},{"id":2,"name":"teal","tone":"deep"}]
+
+
+### J2 POST without missing=default, bulk mixed keys
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [{"name":"pink"},{"name":"grey","tone":"mid"}] http://127.0.0.1:3124/colors
+HTTP/1.1 409 Conflict
+Content-Type: application/json
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+
+### J2 read colors
+$ curl -sS -D - http://127.0.0.1:3124/colors?order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 78
+
+[{"id":1,"name":"green","tone":"plain"},{"id":2,"name":"teal","tone":"deep"}]
+
+
+### J2 single explicit null into NOT NULL
+$ curl -sS -D - -X POST -H Content-Type: application/json -d {"name":"x","tone":null} http://127.0.0.1:3124/colors
+HTTP/1.1 409 Conflict
+Content-Type: application/json
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+
+### J2 single missing NOT NULL col without default
+$ curl -sS -D - -X POST -H Content-Type: application/json -d {"tone":"x"} http://127.0.0.1:3124/colors
+HTTP/1.1 500 Internal Server Error
+Content-Type: application/json
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+
+### J2 bulk mixed keys minimal
+$ curl -sS -D - -X POST -H Content-Type: application/json -d [{"name":"pink"},{"name":"grey","tone":"mid"}] http://127.0.0.1:3124/colors
+HTTP/1.1 409 Conflict
+Content-Type: application/json
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+
+### J2 bulk mixed keys reversed
+$ curl -sS -D - -X POST -H Content-Type: application/json -d [{"name":"grey","tone":"mid"},{"name":"pink"}] http://127.0.0.1:3124/colors
+HTTP/1.1 409 Conflict
+Content-Type: application/json
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+
+### J2 FK violation
+$ curl -sS -D - -X POST -H Content-Type: application/json -d {"item_id":999} http://127.0.0.1:3124/orders
+HTTP/1.1 409 Conflict
+Content-Type: application/json
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+
+### J2 duplicate PK
+$ curl -sS -D - -X POST -H Content-Type: application/json -d {"id":1,"name":"dup"} http://127.0.0.1:3124/items
+HTTP/1.1 409 Conflict
+Content-Type: application/json
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+
+### J2 too long string
+$ curl -sS -D - -X POST -H Content-Type: application/json -d {"name":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"} http://127.0.0.1:3124/colors
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+
+### J2 bad type
+$ curl -sS -D - -X POST -H Content-Type: application/json -d {"amount":"abc"} http://127.0.0.1:3124/measurements
+HTTP/1.1 500 Internal Server Error
+Content-Type: application/json
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+
+### J2 bulk mixed keys nullable
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [{"title":"a"},{"title":"b","body":"x"}] http://127.0.0.1:3124/notes
+HTTP/1.1 201 Created
+Content-Type: application/json
+Preference-Applied: return=representation
+Content-Length: 67
+
+[{"id":1,"title":"a","body":null},{"id":2,"title":"b","body":"x"}]
+
+
+### J2 bulk mixed keys nullable reversed
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [{"title":"c","body":"y"},{"title":"d"}] http://127.0.0.1:3124/notes
+HTTP/1.1 201 Created
+Content-Type: application/json
+Preference-Applied: return=representation
+Content-Length: 67
+
+[{"id":3,"title":"c","body":"y"},{"id":4,"title":"d","body":null}]
+
+
+### J2 bulk disjoint keys
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [{"title":"e"},{"body":"z"}] http://127.0.0.1:3124/notes
+HTTP/1.1 201 Created
+Content-Type: application/json
+Preference-Applied: return=representation
+Content-Length: 68
+
+[{"id":5,"title":"e","body":null},{"id":6,"title":null,"body":"z"}]
+
+
+### J2 columns param
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [{"title":"f","body":"ignored","extra":1}] http://127.0.0.1:3124/notes?columns=title
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 83
+
+{"code":"PGRST204","message":"column not found: extra","details":null,"hint":null}
+
+
+### J2 PUT insert
+$ curl -sS -D - -X PUT -H Content-Type: application/json -d {"id":50,"name":"put-new","tone":"t1"} http://127.0.0.1:3124/colors?id=eq.50
+HTTP/1.1 201 Created
+Content-Length: 0
+
+
+
+### J2 PUT update
+$ curl -sS -D - -X PUT -H Content-Type: application/json -d {"id":50,"name":"put-upd","tone":"t2"} http://127.0.0.1:3124/colors?id=eq.50
+HTTP/1.1 204 No Content
+
+
+
+### J2 PUT partial body
+$ curl -sS -D - -X PUT -H Content-Type: application/json -d {"id":50,"name":"put-partial"} http://127.0.0.1:3124/colors?id=eq.50
+HTTP/1.1 204 No Content
+
+
+
+### J2 read 50
+$ curl -sS -D - http://127.0.0.1:3124/colors?id=eq.50
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 45
+
+[{"id":50,"name":"put-partial","tone":"t2"}]
+
+
+### J2 PUT mismatch
+$ curl -sS -D - -X PUT -H Content-Type: application/json -d {"id":51,"name":"x"} http://127.0.0.1:3124/colors?id=eq.50
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 122
+
+{"code":"PGRST105","message":"PUT filters must name all and only primary key columns with eq","details":null,"hint":null}
+
+
+### J2 POST merge-dup bulk rep
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: resolution=merge-duplicates,return=representation -d [{"id":50,"name":"merged","tone":"m"},{"id":60,"name":"new60","tone":"n"}] http://127.0.0.1:3124/colors
+HTTP/1.1 201 Created
+Content-Type: application/json
+Preference-Applied: return=representation, resolution=merge-duplicates
+Content-Length: 75
+
+[{"id":50,"name":"merged","tone":"m"},{"id":60,"name":"new60","tone":"n"}]
+
+
+### J2 POST ignore-dup
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: resolution=ignore-duplicates -d [{"id":50,"name":"ignored","tone":"i"},{"id":61,"name":"new61","tone":"n"}] http://127.0.0.1:3124/colors
+HTTP/1.1 201 Created
+Preference-Applied: resolution=ignore-duplicates
+Content-Length: 0
+
+
+
+### J2 read after
+$ curl -sS -D - http://127.0.0.1:3124/colors?id=in.(50,60,61)&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-2/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 111
+
+[{"id":50,"name":"merged","tone":"m"},{"id":60,"name":"new60","tone":"n"},{"id":61,"name":"new61","tone":"n"}]
+
+
+### J2 columns param valid body
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [{"title":"g","body":"should-be-ignored"}] http://127.0.0.1:3124/notes?columns=title
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /notes?id=eq.7
+Preference-Applied: return=representation
+Content-Length: 50
+
+[{"id":7,"title":"g","body":"should-be-ignored"}]
+
+
+### J2 columns on PATCH
+$ curl -sS -D - -X PATCH -H Content-Type: application/json -H Prefer: return=representation -d {"title":"g2","body":"should-be-ignored-2"} http://127.0.0.1:3124/notes?id=eq.7&columns=title
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Content-Length: 53
+
+[{"id":7,"title":"g2","body":"should-be-ignored-2"}]
+
+
+### J2 columns on GET
+$ curl -sS -D - http://127.0.0.1:3124/notes?id=eq.7&columns=title
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 53
+
+[{"id":7,"title":"g2","body":"should-be-ignored-2"}]
+
+
+### J2 CSV POST
+$ curl -sS -D - -X POST -H Content-Type: text/csv --data-binary title,body
+csv1,b1
+csv2,b2 http://127.0.0.1:3124/notes
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 89
+
+{"code":"PGRST102","message":"Could not parse the JSON body","details":null,"hint":null}
+
+
+### J2 form POST
+$ curl -sS -D - -X POST -H Content-Type: application/x-www-form-urlencoded -d title=form1&body=b http://127.0.0.1:3124/notes
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 89
+
+{"code":"PGRST102","message":"Could not parse the JSON body","details":null,"hint":null}
+
+
+### J2 POST embed rep
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d {"item_id":2} -g http://127.0.0.1:3124/orders?select=id,items(name)
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /orders?id=eq.5
+Preference-Applied: return=representation
+Content-Length: 35
+
+[{"id":5,"items":{"name":"beta"}}]
+
+
+### J2 DELETE rep
+$ curl -sS -D - -X DELETE -H Prefer: return=representation http://127.0.0.1:3124/notes?id=in.(1,2)
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Content-Length: 67
+
+[{"id":1,"title":"a","body":null},{"id":2,"title":"b","body":"x"}]
+
+
+### J2 PATCH rep mismatch none
+$ curl -sS -D - -X PATCH -H Content-Type: application/json -H Prefer: return=representation -d {"body":"z"} http://127.0.0.1:3124/notes?id=eq.999
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Content-Length: 3
+
+[]
+
+
+### J2 POST empty array
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [] http://127.0.0.1:3124/notes
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 76
+
+{"code":"PGRST102","message":"Empty JSON array","details":null,"hint":null}
+
+
+### J2 POST tx rollback
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: tx=rollback,return=representation -d {"title":"rb"} http://127.0.0.1:3124/notes
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /notes?id=eq.8
+Preference-Applied: return=representation
+Content-Length: 36
+
+[{"id":8,"title":"rb","body":null}]
+
+
+### J2 read rb
+$ curl -sS -D - http://127.0.0.1:3124/notes?title=eq.rb
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 36
+
+[{"id":8,"title":"rb","body":null}]
+

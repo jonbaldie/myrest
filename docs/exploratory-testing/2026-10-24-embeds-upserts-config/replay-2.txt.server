@@ -1,0 +1,3 @@
+2026/10/24 01:41:09 myrest listening on http://127.0.0.1:3124 (databases=myrest_fixture)
+2026/10/24 01:41:11 myrest: insert myrest_fixture.notes as myrest_anon: column not found: extra
+2026/10/24 01:41:11 myrest: insert myrest_fixture.colors as myrest_anon: Error 1048 (23000): Column 'tone' cannot be null
