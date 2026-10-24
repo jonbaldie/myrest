@@ -1,0 +1,160 @@
+
+### O inner
+$ curl -sS -D - -g http://127.0.0.1:3125/items?select=id,orders!inner(id)&orders.id=eq.3
+HTTP/1.1 200 OK
+Server: postgrest/13.0.4
+Content-Range: 0-0/*
+Content-Location: /items?orders.id=eq.3&select=id%2Corders%21inner%28id%29
+Content-Length: 31
+Content-Type: application/json; charset=utf-8
+
+[{"id":2,"orders":[{"id": 3}]}]
+
+
+### O left
+$ curl -sS -D - -g http://127.0.0.1:3125/items?select=id,orders!left(id)&order=id.asc
+HTTP/1.1 200 OK
+Server: postgrest/13.0.4
+Content-Range: 0-1/*
+Content-Location: /items?order=id.asc&select=id%2Corders%21left%28id%29
+Content-Length: 75
+Content-Type: application/json; charset=utf-8
+
+[{"id":1,"orders":[{"id": 1}, {"id": 2}]}, 
+ {"id":2,"orders":[{"id": 3}]}]
+
+
+### O embed not.is.null
+$ curl -sS -D - -g http://127.0.0.1:3125/items?select=id,orders(id)&orders.id=eq.3&orders=not.is.null
+HTTP/1.1 200 OK
+Server: postgrest/13.0.4
+Content-Range: 0-0/*
+Content-Location: /items?orders=not.is.null&orders.id=eq.3&select=id%2Corders%28id%29
+Content-Length: 31
+Content-Type: application/json; charset=utf-8
+
+[{"id":2,"orders":[{"id": 3}]}]
+
+
+### O bulk mixed keys
+$ curl -sS -D - -X POST -H Content-Type: application/json -d [{"name":"pink"},{"name":"grey","tone":"mid"}] http://127.0.0.1:3125/colors
+HTTP/1.1 400 Bad Request
+Server: postgrest/13.0.4
+Content-Type: application/json; charset=utf-8
+Content-Length: 85
+Proxy-Status: PostgREST; error=PGRST102
+
+{"code":"PGRST102","details":null,"hint":null,"message":"All object keys must match"}
+
+
+### O bulk mixed keys nullable
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [{"title":"a"},{"title":"b","body":"x"}] http://127.0.0.1:3125/notes
+HTTP/1.1 400 Bad Request
+Server: postgrest/13.0.4
+Content-Type: application/json; charset=utf-8
+Content-Length: 85
+Proxy-Status: PostgREST; error=PGRST102
+
+{"code":"PGRST102","details":null,"hint":null,"message":"All object keys must match"}
+
+
+### O bulk mixed keys nullable reversed
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [{"title":"c","body":"y"},{"title":"d"}] http://127.0.0.1:3125/notes
+HTTP/1.1 400 Bad Request
+Server: postgrest/13.0.4
+Content-Type: application/json; charset=utf-8
+Content-Length: 85
+Proxy-Status: PostgREST; error=PGRST102
+
+{"code":"PGRST102","details":null,"hint":null,"message":"All object keys must match"}
+
+
+### O columns param valid body
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [{"title":"g","body":"should-be-ignored"}] http://127.0.0.1:3125/notes?columns=title
+HTTP/1.1 201 Created
+Server: postgrest/13.0.4
+Content-Range: */*
+Content-Length: 34
+Preference-Applied: return=representation
+Content-Type: application/json; charset=utf-8
+
+[{"id":1,"title":"g","body":null}]
+
+
+### O columns param extra key
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [{"title":"f","body":"ignored","extra":1}] http://127.0.0.1:3125/notes?columns=title
+HTTP/1.1 201 Created
+Server: postgrest/13.0.4
+Content-Range: */*
+Content-Length: 34
+Preference-Applied: return=representation
+Content-Type: application/json; charset=utf-8
+
+[{"id":2,"title":"f","body":null}]
+
+
+### O columns mixed keys
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [{"title":"h"},{"title":"i","body":"x"}] http://127.0.0.1:3125/notes?columns=title,body
+HTTP/1.1 201 Created
+Server: postgrest/13.0.4
+Content-Range: */*
+Content-Length: 69
+Preference-Applied: return=representation
+Content-Type: application/json; charset=utf-8
+
+[{"id":3,"title":"h","body":null}, 
+ {"id":4,"title":"i","body":"x"}]
+
+
+### O PUT insert
+$ curl -sS -D - -X PUT -H Content-Type: application/json -d {"id":50,"name":"put-new","tone":"t1"} http://127.0.0.1:3125/colors?id=eq.50
+HTTP/1.1 204 No Content
+Server: postgrest/13.0.4
+
+
+
+### O PUT partial
+$ curl -sS -D - -X PUT -H Content-Type: application/json -d {"id":50,"name":"put-partial"} http://127.0.0.1:3125/colors?id=eq.50
+HTTP/1.1 204 No Content
+Server: postgrest/13.0.4
+
+
+
+### O read 50
+$ curl -sS -D - http://127.0.0.1:3125/colors?id=eq.50
+HTTP/1.1 200 OK
+Server: postgrest/13.0.4
+Content-Range: 0-0/*
+Content-Location: /colors?id=eq.50
+Content-Length: 44
+Content-Type: application/json; charset=utf-8
+
+[{"id":50,"name":"put-partial","tone":"t1"}]
+
+
+### O POST empty array
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [] http://127.0.0.1:3125/notes
+HTTP/1.1 201 Created
+Server: postgrest/13.0.4
+Content-Range: */*
+Content-Length: 2
+Preference-Applied: return=representation
+Content-Type: application/json; charset=utf-8
+
+[]
+
+
+### O CSV POST
+$ curl -sS -D - -X POST -H Content-Type: text/csv -H Prefer: return=representation --data-binary title,body
+csv1,b1
+csv2,b2 http://127.0.0.1:3125/notes
+HTTP/1.1 201 Created
+Server: postgrest/13.0.4
+Content-Range: */*
+Content-Length: 76
+Preference-Applied: return=representation
+Content-Type: application/json; charset=utf-8
+
+[{"id":5,"title":"csv1","body":"b1"}, 
+ {"id":6,"title":"csv2","body":"b2"}]
+

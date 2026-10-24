@@ -1,0 +1,167 @@
+fixtures loaded
+## A. embed join type !inner / !left
+
+### A1 !inner
+$ curl -sS -D - http://127.0.0.1:3124/items?select=id,orders!inner(id)&orders.id=eq.3
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 138
+
+{"code":"PGRST200","message":"Could not find a relationship between 'items' and 'orders' in the schema cache","details":null,"hint":null}
+
+
+### A2 !left
+$ curl -sS -D - http://127.0.0.1:3124/items?select=id,orders!left(id)
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 138
+
+{"code":"PGRST200","message":"Could not find a relationship between 'items' and 'orders' in the schema cache","details":null,"hint":null}
+
+
+### A3 hint plus !inner
+$ curl -sS -D - http://127.0.0.1:3124/deliveries?select=id,addresses!deliveries_from!inner(label)
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 146
+
+{"code":"PGRST200","message":"Could not find a relationship between 'deliveries' and 'addresses' in the schema cache","details":null,"hint":null}
+
+
+### A4 control: no join type
+$ curl -sS -D - http://127.0.0.1:3124/items?select=id,orders(id)&orders.id=eq.3
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 52
+
+[{"id":1,"orders":[]},{"id":2,"orders":[{"id":3}]}]
+
+## B. top-level filter on embed presence
+
+### B1 orders=not.is.null
+$ curl -sS -D - http://127.0.0.1:3124/items?select=id,orders(id)&orders.id=eq.3&orders=not.is.null
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 84
+
+{"code":"PGRST204","message":"column not found: orders","details":null,"hint":null}
+
+## C. columns query parameter is ignored
+
+### C1 POST columns=title
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [{"title":"g","body":"should-be-ignored"}] http://127.0.0.1:3124/notes?columns=title
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /notes?id=eq.1
+Preference-Applied: return=representation
+Content-Length: 50
+
+[{"id":1,"title":"g","body":"should-be-ignored"}]
+
+
+### C2 POST columns=title, extra key
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [{"title":"f","body":"ignored","extra":1}] http://127.0.0.1:3124/notes?columns=title
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 83
+
+{"code":"PGRST204","message":"column not found: extra","details":null,"hint":null}
+
+
+### C3 PATCH columns=title
+$ curl -sS -D - -X PATCH -H Content-Type: application/json -H Prefer: return=representation -d {"title":"h","body":"should-be-ignored-too"} http://127.0.0.1:3124/notes?title=eq.g&columns=title
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Content-Length: 54
+
+[{"id":1,"title":"h","body":"should-be-ignored-too"}]
+
+
+### C4 read back
+$ curl -sS -D - http://127.0.0.1:3124/notes?order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 54
+
+[{"id":1,"title":"h","body":"should-be-ignored-too"}]
+
+## D. bulk POST with keys that do not match
+
+### D1 nullable table
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [{"title":"a"},{"body":"z"}] http://127.0.0.1:3124/notes
+HTTP/1.1 201 Created
+Content-Type: application/json
+Preference-Applied: return=representation
+Content-Length: 68
+
+[{"id":2,"title":"a","body":null},{"id":3,"title":null,"body":"z"}]
+
+
+### D2 NOT NULL DEFAULT column
+$ curl -sS -D - -X POST -H Content-Type: application/json -H Prefer: return=representation -d [{"name":"pink"},{"name":"grey","tone":"mid"}] http://127.0.0.1:3124/colors
+HTTP/1.1 409 Conflict
+Content-Type: application/json
+Content-Length: 100
+
+{"code":"MYREST002","message":"The database did not answer the request","details":null,"hint":null}
+
+
+### D3 read back colors
+$ curl -sS -D - http://127.0.0.1:3124/colors?order=id.asc
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Content-Length: 3
+
+[]
+
+## E. config text value without double quotes
+
+### E single-quoted-schemas.conf
+db-uri = "mysql://authenticator:secret@127.0.0.1:32891/"
+db-schemas = 'myrest_fixture'
+db-anon-role = "myrest_anon"
+
+### E single-quoted-schemas GET /items
+$ curl -sS -D - http://127.0.0.1:3126/items?limit=1
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Content-Length: 129
+
+{"code":"PGRST205","message":"Could not find the table ''myrest_fixture'.items' in the schema cache","details":null,"hint":null}
+
+exit/log:
+  > myrest listening on http://127.0.0.1:3126 (databases='myrest_fixture')
+
+### E bare-inline-comment.conf
+db-uri = "mysql://authenticator:secret@127.0.0.1:32891/"
+db-schemas = myrest_fixture # main db
+db-anon-role = "myrest_anon"
+
+### E bare-inline-comment GET /items
+$ curl -sS -D - http://127.0.0.1:3126/items?limit=1
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Content-Length: 137
+
+{"code":"PGRST205","message":"Could not find the table 'myrest_fixture # main db.items' in the schema cache","details":null,"hint":null}
+
+exit/log:
+  > myrest listening on http://127.0.0.1:3126 (databases=myrest_fixture # main db)
+
+### E single-quotes.conf
+db-uri = 'mysql://authenticator:secret@127.0.0.1:32891/'
+db-schemas = 'myrest_fixture'
+db-anon-role = 'myrest_anon'
+
+### E single-quotes GET /items
+$ curl -sS -D - http://127.0.0.1:3126/items?limit=1
+
+exit/log:
+  > myrest: db-anon-role: the database role name holds a character which myrest cannot quote
