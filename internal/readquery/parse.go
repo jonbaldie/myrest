@@ -381,6 +381,14 @@ func parseEmbedPart(part string) (Embed, error) {
 	head := part[:open]
 	inner := part[open+1 : len(part)-1]
 	alias, resource, hint, spread := splitEmbedHead(head)
+	for _, modifier := range strings.Split(hint, "!") {
+		if modifier == "inner" || modifier == "left" {
+			return Embed{}, ParseFailure{
+				Message: "PostgREST embed join types !inner and !left are not supported",
+				Gap:     true,
+			}
+		}
+	}
 	if resource == "" {
 		return Embed{}, ParseFailure{Message: "embed select '" + part + "' needs a resource name"}
 	}
