@@ -630,8 +630,8 @@ func TestPatchChangesPrimaryKeyReturnRepresentationOverMySQL(t *testing.T) {
 	}
 }
 
-// Issue #199: a bulk POST that mixes explicit and auto-increment keys
-// returns every inserted row under return=representation.
+// Issue #199: a bulk POST with missing=default that mixes explicit and
+// auto-increment keys returns every inserted row under return=representation.
 func TestBulkPostMixedKeysReturnRepresentationOverMySQL(t *testing.T) {
 	service := serve(t, "myrest_fixture")
 
@@ -673,7 +673,7 @@ func TestBulkPostMixedKeysReturnRepresentationOverMySQL(t *testing.T) {
 				t.Fatalf("new POST: %v", err)
 			}
 			request.Header.Set("Content-Type", "application/json")
-			request.Header.Set("Prefer", "return=representation")
+			request.Header.Set("Prefer", "missing=default, return=representation")
 			response, err := http.DefaultClient.Do(request)
 			if err != nil {
 				t.Fatalf("POST: %v", err)
@@ -686,7 +686,7 @@ func TestBulkPostMixedKeysReturnRepresentationOverMySQL(t *testing.T) {
 			if response.StatusCode != http.StatusCreated {
 				t.Fatalf("status = %d; body = %s", response.StatusCode, body)
 			}
-			if got := response.Header.Get("Preference-Applied"); got != "return=representation" {
+			if got := response.Header.Get("Preference-Applied"); got != "return=representation, missing=default" {
 				t.Fatalf("Preference-Applied = %q", got)
 			}
 			text := string(body)
@@ -804,7 +804,7 @@ func TestBulkPostMixedKeysRepresentationRefusalRollsBackOverMySQL(t *testing.T) 
 		t.Fatalf("new POST: %v", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Prefer", "resolution=merge-duplicates, return=representation")
+	request.Header.Set("Prefer", "resolution=merge-duplicates, return=representation, missing=default")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		t.Fatalf("POST: %v", err)
@@ -1036,13 +1036,46 @@ func TestPutPreferReturnRepresentationRefusesOverMySQL(t *testing.T) {
 	}
 }
 
+// Issue #266: a bulk POST with different keys must fail before any write,
+// both for nullable columns and for NOT NULL columns with a default.
+func TestPostMismatchedObjectKeysOverMySQL(t *testing.T) {
+	if err := harness.Exec("GRANT INSERT ON myrest_fixture.null_records TO 'myrest_anon'"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := harness.Exec("REVOKE INSERT ON myrest_fixture.null_records FROM 'myrest_anon'"); err != nil {
+			t.Error(err)
+		}
+	})
+	service := serve(t, "myrest_fixture")
+	for _, tc := range []struct {
+		path, body string
+	}{
+		{"/null_records", `[{"label":"a"},{"id":900}]`},
+		{"/colors", `[{"name":"pink"},{"name":"grey","tone":"mid"}]`},
+		{"/colors", `[{"name":"pink","tone":"mid"},{"name":"grey"}]`},
+	} {
+		t.Run(tc.body, func(t *testing.T) {
+			_, before := get(t, service, tc.path+"?order=id")
+			response, body := apitest.PostJSON(t, service.URL()+tc.path, tc.body)
+			failure := apitest.AssertEnvelope(t, response, body, http.StatusBadRequest, "PGRST102")
+			if failure.Message != "All object keys must match" {
+				t.Fatalf("message = %q", failure.Message)
+			}
+			_, after := get(t, service, tc.path+"?order=id")
+			if string(after) != string(before) {
+				t.Fatalf("rows changed: before %s after %s", before, after)
+			}
+		})
+	}
+}
+
 // write-010: missing=default, max-affected, and handling preferences.
 func TestPreferMissingMaxAffectedAndHandlingOverMySQL(t *testing.T) {
 	service := serve(t, "myrest_fixture")
 
 	// missing=default: bulk POST where only some rows name tone. Without the
-	// Prefer, the omitted tone becomes NULL and NOT NULL fails; with it, SQL
-	// DEFAULT fills plain.
+	// Prefer, different key sets are refused; with it, SQL DEFAULT fills plain.
 	request, err := http.NewRequest(
 		http.MethodPost,
 		service.URL()+"/colors",

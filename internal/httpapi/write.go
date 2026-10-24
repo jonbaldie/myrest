@@ -166,11 +166,32 @@ func readInsertRowsAndRepr(
 	if !ok {
 		return nil, representation.Spec{}, false
 	}
+	if !written.MissingDefault && !matchingInsertKeys(rows) {
+		writeFailure(writer, http.StatusBadRequest, codeBadBody, "All object keys must match")
+		return nil, representation.Spec{}, false
+	}
 	repr, ok := writeRepresentationPrecheck(writer, request, written)
 	if !ok {
 		return nil, representation.Spec{}, false
 	}
 	return rows, repr, true
+}
+
+// matchingInsertKeys compares key presence, not values: an explicit null is
+// still a supplied key. Prefer missing=default permits different key sets.
+func matchingInsertKeys(rows []map[string]any) bool {
+	first := rows[0]
+	for _, row := range rows[1:] {
+		if len(row) != len(first) {
+			return false
+		}
+		for key := range first {
+			if _, ok := row[key]; !ok {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // applyInsertResolution sets the POST duplicate-key mode from Prefer
