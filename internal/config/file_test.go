@@ -46,6 +46,52 @@ func TestLoadRefusesAValueWithAnUnclosedQuote(t *testing.T) {
 	}
 }
 
+func TestLoadRefusesASingleQuotedTextValue(t *testing.T) {
+	t.Parallel()
+
+	_, err := config.Load(`db-uri = "mysql://authenticator@127.0.0.1:3306/"
+db-schemas = 'myrest_fixture'
+db-anon-role = "myrest_anon"
+`, config.Environment{})
+	if err == nil {
+		t.Fatal("Load accepted a single-quoted text value")
+	}
+	if !strings.Contains(err.Error(), "line 2") || !strings.Contains(err.Error(), "db-schemas") {
+		t.Fatalf("error %q does not name line 2 and db-schemas", err)
+	}
+}
+
+func TestLoadRefusesABareTextValue(t *testing.T) {
+	t.Parallel()
+
+	_, err := config.Load(`db-uri = "mysql://authenticator@127.0.0.1:3306/"
+db-schemas = myrest_fixture # main db
+db-anon-role = "myrest_anon"
+`, config.Environment{})
+	if err == nil {
+		t.Fatal("Load accepted a bare text value")
+	}
+	if !strings.Contains(err.Error(), "line 2") || !strings.Contains(err.Error(), "double-quoted") {
+		t.Fatalf("error %q does not name line 2 and the quoting rule", err)
+	}
+}
+
+func TestLoadAcceptsBareBooleanAndIntegerValues(t *testing.T) {
+	t.Parallel()
+
+	settings, err := config.Load(`db-uri = "mysql://authenticator@127.0.0.1:3306/"
+db-anon-role = "myrest_anon"
+db-aggregates-enabled = true
+jwt-cache-max-entries = 5
+`, config.Environment{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !settings.DB.AggregatesEnabled || settings.JWT.CacheMaxEntries != 5 {
+		t.Fatalf("bare values not applied: %+v", settings)
+	}
+}
+
 func TestLoadIgnoresCommentsAndBlankLines(t *testing.T) {
 	t.Parallel()
 

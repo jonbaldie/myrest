@@ -55,14 +55,33 @@ func parseAssignment(line string) (string, string, error) {
 	return knob, value, nil
 }
 
-// parseValue reads a value that is either a quoted string or a bare token.
+// parseValue reads a value that is either a double-quoted string or a bare
+// boolean/integer. Anything else is refused rather than taken as text: a
+// single-quoted or bare text value would silently become part of the setting
+// (ADR 0009).
 func parseValue(raw string) (string, error) {
-	if !strings.HasPrefix(raw, `"`) {
+	if strings.HasPrefix(raw, `"`) {
+		value, err := strconv.Unquote(raw)
+		if err != nil {
+			return "", fmt.Errorf("%s is not a quoted value", raw)
+		}
+		return value, nil
+	}
+	if isBareValue(raw) {
 		return raw, nil
 	}
-	value, err := strconv.Unquote(raw)
-	if err != nil {
-		return "", fmt.Errorf("%s is not a quoted value", raw)
+	return "", fmt.Errorf("%s is not a double-quoted value", raw)
+}
+
+// isBareValue reports whether raw is a bare boolean or integer, the two value
+// types ADR 0009 allows without quotes.
+func isBareValue(raw string) bool {
+	if raw == "true" || raw == "false" {
+		return true
 	}
-	return value, nil
+	if raw == "" {
+		return false
+	}
+	_, err := strconv.Atoi(raw)
+	return err == nil
 }
