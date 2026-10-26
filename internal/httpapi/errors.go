@@ -38,24 +38,23 @@ func writeFailure(writer http.ResponseWriter, status int, code, message string) 
 
 // writeFailureExtra answers with details and hint set.
 func writeFailureExtra(writer http.ResponseWriter, status int, code, message string, details, hint any) {
-	writeEnvelope(writer, status, httperror.Envelope{Code: code, Message: message, Details: details, Hint: hint})
+	writeEnvelope(writer, httperror.Failure{
+		Status:   status,
+		Envelope: httperror.Envelope{Code: code, Message: message, Details: details, Hint: hint},
+	})
 }
 
 // writeEnvelope answers with one error envelope. An error envelope names no
 // profile, as in the parity target, so it drops Content-Profile.
-func writeEnvelope(writer http.ResponseWriter, status int, envelope httperror.Envelope) {
+func writeEnvelope(writer http.ResponseWriter, failure httperror.Failure) {
 	writer.Header().Del(headerContentProfile)
-	writeJSON(writer, status, envelope)
+	writeJSON(writer, failure.Status, failure.Envelope)
 }
 
-// writeErrorFailure answers a request-independent domain or database error
+// writeTranslatedError answers a request-independent domain or database error
 // through the shared translation, without disclosing database account data.
-func writeErrorFailure(writer http.ResponseWriter, err error) {
-	writeTranslated(writer, httperror.From(err))
-}
-
-func writeTranslated(writer http.ResponseWriter, failure httperror.Failure) {
-	writeEnvelope(writer, failure.Status, failure.Envelope)
+func writeTranslatedError(writer http.ResponseWriter, err error) {
+	writeEnvelope(writer, httperror.From(err))
 }
 
 // writeUnsupportedFeature answers a documented PostgreSQL semantic gap.

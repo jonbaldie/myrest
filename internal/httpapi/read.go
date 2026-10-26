@@ -142,7 +142,7 @@ func (s *Service) writeReadFailure(
 	if failure.Database {
 		s.log.Printf("myrest: read %s.%s as %s: %v", asked.Database, asked.Name, role, err)
 	}
-	writeTranslated(writer, failure)
+	writeEnvelope(writer, failure)
 }
 
 func requestQuery(request *http.Request) (url.Values, error) {

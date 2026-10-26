@@ -3,7 +3,6 @@ package httpapi
 import (
 	"net/http"
 
-	"github.com/jonbaldie/myrest/internal/httpapi/httperror"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 )
 
@@ -183,7 +182,7 @@ func (s *Service) admitWriteResource(
 		return admissionResult{}, false
 	}
 	if admission.refusal == nonWritableViewRefusal {
-		writeFailure(writer, http.StatusBadRequest, httperror.CodePostgresOnlyFeature, "The view is not updatable")
+		writeUnsupportedFeature(writer, "The view is not updatable")
 		return admissionResult{}, false
 	}
 	return admission, true

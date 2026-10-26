@@ -36,7 +36,7 @@ func refuseRequestMedia(writer http.ResponseWriter, request *http.Request) {
 }
 
 func writeSingularObjectFailure(writer http.ResponseWriter, rowCount int) {
-	writeTranslated(writer, httperror.SingularObject(rowCount))
+	writeEnvelope(writer, httperror.SingularObject(rowCount))
 }
 
 // writeRows answers row data in the negotiated representation. A singular

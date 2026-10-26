@@ -79,7 +79,7 @@ func (s *Service) writeRootSpec(
 	)
 	if err != nil {
 		s.log.Printf("db-root-spec %s: %v", name, err)
-		writeErrorFailure(writer, err)
+		writeTranslatedError(writer, err)
 		return
 	}
 	writeJSON(writer, http.StatusOK, outcome.Data)

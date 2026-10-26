@@ -112,7 +112,7 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request,
 	result, err := s.writer.Insert(request.Context(), role, table, bodyRows, options)
 	if err != nil {
 		s.log.Printf("myrest: insert %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		writeErrorFailure(writer, err)
+		writeTranslatedError(writer, err)
 		return
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
@@ -267,7 +267,7 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request, 
 	result, err := s.writer.Update(request.Context(), role, table, patch, query, options)
 	if err != nil {
 		s.log.Printf("myrest: update %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		writeErrorFailure(writer, err)
+		writeTranslatedError(writer, err)
 		return
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
@@ -308,7 +308,7 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request,
 	result, err := s.writer.Delete(request.Context(), role, table, query, options)
 	if err != nil {
 		s.log.Printf("myrest: delete %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		writeErrorFailure(writer, err)
+		writeTranslatedError(writer, err)
 		return
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
@@ -355,7 +355,7 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request, pr
 	)
 	if err != nil {
 		s.log.Printf("myrest: upsert %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		writeErrorFailure(writer, err)
+		writeTranslatedError(writer, err)
 		return
 	}
 	written.applied = append(written.applied, appliedResolutionTokens(written.Preferences)...)
