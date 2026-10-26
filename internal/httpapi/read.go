@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jonbaldie/myrest/internal/config"
+	"github.com/jonbaldie/myrest/internal/httpapi/httperror"
 	"github.com/jonbaldie/myrest/internal/prefer"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/representation"
@@ -28,8 +29,6 @@ type Reader interface {
 const (
 	// codeParseFailure is the parity-target code for a bad query string.
 	codeParseFailure = "PGRST100"
-	// codeNoColumn is the parity-target code for a missing column.
-	codeNoColumn = "PGRST204"
 	// codeInvalidRange is the parity-target code for an unsatisfiable Range.
 	codeInvalidRange = "PGRST103"
 )
@@ -139,21 +138,11 @@ func (s *Service) writeReadFailure(
 	if writeEmbedPlanFailure(writer, err) {
 		return
 	}
-	var missing readquery.ColumnNotFound
-	if errors.As(err, &missing) {
-		writeFailure(writer, http.StatusBadRequest, codeNoColumn, missing.Error())
-		return
+	failure := httperror.From(err)
+	if failure.Database {
+		s.log.Printf("myrest: read %s.%s as %s: %v", asked.Database, asked.Name, role, err)
 	}
-	var gap readquery.UnsupportedFeature
-	if errors.As(err, &gap) {
-		writeUnsupportedFeature(writer, gap.Message)
-		return
-	}
-	if writeInvalidJSON(writer, err) {
-		return
-	}
-	s.log.Printf("myrest: read %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-	writeDatabaseFailure(writer, err)
+	writeTranslated(writer, failure)
 }
 
 func requestQuery(request *http.Request) (url.Values, error) {

@@ -1,9 +1,9 @@
 package httpapi
 
 import (
-	"fmt"
 	"net/http"
 
+	"github.com/jonbaldie/myrest/internal/httpapi/httperror"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/representation"
 	"github.com/jonbaldie/myrest/internal/rows"
@@ -12,8 +12,6 @@ import (
 const (
 	// codeUnsupportedMedia is Accept negotiation with no claimed media type.
 	codeUnsupportedMedia = "PGRST107"
-	// codeSingularObject is Accept singular when the result is not one row.
-	codeSingularObject = "PGRST116"
 )
 
 // requestRepresentation negotiates Accept for row data or writes the refusal.
@@ -38,14 +36,7 @@ func refuseRequestMedia(writer http.ResponseWriter, request *http.Request) {
 }
 
 func writeSingularObjectFailure(writer http.ResponseWriter, rowCount int) {
-	writeFailureExtra(
-		writer,
-		http.StatusNotAcceptable,
-		codeSingularObject,
-		"Cannot coerce the result to a single JSON object",
-		fmt.Sprintf("The result contains %d rows", rowCount),
-		nil,
-	)
+	writeTranslated(writer, httperror.SingularObject(rowCount))
 }
 
 // writeRows answers row data in the negotiated representation. A singular
