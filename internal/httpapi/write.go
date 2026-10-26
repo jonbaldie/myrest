@@ -112,7 +112,7 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request,
 	result, err := s.writer.Insert(request.Context(), role, table, bodyRows, options)
 	if err != nil {
 		s.log.Printf("myrest: insert %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		s.writeWriteFailure(writer, err)
+		writeTranslatedError(writer, err)
 		return
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
@@ -267,7 +267,7 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request, 
 	result, err := s.writer.Update(request.Context(), role, table, patch, query, options)
 	if err != nil {
 		s.log.Printf("myrest: update %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		s.writeWriteFailure(writer, err)
+		writeTranslatedError(writer, err)
 		return
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
@@ -308,7 +308,7 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request,
 	result, err := s.writer.Delete(request.Context(), role, table, query, options)
 	if err != nil {
 		s.log.Printf("myrest: delete %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		s.writeWriteFailure(writer, err)
+		writeTranslatedError(writer, err)
 		return
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
@@ -355,7 +355,7 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request, pr
 	)
 	if err != nil {
 		s.log.Printf("myrest: upsert %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		s.writeWriteFailure(writer, err)
+		writeTranslatedError(writer, err)
 		return
 	}
 	written.applied = append(written.applied, appliedResolutionTokens(written.Preferences)...)
@@ -1062,28 +1062,4 @@ func locationValue(value any) string {
 	default:
 		return url.QueryEscape(fmt.Sprint(typed))
 	}
-}
-
-func (s *Service) writeWriteFailure(writer http.ResponseWriter, err error) {
-	var maxErr writequery.MaxAffectedExceeded
-	if errors.As(err, &maxErr) {
-		writeMaxAffected(writer, maxAffectedError{Affected: maxErr.Affected, Max: maxErr.Max})
-		return
-	}
-	var refusal representation.SingularObjectRefusal
-	if errors.As(err, &refusal) {
-		writeSingularObjectFailure(writer, refusal.RowCount)
-		return
-	}
-	var missing readquery.ColumnNotFound
-	if errors.As(err, &missing) {
-		writeFailure(writer, http.StatusBadRequest, codeNoColumn, missing.Error())
-		return
-	}
-	var gap readquery.UnsupportedFeature
-	if errors.As(err, &gap) {
-		writeUnsupportedFeature(writer, gap.Message)
-		return
-	}
-	writeDatabaseFailure(writer, err)
 }

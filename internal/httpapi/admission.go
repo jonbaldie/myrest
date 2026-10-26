@@ -182,7 +182,7 @@ func (s *Service) admitWriteResource(
 		return admissionResult{}, false
 	}
 	if admission.refusal == nonWritableViewRefusal {
-		writeFailure(writer, http.StatusBadRequest, codePostgresOnlyFeature, "The view is not updatable")
+		writeUnsupportedFeature(writer, "The view is not updatable")
 		return admissionResult{}, false
 	}
 	return admission, true

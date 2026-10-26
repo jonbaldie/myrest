@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jonbaldie/myrest/internal/config"
+	"github.com/jonbaldie/myrest/internal/httpapi/httperror"
 	"github.com/jonbaldie/myrest/internal/prefer"
 	"github.com/jonbaldie/myrest/internal/rpcexec"
 	"github.com/jonbaldie/myrest/internal/schemacache"
@@ -59,7 +60,7 @@ func (s *Service) writeRootSpec(
 	}
 	database, routineName, err := splitRootSpec(name)
 	if err != nil {
-		writeFailure(writer, http.StatusInternalServerError, codeMySQLDatabaseFailure, err.Error())
+		writeFailure(writer, http.StatusInternalServerError, httperror.CodeMySQLDatabaseFailure, err.Error())
 		return
 	}
 	requested := requestedResource{role: role, database: database, name: routineName}
@@ -78,7 +79,7 @@ func (s *Service) writeRootSpec(
 	)
 	if err != nil {
 		s.log.Printf("db-root-spec %s: %v", name, err)
-		writeDatabaseFailure(writer, err)
+		writeTranslatedError(writer, err)
 		return
 	}
 	writeJSON(writer, http.StatusOK, outcome.Data)
