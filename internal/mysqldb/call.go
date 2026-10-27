@@ -3,7 +3,6 @@ package mysqldb
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -274,37 +273,21 @@ func bindArguments(params []schemacache.ParameterFact, args map[string]any) ([]a
 	return values, nil
 }
 
-// boundArgument binds one routine argument. A nested JSON object or array
-// payload serializes to a JSON document string when the parameter holds
-// JSON. On any other parameter type, the call refuses before MySQL sees
-// the statement. Scalar, string, and null values bind as the body sent them.
 func boundArgument(param schemacache.ParameterFact, args map[string]any) (any, error) {
 	value, err := argumentValue(param.Name, args)
 	if err != nil {
 		return nil, err
 	}
-	switch value.(type) {
-	case map[string]any, []any:
-	default:
-		return value, nil
-	}
-	if !isJSONDataType(param.DataType) {
-		kind := "object"
-		if _, held := value.([]any); held {
-			kind = "array"
-		}
+	bound, err := bindValue(param.DataType, value)
+	if refusal, ok := err.(nonJSONTarget); ok {
 		return nil, readquery.UnsupportedFeature{
 			Message: fmt.Sprintf(
 				"Cannot pass a JSON %s to parameter %s: the parameter does not hold JSON",
-				kind, param.Name,
+				refusal.kind, param.Name,
 			),
 		}
 	}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	return string(raw), nil
+	return bound, err
 }
 
 func argumentValue(name string, args map[string]any) (any, error) {

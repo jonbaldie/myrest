@@ -428,35 +428,17 @@ func validateUnit(options writequery.Options, result writequery.Result) error {
 	return options.Validate(result)
 }
 
-// writeValue binds one write body value for one column. A nested JSON object
-// or array payload is a map or a slice of the decoded body, and the driver
-// cannot encode those types. On a column that holds JSON the payload
-// serializes to a JSON document string that MySQL stores as JSON. On any
-// other column the write refuses before MySQL sees the statement. Scalar,
-// string, and null values bind as the body sent them.
 func writeValue(column schemacache.Column, name string, value any) (any, error) {
-	switch value.(type) {
-	case map[string]any, []any:
-	default:
-		return value, nil
-	}
-	if !isJSONDataType(column.DataType) {
-		kind := "object"
-		if _, held := value.([]any); held {
-			kind = "array"
-		}
+	bound, err := bindValue(column.DataType, value)
+	if refusal, ok := err.(nonJSONTarget); ok {
 		return nil, readquery.UnsupportedFeature{
 			Message: fmt.Sprintf(
 				"Cannot write a JSON %s into column %s: the column does not hold JSON",
-				kind, name,
+				refusal.kind, name,
 			),
 		}
 	}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	return string(raw), nil
+	return bound, err
 }
 
 func insertColumns(table schemacache.Table, bodyRows []map[string]any) ([]string, error) {
