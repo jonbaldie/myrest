@@ -11,6 +11,7 @@ import (
 	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/mysqldb"
 	"github.com/jonbaldie/myrest/internal/schemacache"
+	"github.com/jonbaldie/myrest/internal/writeexec"
 )
 
 // serveWithTxEnd starts myrest with the given db-tx-end value.
@@ -40,7 +41,7 @@ func serveWithTxEnd(t *testing.T, txEnd config.TxEnd) *httpapi.Service {
 		Settings: settings,
 		Cache:    schemacache.Build(catalog),
 		Reader:   pool,
-		Writer:   pool,
+		Writer:   writeexec.New(pool, settings.DB.TxEnd),
 		Caller:   pool,
 	})
 	if err != nil {

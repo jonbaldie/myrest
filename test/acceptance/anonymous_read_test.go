@@ -19,6 +19,7 @@ import (
 	"github.com/jonbaldie/myrest/internal/mysqltest"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/schemacache"
+	"github.com/jonbaldie/myrest/internal/writeexec"
 )
 
 // anonRole is the anonymous database role of the fixtures.
@@ -89,7 +90,7 @@ func serveWithPoolAs(t *testing.T, role string, databases ...string) (*mysqldb.P
 		Settings: settings,
 		Cache:    cache,
 		Reader:   pool,
-		Writer:   pool,
+		Writer:   writeexec.New(pool, settings.DB.TxEnd),
 		Caller:   pool,
 	})
 	if err != nil {

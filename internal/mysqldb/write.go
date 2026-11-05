@@ -9,98 +9,46 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
+	"github.com/jonbaldie/myrest/internal/writeexec"
 	"github.com/jonbaldie/myrest/internal/writequery"
 )
 
-// Insert writes one or more rows as the database role. Column names come from
-// the JSON objects; generated columns are refused.
-func (p *Pool) Insert(
-	ctx context.Context,
-	role schemacache.Role,
-	table schemacache.Table,
-	bodyRows []map[string]any,
-	options writequery.Options,
-) (writequery.Result, error) {
-	return p.withWriteTx(ctx, role, options.PreferTx, func(ctx context.Context, tx *sql.Tx) (writequery.Result, error) {
-		return insertRows(ctx, tx, table, bodyRows, options)
-	})
-}
+type writeTransaction struct{ tx *sql.Tx }
 
-// Update changes matching rows as the database role.
-func (p *Pool) Update(
-	ctx context.Context,
-	role schemacache.Role,
-	table schemacache.Table,
-	patch map[string]any,
-	query readquery.Query,
-	options writequery.Options,
-) (writequery.Result, error) {
-	return p.withWriteTx(ctx, role, options.PreferTx, func(ctx context.Context, tx *sql.Tx) (writequery.Result, error) {
-		return updateRows(ctx, tx, table, patch, query, options)
-	})
-}
-
-// Delete removes matching rows as the database role.
-func (p *Pool) Delete(
-	ctx context.Context,
-	role schemacache.Role,
-	table schemacache.Table,
-	query readquery.Query,
-	options writequery.Options,
-) (writequery.Result, error) {
-	return p.withWriteTx(ctx, role, options.PreferTx, func(ctx context.Context, tx *sql.Tx) (writequery.Result, error) {
-		return deleteRows(ctx, tx, table, query, options)
-	})
-}
-
-func (p *Pool) withWriteTx(
-	ctx context.Context,
-	role schemacache.Role,
-	preferTx string,
-	work func(context.Context, *sql.Tx) (writequery.Result, error),
-) (writequery.Result, error) {
+func (p *Pool) WithinTransaction(ctx context.Context, role schemacache.Role, preferTx string, work func(context.Context, writeexec.Transaction) error) error {
 	statement, err := roleSwitchStatement(role)
 	if err != nil {
-		return writequery.Result{}, err
+		return err
 	}
+	return p.withRequestTx(ctx, statement, preferTx, func(ctx context.Context, tx *sql.Tx) error {
+		return work(ctx, writeTransaction{tx: tx})
+	})
+}
+
+func (w writeTransaction) ReadDelete(ctx context.Context, in writeexec.Intent) ([]rows.Row, error) {
+	return selectMatching(ctx, w.tx, in.Target, readquery.Query{SelectAll: true, Filters: in.Filter.Filters, Groups: in.Filter.Groups})
+}
+
+func (w writeTransaction) Mutate(ctx context.Context, in writeexec.Intent, options writequery.Options) (writeexec.Outcome, error) {
 	var result writequery.Result
-	err = p.withRequestTx(ctx, statement, preferTx, func(ctx context.Context, tx *sql.Tx) error {
-		var workErr error
-		result, workErr = work(ctx, tx)
-		return workErr
-	})
-	return result, err
-}
-
-// Upsert writes one row by primary key as the database role.
-// merge-duplicates uses INSERT ... AS new ON DUPLICATE KEY UPDATE.
-// ignore-duplicates uses INSERT IGNORE.
-// inserted is true when MySQL created the row.
-func (p *Pool) Upsert(
-	ctx context.Context,
-	role schemacache.Role,
-	table schemacache.Table,
-	row map[string]any,
-	primaryKey []string,
-	resolution httpapi.UpsertResolution,
-	options writequery.Options,
-) (bool, error) {
-	statement, err := roleSwitchStatement(role)
-	if err != nil {
-		return false, err
-	}
-
 	var inserted bool
-	err = p.withRequestTx(ctx, statement, options.PreferTx, func(ctx context.Context, tx *sql.Tx) error {
-		var upsertErr error
-		inserted, upsertErr = upsertRow(ctx, tx, table, row, primaryKey, resolution, options.MaxAffected)
-		return upsertErr
-	})
-	return inserted, err
+	var err error
+	switch in.Action {
+	case writeexec.Insert:
+		result, err = insertRows(ctx, w.tx, in.Target, in.Payload, options)
+	case writeexec.Update:
+		result, err = updateRows(ctx, w.tx, in.Target, in.Payload[0], in.Filter, options)
+	case writeexec.Delete:
+		result, err = deleteRows(ctx, w.tx, in.Target, in.Filter, options)
+	case writeexec.Upsert:
+		result.Affected, inserted, err = upsertRow(ctx, w.tx, in.Target, in.Payload[0], in.PrimaryKey, options.OnDuplicate, options.MaxAffected)
+	default:
+		return writeexec.Outcome{}, fmt.Errorf("unknown write action %d", in.Action)
+	}
+	return writeexec.Outcome{Affected: result.Affected, Rows: result.Rows, Keys: result.Keys, Inserted: inserted}, err
 }
 
 func insertRows(
@@ -281,9 +229,6 @@ func resultFromInsertedKeys(
 		return writequery.Result{}, cannotIdentifyInsertedKeys()
 	}
 	result.Rows = rows
-	if err := validateUnit(options, result); err != nil {
-		return writequery.Result{}, err
-	}
 	return result, nil
 }
 
@@ -328,9 +273,6 @@ func updateRows(
 				Message: "Prefer return=representation cannot return affected rows honestly",
 			}
 		}
-		if err := validateUnit(options, result); err != nil {
-			return writequery.Result{}, err
-		}
 	} else {
 		result.Keys = keys
 	}
@@ -365,31 +307,7 @@ func deleteRows(
 	if err != nil {
 		return writequery.Result{}, err
 	}
-	var readRows []rows.Row
-	if options.ReturnRepresentation {
-		// Re-read every column. The client select list is applied after the
-		// write for representation embeds, and join columns must remain.
-		readQuery := readquery.Query{
-			SelectAll: true,
-			Filters:   query.Filters,
-			Groups:    query.Groups,
-		}
-		readRows, err = selectMatching(ctx, tx, table, readQuery)
-		if err != nil {
-			return writequery.Result{}, err
-		}
-		// Refuse the representation before the delete runs, so a singular
-		// refusal deletes nothing (issue #175).
-		if err := validateUnit(options, writequery.Result{Rows: readRows}); err != nil {
-			return writequery.Result{}, err
-		}
-	}
-	result, err := execTxWrite(ctx, tx, parts, options.MaxAffected)
-	if err != nil {
-		return writequery.Result{}, err
-	}
-	result.Rows = readRows
-	return result, nil
+	return execTxWrite(ctx, tx, parts, options.MaxAffected)
 }
 
 func execTxWrite(
@@ -417,15 +335,6 @@ func checkMaxAffected(affected int64, max *int64) error {
 		return nil
 	}
 	return writequery.MaxAffectedExceeded{Affected: affected, Max: *max}
-}
-
-// validateUnit runs the caller's in-unit validation so a refused
-// representation rolls the unit back before commit (issue #175).
-func validateUnit(options writequery.Options, result writequery.Result) error {
-	if options.Validate == nil {
-		return nil
-	}
-	return options.Validate(result)
 }
 
 func writeValue(column schemacache.Column, name string, value any) (any, error) {
@@ -845,20 +754,20 @@ func upsertRow(
 	table schemacache.Table,
 	row map[string]any,
 	primaryKey []string,
-	resolution httpapi.UpsertResolution,
+	resolution writequery.OnDuplicate,
 	maxAffected *int64,
-) (bool, error) {
+) (int64, bool, error) {
 	parts, err := buildUpsert(table, row, primaryKey, resolution)
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 	result, err := tx.ExecContext(ctx, parts.statement, parts.args...)
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 	// INSERT and INSERT IGNORE report 1 for a new row. ON DUPLICATE KEY UPDATE
 	// reports 1 for insert, 2 for update, and 0 when values did not change.
@@ -867,16 +776,16 @@ func upsertRow(
 		logicalAffected = 1
 	}
 	if err := checkMaxAffected(logicalAffected, maxAffected); err != nil {
-		return false, err
+		return 0, false, err
 	}
-	return affected == 1, nil
+	return logicalAffected, affected == 1, nil
 }
 
 func buildUpsert(
 	table schemacache.Table,
 	row map[string]any,
 	primaryKey []string,
-	resolution httpapi.UpsertResolution,
+	resolution writequery.OnDuplicate,
 ) (sqlParts, error) {
 	if len(row) == 0 {
 		return sqlParts{}, fmt.Errorf("upsert needs at least one column")
@@ -905,7 +814,7 @@ func buildUpsert(
 	)
 
 	switch resolution {
-	case httpapi.UpsertIgnoreDuplicates:
+	case writequery.DuplicateIgnored:
 		return sqlParts{
 			statement: fmt.Sprintf(
 				"INSERT IGNORE INTO %s VALUES (%s)",
@@ -914,7 +823,7 @@ func buildUpsert(
 			),
 			args: args,
 		}, nil
-	case httpapi.UpsertMergeDuplicates:
+	case writequery.DuplicateMerges:
 		updates := upsertUpdateSets(columns, primaryKey)
 		return sqlParts{
 			statement: fmt.Sprintf(

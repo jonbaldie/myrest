@@ -32,7 +32,7 @@ mutago:
 	mutago --coverage --min-covered-msi 80 --quiet --no-diffs \
 		./internal/config ./internal/httpapi ./internal/jwt ./internal/mysqldb ./internal/mysqlname \
 		./internal/prefer ./internal/readquery ./internal/representation ./internal/rows ./internal/schemacache \
-		./internal/verification
+		./internal/verification ./internal/writeexec
 
 # Start MySQL 8.0+ in Docker and load fixture SQL. Ctrl+C stops the container.
 mysql-fixtures:

@@ -78,9 +78,6 @@ func TestPostSingularObjectRefusal(t *testing.T) {
 		`[{"name":"alpha"},{"name":"beta"}]`, singularWriteHeaders(),
 	)
 	assertSingularRefusalEnvelope(t, response, body)
-	if sink.options.Validate == nil {
-		t.Fatalf("the unit carried no representation validation")
-	}
 }
 
 // PATCH that matches several rows with the singular Accept refuses 406
@@ -180,8 +177,5 @@ func TestSingularWriteValidatorScope(t *testing.T) {
 	)
 	if response.StatusCode != http.StatusCreated {
 		t.Fatalf("array status = %d, want %d; body = %s", response.StatusCode, http.StatusCreated, body)
-	}
-	if plain.options.Validate != nil {
-		t.Fatalf("a non-singular representation write carried a validator")
 	}
 }
