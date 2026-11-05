@@ -17,55 +17,11 @@ import (
 	"github.com/jonbaldie/myrest/internal/representation"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
+	"github.com/jonbaldie/myrest/internal/writeexec"
 	"github.com/jonbaldie/myrest/internal/writequery"
 )
 
-// UpsertResolution is one Prefer resolution value of the parity target.
-type UpsertResolution int
-
-const (
-	// UpsertMergeDuplicates maps to Prefer: resolution=merge-duplicates.
-	UpsertMergeDuplicates UpsertResolution = iota
-	// UpsertIgnoreDuplicates maps to Prefer: resolution=ignore-duplicates.
-	UpsertIgnoreDuplicates
-)
-
-// Writer inserts, updates, deletes, and upserts rows as one database role.
-type Writer interface {
-	Insert(
-		ctx context.Context,
-		role schemacache.Role,
-		table schemacache.Table,
-		rows []map[string]any,
-		options writequery.Options,
-	) (writequery.Result, error)
-	Update(
-		ctx context.Context,
-		role schemacache.Role,
-		table schemacache.Table,
-		patch map[string]any,
-		query readquery.Query,
-		options writequery.Options,
-	) (writequery.Result, error)
-	Delete(
-		ctx context.Context,
-		role schemacache.Role,
-		table schemacache.Table,
-		query readquery.Query,
-		options writequery.Options,
-	) (writequery.Result, error)
-	// Upsert writes one row by primary key. inserted is true when MySQL created
-	// the row and false when it updated or ignored an existing row.
-	Upsert(
-		ctx context.Context,
-		role schemacache.Role,
-		table schemacache.Table,
-		row map[string]any,
-		primaryKey []string,
-		resolution UpsertResolution,
-		options writequery.Options,
-	) (inserted bool, err error)
-}
+type Writer = writeexec.Executor
 
 const (
 	// codeBadBody is the parity-target code for a bad JSON write body.
@@ -94,12 +50,12 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request,
 	}
 
 	primaryKey := schemacache.PrimaryKeyOf(schemacache.KeysFrom(snapshot, asked))
-	options, ok := s.buildWriteOptions(writer, snapshot, role, asked, written, primaryKey, writeKindInsert)
+	ok = s.checkWriteRepresentation(writer, snapshot, role, asked, preferences, primaryKey, writeexec.Insert)
 	if !ok {
 		return
 	}
 
-	if !applyInsertResolution(writer, request, &written, &options) {
+	if _, ok := parseUpsertResolution(writer, preferences); !ok {
 		return
 	}
 
@@ -107,9 +63,9 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request,
 	if !ok {
 		return
 	}
-	options.Validate = validateRepresentation(query, repr)
-
-	result, err := s.writer.Insert(request.Context(), role, table, bodyRows, options)
+	outcome, err := s.writer.Execute(request.Context(), writeexec.Intent{Action: writeexec.Insert, Role: role, Target: table, Payload: bodyRows, Filter: query, Preferences: preferences, PrimaryKey: primaryKey, CanSelect: schemacache.HasTablePrivilegeFrom(snapshot, role, asked, "SELECT"), Representation: repr})
+	result := writequery.Result{Affected: outcome.Affected, Rows: outcome.Rows, Keys: outcome.Keys}
+	written.applied = outcome.Applied
 	if err != nil {
 		s.log.Printf("myrest: insert %s.%s as %s: %v", asked.Database, asked.Name, role, err)
 		s.writeWriteFailure(writer, err)
@@ -119,26 +75,6 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request,
 		Prefer: written, Method: http.MethodPost, TableName: asked.Name,
 		PrimaryKey: primaryKey, Result: result, Query: query, Plan: plan, Repr: repr,
 	})
-}
-
-// validateRepresentation builds the in-unit validation of one representation
-// write: a singular-object Accept needs exactly one row, and the client
-// select list must project. The unit runs it before commit, so a refusal
-// (406 PGRST116 for the row count) rolls the write back (issue #175).
-func validateRepresentation(
-	query readquery.Query,
-	repr representation.Spec,
-) func(writequery.Result) error {
-	if repr.Kind != representation.KindSingularObject && (query.SelectAll || len(query.Columns) == 0) {
-		return nil
-	}
-	return func(result writequery.Result) error {
-		if err := representation.ValidateCardinality(repr, len(result.Rows)); err != nil {
-			return err
-		}
-		_, err := readquery.Project(result.Rows, query)
-		return err
-	}
 }
 
 // writeRepresentationPrecheck negotiates Accept for a representation response
@@ -194,43 +130,6 @@ func matchingInsertKeys(rows []map[string]any) bool {
 	return true
 }
 
-// applyInsertResolution sets the POST duplicate-key mode from Prefer
-// resolution. With no resolution a POST stays a plain INSERT.
-func applyInsertResolution(
-	writer http.ResponseWriter,
-	request *http.Request,
-	written *writePrefer,
-	options *writequery.Options,
-) bool {
-	if written.Resolution == "" && !written.BadResolution {
-		return true
-	}
-	resolution, ok := parseUpsertResolution(writer, written.Preferences)
-	if !ok {
-		return false
-	}
-	if resolution == UpsertIgnoreDuplicates && options.ReturnRepresentation {
-		writeUnsupportedFeature(
-			writer,
-			"Prefer return=representation cannot tell inserted rows from ignored rows honestly",
-		)
-		return false
-	}
-	options.OnDuplicate = writequery.DuplicateMerges
-	if resolution == UpsertIgnoreDuplicates {
-		options.OnDuplicate = writequery.DuplicateIgnored
-	}
-	written.applied = append(written.applied, appliedResolutionTokens(written.Preferences)...)
-	return true
-}
-
-func appliedResolutionTokens(preferences prefer.Preferences) []string {
-	if preferences.Resolution == "" {
-		return nil
-	}
-	return []string{"resolution=" + preferences.Resolution}
-}
-
 // patchTable answers PATCH /<table> with the ordinary-read filter surface.
 // Content-Profile selects the database; with no header the table comes from
 // the default database.
@@ -250,7 +149,7 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request, 
 	}
 
 	primaryKey := schemacache.PrimaryKeyOf(schemacache.KeysFrom(snapshot, asked))
-	options, ok := s.buildWriteOptions(writer, snapshot, role, asked, written, primaryKey, writeKindPatch)
+	ok = s.checkWriteRepresentation(writer, snapshot, role, asked, preferences, primaryKey, writeexec.Update)
 	if !ok {
 		return
 	}
@@ -263,8 +162,9 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request, 
 	if !ok {
 		return
 	}
-	options.Validate = validateRepresentation(query, repr)
-	result, err := s.writer.Update(request.Context(), role, table, patch, query, options)
+	outcome, err := s.writer.Execute(request.Context(), writeexec.Intent{Action: writeexec.Update, Role: role, Target: table, Payload: []map[string]any{patch}, Filter: query, Preferences: preferences, PrimaryKey: primaryKey, CanSelect: schemacache.HasTablePrivilegeFrom(snapshot, role, asked, "SELECT"), Representation: repr})
+	result := writequery.Result{Affected: outcome.Affected, Rows: outcome.Rows, Keys: outcome.Keys}
+	written.applied = outcome.Applied
 	if err != nil {
 		s.log.Printf("myrest: update %s.%s as %s: %v", asked.Database, asked.Name, role, err)
 		s.writeWriteFailure(writer, err)
@@ -295,7 +195,7 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request,
 	}
 
 	primaryKey := schemacache.PrimaryKeyOf(schemacache.KeysFrom(snapshot, asked))
-	options, ok := s.buildWriteOptions(writer, snapshot, role, asked, written, primaryKey, writeKindDelete)
+	ok = s.checkWriteRepresentation(writer, snapshot, role, asked, preferences, primaryKey, writeexec.Delete)
 	if !ok {
 		return
 	}
@@ -304,8 +204,9 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request,
 	if !ok {
 		return
 	}
-	options.Validate = validateRepresentation(query, repr)
-	result, err := s.writer.Delete(request.Context(), role, table, query, options)
+	outcome, err := s.writer.Execute(request.Context(), writeexec.Intent{Action: writeexec.Delete, Role: role, Target: table, Filter: query, Preferences: preferences, PrimaryKey: primaryKey, CanSelect: schemacache.HasTablePrivilegeFrom(snapshot, role, asked, "SELECT"), Representation: repr})
+	result := writequery.Result{Affected: outcome.Affected, Rows: outcome.Rows, Keys: outcome.Keys}
+	written.applied = outcome.Applied
 	if err != nil {
 		s.log.Printf("myrest: delete %s.%s as %s: %v", asked.Database, asked.Name, role, err)
 		s.writeWriteFailure(writer, err)
@@ -339,28 +240,20 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request, pr
 	if !ok {
 		return
 	}
-	options, ok := s.buildWriteOptions(writer, snapshot, role, asked, written, primaryKey, writeKindPut)
+	ok = s.checkWriteRepresentation(writer, snapshot, role, asked, preferences, primaryKey, writeexec.Upsert)
 	if !ok {
 		return
 	}
 
-	inserted, err := s.writer.Upsert(
-		request.Context(),
-		role,
-		table,
-		row,
-		primaryKey,
-		resolution,
-		options,
-	)
+	outcome, err := s.writer.Execute(request.Context(), writeexec.Intent{Action: writeexec.Upsert, Role: role, Target: table, Payload: []map[string]any{row}, Preferences: preferences, PrimaryKey: primaryKey})
 	if err != nil {
 		s.log.Printf("myrest: upsert %s.%s as %s: %v", asked.Database, asked.Name, role, err)
 		s.writeWriteFailure(writer, err)
 		return
 	}
-	written.applied = append(written.applied, appliedResolutionTokens(written.Preferences)...)
+	written.applied = outcome.Applied
 	setPreferenceApplied(writer, written)
-	if inserted {
+	if outcome.Inserted {
 		writeMinimal(writer, http.StatusCreated)
 		return
 	}
@@ -414,68 +307,13 @@ func honoursMaxAffected(kind writeKind) bool {
 	}
 }
 
-// buildWriteOptions checks representation honesty and builds database options.
-func (s *Service) buildWriteOptions(
-	writer http.ResponseWriter,
-	snapshot schemacache.Snapshot,
-	role schemacache.Role,
-	asked schemacache.TableID,
-	written writePrefer,
-	primaryKey []string,
-	kind writeKind,
-) (writequery.Options, bool) {
-	options := writequery.Options{
-		PrimaryKey:     primaryKey,
-		MissingDefault: written.MissingDefault,
-		PreferTx:       written.Tx,
-	}
-	if written.Strict && written.MaxAffected != nil && honoursMaxAffected(kind) {
-		options.MaxAffected = written.MaxAffected
-	}
-
-	switch written.Return {
-	case returnHeadersOnly:
-		options.ReturnKeys = true
-	case returnRepresentation:
-		if !s.canReturnRepresentation(kind, primaryKey) {
-			writeUnsupportedFeature(writer, representationLimitMessage(kind))
-			return writequery.Options{}, false
-		}
-		if !schemacache.HasTablePrivilegeFrom(snapshot, role, asked, "SELECT") {
-			writeUnsupportedFeature(
-				writer,
-				"Prefer return=representation needs SELECT to return affected rows honestly",
-			)
-			return writequery.Options{}, false
-		}
-		options.ReturnRepresentation = true
-		options.ReturnKeys = true
-	}
-	return options, true
-}
-
-func (s *Service) canReturnRepresentation(kind writeKind, primaryKey []string) bool {
-	switch kind {
-	case writeKindInsert, writeKindPatch:
-		return len(primaryKey) > 0
-	case writeKindDelete:
-		return true
-	case writeKindPut:
-		return false
-	default:
+func (s *Service) checkWriteRepresentation(writer http.ResponseWriter, snapshot schemacache.Snapshot, role schemacache.Role, asked schemacache.TableID, preferences prefer.Preferences, primaryKey []string, action writeexec.Action) bool {
+	err := writeexec.CheckRepresentation(writeexec.Intent{Action: action, PrimaryKey: primaryKey, Preferences: preferences, CanSelect: schemacache.HasTablePrivilegeFrom(snapshot, role, asked, "SELECT")})
+	if err != nil {
+		s.writeWriteFailure(writer, err)
 		return false
 	}
-}
-
-func representationLimitMessage(kind writeKind) string {
-	switch kind {
-	case writeKindInsert:
-		return "Prefer return=representation needs a primary key to return inserted rows honestly"
-	case writeKindPatch:
-		return "Prefer return=representation needs a primary key to return updated rows honestly"
-	default:
-		return "Prefer return=representation cannot return affected rows honestly"
-	}
+	return true
 }
 
 // lookupPutTable finds the table for PUT. INSERT is always required.
@@ -485,13 +323,13 @@ func (s *Service) lookupPutTable(
 	writer http.ResponseWriter,
 	request *http.Request,
 	preferences prefer.Preferences,
-	resolution UpsertResolution,
+	resolution writequery.OnDuplicate,
 ) (schemacache.Role, schemacache.TableID, admissionResult, bool) {
 	role, asked, admission, ok := s.lookupWriteTable(writer, request, preferences, "INSERT")
 	if !ok {
 		return "", schemacache.TableID{}, admissionResult{}, false
 	}
-	if resolution == UpsertMergeDuplicates &&
+	if resolution == writequery.DuplicateMerges &&
 		!schemacache.HasTablePrivilegeFrom(admission.snapshot, role, asked, "UPDATE") {
 		writeFailure(writer, http.StatusNotFound, codeNoTable, noTableMessage(asked))
 		return "", schemacache.TableID{}, admissionResult{}, false
@@ -538,7 +376,7 @@ func (s *Service) readPutRow(
 	return row, primaryKey, true
 }
 
-func parseUpsertResolution(writer http.ResponseWriter, preferences prefer.Preferences) (UpsertResolution, bool) {
+func parseUpsertResolution(writer http.ResponseWriter, preferences prefer.Preferences) (writequery.OnDuplicate, bool) {
 	if preferences.BadResolution {
 		writeFailure(
 			writer,
@@ -549,9 +387,9 @@ func parseUpsertResolution(writer http.ResponseWriter, preferences prefer.Prefer
 		return 0, false
 	}
 	if preferences.Resolution == prefer.ResolutionIgnoreDuplicates {
-		return UpsertIgnoreDuplicates, true
+		return writequery.DuplicateIgnored, true
 	}
-	return UpsertMergeDuplicates, true
+	return writequery.DuplicateMerges, true
 }
 
 func putPrimaryKeyValues(
@@ -683,7 +521,7 @@ func (s *Service) lookupWriteTable(
 }
 
 func refuseUnbounded(writer http.ResponseWriter, written writePrefer, query readquery.Query) bool {
-	if !unboundedWrite(query) || written.AllRows {
+	if !writeexec.UnboundedFilter(query) || written.AllRows {
 		return false
 	}
 	writeFailure(
@@ -693,10 +531,6 @@ func refuseUnbounded(writer http.ResponseWriter, written writePrefer, query read
 		"PATCH/DELETE needs a filter or Prefer: all-rows",
 	)
 	return true
-}
-
-func unboundedWrite(query readquery.Query) bool {
-	return len(query.Filters) == 0 && len(query.Groups) == 0
 }
 
 func parseMutateQuery(request *http.Request) (readquery.Query, error) {

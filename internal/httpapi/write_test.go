@@ -14,6 +14,7 @@ import (
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
+	"github.com/jonbaldie/myrest/internal/writeexec"
 	"github.com/jonbaldie/myrest/internal/writequery"
 )
 
@@ -28,7 +29,7 @@ type writer struct {
 	patch      map[string]any
 	row        map[string]any
 	primaryKey []string
-	resolution httpapi.UpsertResolution
+	resolution writequery.OnDuplicate
 	filters    []readquery.Filter
 	groups     []readquery.Group
 	inserted   int
@@ -41,104 +42,47 @@ type writer struct {
 	options    writequery.Options
 	resultRows []rows.Row
 	resultKeys []map[string]any
+	txEnd      config.TxEnd
 }
 
-func (w *writer) Insert(
-	ctx context.Context,
-	role schemacache.Role,
-	table schemacache.Table,
-	rows []map[string]any,
-	options writequery.Options,
-) (writequery.Result, error) {
-	w.stoppable = ctx != nil && ctx.Done() != nil
-	w.called = "insert"
-	w.role, w.table, w.rows = role, table, rows
-	w.options = options
+func (w *writer) Execute(ctx context.Context, in writeexec.Intent) (writeexec.Outcome, error) {
+	return writeexec.New(w, w.txEnd).Execute(ctx, in)
+}
+func (w *writer) WithinTransaction(ctx context.Context, role schemacache.Role, tx string, work func(context.Context, writeexec.Transaction) error) error {
+	return work(ctx, w)
+}
+func (w *writer) ReadDelete(ctx context.Context, in writeexec.Intent) ([]rows.Row, error) {
 	if w.failure != nil {
-		return writequery.Result{}, w.failure
+		return nil, w.failure
 	}
-	result := writequery.Result{Affected: int64(len(rows)), Rows: w.resultRows, Keys: w.resultKeys}
-	if w.inserted != 0 {
-		result.Affected = int64(w.inserted)
+	return w.resultRows, nil
+}
+func (w *writer) Mutate(ctx context.Context, in writeexec.Intent, options writequery.Options) (writeexec.Outcome, error) {
+	w.stoppable = ctx != nil && ctx.Done() != nil
+	w.role, w.table, w.options = in.Role, in.Target, options
+	w.filters, w.groups = in.Filter.Filters, in.Filter.Groups
+	if w.failure != nil {
+		return writeexec.Outcome{}, w.failure
 	}
-	if err := w.validate(options, result); err != nil {
-		return writequery.Result{}, err
+	result := writeexec.Outcome{Rows: w.resultRows, Keys: w.resultKeys}
+	switch in.Action {
+	case writeexec.Insert:
+		w.called, w.rows = "insert", in.Payload
+		result.Affected = int64(len(in.Payload))
+		if w.inserted != 0 {
+			result.Affected = int64(w.inserted)
+		}
+	case writeexec.Update:
+		w.called, w.patch = "update", in.Payload[0]
+		result.Affected = w.updated
+	case writeexec.Delete:
+		w.called = "delete"
+		result.Affected = w.deleted
+	case writeexec.Upsert:
+		w.called, w.row, w.primaryKey, w.resolution = "upsert", in.Payload[0], in.PrimaryKey, options.OnDuplicate
+		result.Inserted = w.upserted
 	}
 	return result, nil
-}
-
-func (w *writer) Update(
-	ctx context.Context,
-	role schemacache.Role,
-	table schemacache.Table,
-	patch map[string]any,
-	query readquery.Query,
-	options writequery.Options,
-) (writequery.Result, error) {
-	w.stoppable = ctx != nil && ctx.Done() != nil
-	w.called = "update"
-	w.role, w.table, w.patch = role, table, patch
-	w.filters, w.groups = query.Filters, query.Groups
-	w.options = options
-	if w.failure != nil {
-		return writequery.Result{}, w.failure
-	}
-	result := writequery.Result{Affected: w.updated, Rows: w.resultRows, Keys: w.resultKeys}
-	if err := w.validate(options, result); err != nil {
-		return writequery.Result{}, err
-	}
-	return result, nil
-}
-
-func (w *writer) Delete(
-	ctx context.Context,
-	role schemacache.Role,
-	table schemacache.Table,
-	query readquery.Query,
-	options writequery.Options,
-) (writequery.Result, error) {
-	w.stoppable = ctx != nil && ctx.Done() != nil
-	w.called = "delete"
-	w.role, w.table = role, table
-	w.filters, w.groups = query.Filters, query.Groups
-	w.options = options
-	if w.failure != nil {
-		return writequery.Result{}, w.failure
-	}
-	result := writequery.Result{Affected: w.deleted, Rows: w.resultRows, Keys: w.resultKeys}
-	if err := w.validate(options, result); err != nil {
-		return writequery.Result{}, err
-	}
-	return result, nil
-}
-
-// validate models the database unit: it runs the in-unit validation before
-// the unit reports success, so a refused representation rolls back.
-func (w *writer) validate(options writequery.Options, result writequery.Result) error {
-	if options.Validate == nil {
-		return nil
-	}
-	return options.Validate(result)
-}
-
-func (w *writer) Upsert(
-	ctx context.Context,
-	role schemacache.Role,
-	table schemacache.Table,
-	row map[string]any,
-	primaryKey []string,
-	resolution httpapi.UpsertResolution,
-	options writequery.Options,
-) (bool, error) {
-	w.stoppable = ctx != nil && ctx.Done() != nil
-	w.called = "upsert"
-	w.role, w.table = role, table
-	w.row, w.primaryKey, w.resolution = row, primaryKey, resolution
-	w.options = options
-	if w.failure != nil {
-		return false, w.failure
-	}
-	return w.upserted, nil
 }
 
 func serveWrite(
@@ -164,6 +108,9 @@ func serveWrite(
 		if resolved[0].Cache != nil {
 			options.Cache = resolved[0].Cache
 		}
+	}
+	if w, ok := sink.(*writer); ok {
+		w.txEnd = options.Settings.DB.TxEnd
 	}
 	service, err := httpapi.Listen(options)
 	if err != nil {
@@ -1594,7 +1541,7 @@ func TestPutUpsertByPrimaryKeyMergeDuplicates(t *testing.T) {
 	if sink.called != "upsert" {
 		t.Fatalf("writer called %q, want upsert", sink.called)
 	}
-	if sink.resolution != httpapi.UpsertMergeDuplicates {
+	if sink.resolution != writequery.DuplicateMerges {
 		t.Fatalf("resolution = %v, want merge-duplicates", sink.resolution)
 	}
 	if len(sink.primaryKey) != 1 || sink.primaryKey[0] != "id" {
@@ -1659,7 +1606,7 @@ func TestPutUpsertByPrimaryKeyIgnoreDuplicates(t *testing.T) {
 	if sink.called != "upsert" {
 		t.Fatalf("writer called %q, want upsert", sink.called)
 	}
-	if sink.resolution != httpapi.UpsertIgnoreDuplicates {
+	if sink.resolution != writequery.DuplicateIgnored {
 		t.Fatalf("resolution = %v, want ignore-duplicates", sink.resolution)
 	}
 }

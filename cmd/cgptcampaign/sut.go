@@ -20,6 +20,7 @@ import (
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
+	"github.com/jonbaldie/myrest/internal/writeexec"
 	"github.com/jonbaldie/myrest/internal/writequery"
 )
 
@@ -85,59 +86,21 @@ func rejectUnknownColumns(table schemacache.Table, query readquery.Query) error 
 
 type memoryWriter struct{}
 
-func (memoryWriter) Insert(
-	_ context.Context,
-	_ schemacache.Role,
-	_ schemacache.Table,
-	body []map[string]any,
-	options writequery.Options,
-) (writequery.Result, error) {
-	if options.MaxAffected != nil && int64(len(body)) > *options.MaxAffected {
-		return writequery.Result{}, writequery.MaxAffectedExceeded{
-			Affected: int64(len(body)),
-			Max:      *options.MaxAffected,
-		}
-	}
-	return writequery.Result{Affected: int64(len(body))}, nil
+func (m memoryWriter) WithinTransaction(ctx context.Context, _ schemacache.Role, _ string, work func(context.Context, writeexec.Transaction) error) error {
+	return work(ctx, m)
 }
-
-func (memoryWriter) Update(
-	_ context.Context,
-	_ schemacache.Role,
-	_ schemacache.Table,
-	_ map[string]any,
-	_ readquery.Query,
-	options writequery.Options,
-) (writequery.Result, error) {
-	if options.MaxAffected != nil && *options.MaxAffected == 0 {
-		return writequery.Result{}, writequery.MaxAffectedExceeded{Affected: 1, Max: 0}
-	}
-	return writequery.Result{Affected: 1}, nil
+func (memoryWriter) ReadDelete(context.Context, writeexec.Intent) ([]rows.Row, error) {
+	return nil, nil
 }
-
-func (memoryWriter) Delete(
-	_ context.Context,
-	_ schemacache.Role,
-	_ schemacache.Table,
-	_ readquery.Query,
-	options writequery.Options,
-) (writequery.Result, error) {
-	if options.MaxAffected != nil && *options.MaxAffected == 0 {
-		return writequery.Result{}, writequery.MaxAffectedExceeded{Affected: 1, Max: 0}
+func (memoryWriter) Mutate(_ context.Context, in writeexec.Intent, options writequery.Options) (writeexec.Outcome, error) {
+	affected := int64(1)
+	if in.Action == writeexec.Insert {
+		affected = int64(len(in.Payload))
 	}
-	return writequery.Result{Affected: 1}, nil
-}
-
-func (memoryWriter) Upsert(
-	_ context.Context,
-	_ schemacache.Role,
-	_ schemacache.Table,
-	_ map[string]any,
-	_ []string,
-	_ httpapi.UpsertResolution,
-	_ writequery.Options,
-) (bool, error) {
-	return true, nil
+	if options.MaxAffected != nil && affected > *options.MaxAffected {
+		return writeexec.Outcome{}, writequery.MaxAffectedExceeded{Affected: affected, Max: *options.MaxAffected}
+	}
+	return writeexec.Outcome{Affected: affected, Inserted: true}, nil
 }
 
 type memoryCaller struct{}
@@ -261,7 +224,7 @@ func startService() (*httpapi.Service, error) {
 				{Columns: []string{"id", "item_id"}, Values: []any{int64(10), int64(1)}},
 			},
 		},
-		Writer: memoryWriter{},
+		Writer: writeexec.New(memoryWriter{}, campaignSettings().DB.TxEnd),
 		Caller: memoryCaller{},
 		Log:    log.New(io.Discard, "", 0),
 	})

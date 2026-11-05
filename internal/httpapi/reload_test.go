@@ -10,7 +10,7 @@ import (
 	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/schemacache"
-	"github.com/jonbaldie/myrest/internal/writequery"
+	"github.com/jonbaldie/myrest/internal/writeexec"
 )
 
 // Seam under test: one request against a schema-cache reload. A reload that
@@ -26,14 +26,8 @@ type reloadingWriter struct {
 	commits int
 }
 
-func (w *reloadingWriter) Insert(
-	ctx context.Context,
-	role schemacache.Role,
-	table schemacache.Table,
-	rows []map[string]any,
-	options writequery.Options,
-) (writequery.Result, error) {
-	result, err := w.writer.Insert(ctx, role, table, rows, options)
+func (w *reloadingWriter) Execute(ctx context.Context, in writeexec.Intent) (writeexec.Outcome, error) {
+	result, err := w.writer.Execute(ctx, in)
 	if err != nil {
 		return result, err
 	}

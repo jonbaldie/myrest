@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/schemacache"
 	"github.com/jonbaldie/myrest/internal/writequery"
@@ -227,7 +226,7 @@ func TestBuildUpsertMergeSQL(t *testing.T) {
 		table,
 		map[string]any{"id": 1, "name": "alpha2"},
 		[]string{"id"},
-		httpapi.UpsertMergeDuplicates,
+		writequery.DuplicateMerges,
 	)
 	if err != nil {
 		t.Fatalf("buildUpsert: %v", err)
@@ -255,7 +254,7 @@ func TestBuildUpsertIgnoreSQL(t *testing.T) {
 		table,
 		map[string]any{"id": 99, "name": "fresh"},
 		[]string{"id"},
-		httpapi.UpsertIgnoreDuplicates,
+		writequery.DuplicateIgnored,
 	)
 	if err != nil {
 		t.Fatalf("buildUpsert: %v", err)
@@ -383,7 +382,7 @@ func TestBuildUpsertBindsNestedJSONOnJSONColumn(t *testing.T) {
 		table,
 		map[string]any{"id": 2, "meta": map[string]any{"tag": "Beta"}},
 		[]string{"id"},
-		httpapi.UpsertMergeDuplicates,
+		writequery.DuplicateMerges,
 	)
 	if err != nil {
 		t.Fatalf("buildUpsert: %v", err)

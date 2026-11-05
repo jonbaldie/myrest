@@ -15,6 +15,7 @@ import (
 	"github.com/jonbaldie/myrest/internal/mysqldb"
 	"github.com/jonbaldie/myrest/internal/rpcexec"
 	"github.com/jonbaldie/myrest/internal/schemacache"
+	"github.com/jonbaldie/myrest/internal/writeexec"
 )
 
 func main() {
@@ -43,7 +44,7 @@ func main() {
 		Settings: settings,
 		Cache:    cache,
 		Reader:   pool,
-		Writer:   pool,
+		Writer:   writeexec.New(pool, settings.DB.TxEnd),
 		Executor: rpcexec.New(pool, settings.DB.TxEnd),
 	})
 	if err != nil {

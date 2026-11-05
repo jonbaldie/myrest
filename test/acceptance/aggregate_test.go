@@ -9,6 +9,7 @@ import (
 	"github.com/jonbaldie/myrest/internal/httpapi"
 	"github.com/jonbaldie/myrest/internal/mysqldb"
 	"github.com/jonbaldie/myrest/internal/schemacache"
+	"github.com/jonbaldie/myrest/internal/writeexec"
 )
 
 // serveWithAggregates starts myrest with db-aggregates-enabled on.
@@ -39,7 +40,7 @@ func serveWithAggregates(t *testing.T, databases ...string) *httpapi.Service {
 		Settings: settings,
 		Cache:    cache,
 		Reader:   pool,
-		Writer:   pool,
+		Writer:   writeexec.New(pool, settings.DB.TxEnd),
 		Caller:   pool,
 	})
 	if err != nil {
