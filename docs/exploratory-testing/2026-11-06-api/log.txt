@@ -1,0 +1,13 @@
+registered container=et-myrest-20261106-3230692; service port=127.0.0.1:33176; teardown=docker-rm-and-kill
+7b927ef8359ff644ecc6ea2359732e7fe27ee176aa08a3cf8c234f4a0da06a39
+mysql port=32768
+mysqladmin: [Warning] Using a password on the command line interface can be insecure.
+mysqld is alive
+panic: grant fixture privileges: Error 1410 (42000): You are not allowed to create a user with GRANT
+
+goroutine 1 [running]:
+main.main()
+	/home/ubuntu/Code/pstack/jonbaldie/myrest-explore-20261106/docs/exploratory-testing/2026-10-24-embeds-upserts-config/reload/main.go:20 +0x132
+exit status 2
+cleanup container=et-myrest-20261106-3230692 server_pid=none
+server stopped

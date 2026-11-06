@@ -232,6 +232,7 @@ Start with these documents:
 - [Exploratory testing report (2026-10-03): Aggregates, media types, write preferences, and auth](docs/exploratory-testing/2026-10-03-aggregates-media-auth.md)
 - [Exploratory testing report (2026-10-10): Profiles, schema reload, and row cap](docs/exploratory-testing/2026-10-10-profiles-reload-limits.md)
 - [Exploratory testing report (2026-10-24): Embeds, upserts, and config](docs/exploratory-testing/2026-10-24-embeds-upserts-config.md)
+- [Exploratory testing report (2026-11-06): Reads, writes, and routines](docs/exploratory-testing/2026-11-06-api.md)
 
 ## Development
 
