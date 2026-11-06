@@ -1,0 +1,209 @@
+registered container=et-myrest-20261106-3231936; service port=127.0.0.1:33176; teardown=docker-rm-and-kill
+99ffd6a3be325f74617df33cb969d0edcba5b815a79231f67a1d9e1ccfdd321c
+mysql port=32769
+mysqladmin: [Warning] Using a password on the command line interface can be insecure.
+mysqld is alive
+fixtures loaded
+registered server pid=3232682
+
+>>> http://127.0.0.1:33176/items\?select=id\,name\&order=id.asc\&limit=1
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 26
+
+[{"id":1,"name":"alpha"}]
+
+
+>>> -H Range:\ 1-1 -H Prefer:\ count=exact http://127.0.0.1:33176/items\?select=id\,name\&order=id.asc
+HTTP/1.1 206 Partial Content
+Content-Range: 1-1/2
+Content-Type: application/json
+Range-Unit: items
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 25
+
+[{"id":2,"name":"beta"}]
+
+
+>>> http://127.0.0.1:33176/items\?select=id\,name\,orders\(id\)\&orders.order=id.desc\&order=id.asc
+HTTP/1.1 200 OK
+Content-Range: 0-1/*
+Content-Type: application/json
+Range-Unit: items
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 98
+
+[{"id":1,"name":"alpha","orders":[{"id":2},{"id":1}]},{"id":2,"name":"beta","orders":[{"id":3}]}]
+
+
+>>> -H Content-Type:\ application/json -H Prefer:\ return=representation -d \{\"id\":9001\,\"name\":\"explore\"\} http://127.0.0.1:33176/items
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /items?id=eq.9001
+Preference-Applied: return=representation
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 44
+
+[{"id":9001,"name":"explore","name_len":7}]
+
+
+>>> -X PATCH -H Content-Type:\ application/json -H Prefer:\ return=representation -d \{\"name\":\"changed\"\} http://127.0.0.1:33176/items\?id=eq.9001
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 44
+
+[{"id":9001,"name":"changed","name_len":7}]
+
+
+>>> http://127.0.0.1:33176/items\?id=eq.9001\&select=id\,name
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 31
+
+[{"id":9001,"name":"changed"}]
+
+
+>>> -X DELETE -H Prefer:\ return=representation http://127.0.0.1:33176/items\?id=eq.9001
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: return=representation
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 44
+
+[{"id":9001,"name":"changed","name_len":7}]
+
+
+>>> http://127.0.0.1:33176/items\?id=eq.9001
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 3
+
+[]
+
+
+>>> -H Content-Type:\ application/json -H Prefer:\ return=representation\,tx=rollback -d \{\"id\":9002\,\"name\":\"rollback\"\} http://127.0.0.1:33176/items
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /items?id=eq.9002
+Preference-Applied: return=representation, tx=rollback
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 45
+
+[{"id":9002,"name":"rollback","name_len":8}]
+
+
+>>> http://127.0.0.1:33176/items\?id=eq.9002
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 3
+
+[]
+
+
+>>> -H Content-Type:\ application/json -H Prefer:\ return=representation\,tx=commit -d \{\"id\":9003\,\"name\":\"commit\"\} http://127.0.0.1:33176/items
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /items?id=eq.9003
+Preference-Applied: return=representation, tx=commit
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 43
+
+[{"id":9003,"name":"commit","name_len":6}]
+
+
+>>> http://127.0.0.1:33176/items\?id=eq.9003
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 43
+
+[{"id":9003,"name":"commit","name_len":6}]
+
+
+>>> -H Content-Type:\ application/json -d \{\"a\":1\,\"b\":2\} http://127.0.0.1:33176/rpc/add_them
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 2
+
+3
+
+
+>>> http://127.0.0.1:33176/rpc/add_them\?a=4\&b=5
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 2
+
+9
+
+
+>>> -H Content-Type:\ application/json -d \{\"a\":1\,\"b\":2\,\"extra\":3\} http://127.0.0.1:33176/rpc/add_them
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 131
+
+{"code":"PGRST202","message":"Could not find the function myrest_fixture.add_them in the schema cache","details":null,"hint":null}
+
+
+>>> -H Content-Type:\ application/json -X POST http://127.0.0.1:33176/rpc/write_marker -H Prefer:\ tx=rollback
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: tx=rollback
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 3
+
+{}
+
+
+>>> http://127.0.0.1:33176/addresses\?label=eq.rpc-write
+HTTP/1.1 200 OK
+Content-Range: */*
+Content-Type: application/json
+Range-Unit: items
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 3
+
+[]
+
+
+>>> -H Content-Type:\ application/json -X POST http://127.0.0.1:33176/rpc/write_marker -H Prefer:\ tx=commit
+HTTP/1.1 200 OK
+Content-Type: application/json
+Preference-Applied: tx=commit
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 3
+
+{}
+
+
+>>> http://127.0.0.1:33176/addresses\?label=eq.rpc-write
+HTTP/1.1 200 OK
+Content-Range: 0-0/*
+Content-Type: application/json
+Range-Unit: items
+Date: Fri, 06 Nov 2026 17:32:52 GMT
+Content-Length: 31
+
+[{"id":4,"label":"rpc-write"}]
+
+END OF JOURNEYS
+cleanup container=et-myrest-20261106-3231936 server_pid=3232682
+server stopped
