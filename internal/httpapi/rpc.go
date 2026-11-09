@@ -182,17 +182,7 @@ func writeRPCCallFailure(
 	}
 	var readSafety rpcexec.ReadSafetyViolation
 	if errors.As(err, &readSafety) {
-		writeFailure(
-			writer,
-			http.StatusBadRequest,
-			codePostgresOnlyFeature,
-			readSafety.Error(),
-		)
-		return
-	}
-	var refusal representation.SingularObjectRefusal
-	if errors.As(err, &refusal) {
-		writeSingularObjectFailure(writer, refusal.RowCount)
+		writeUnsupportedFeature(writer, readSafety.Error())
 		return
 	}
 	var nonTabular rpcexec.NonTabularRepresentationRefusal
@@ -205,17 +195,7 @@ func writeRPCCallFailure(
 		writeUnsupportedFeature(writer, messageRowSetFeaturesRequired)
 		return
 	}
-	var missing readquery.ColumnNotFound
-	if errors.As(err, &missing) {
-		writeFailure(writer, http.StatusBadRequest, codeNoColumn, missing.Error())
-		return
-	}
-	var gap readquery.UnsupportedFeature
-	if errors.As(err, &gap) {
-		writeUnsupportedFeature(writer, gap.Message)
-		return
-	}
-	writeDatabaseFailure(writer, err)
+	writeTranslatedError(writer, err)
 }
 
 func writeScalarRPC(
@@ -435,7 +415,7 @@ func readNamedJSONArgs(writer http.ResponseWriter, request *http.Request) (map[s
 	defer func() { _ = request.Body.Close() }()
 
 	if message, refused := refusedWholeBodyMode(request.Header.Get("Content-Type")); refused {
-		writeFailure(writer, http.StatusBadRequest, codePostgresOnlyFeature, message)
+		writeUnsupportedFeature(writer, message)
 		return nil, false
 	}
 
@@ -455,12 +435,7 @@ func readNamedJSONArgs(writer http.ResponseWriter, request *http.Request) (map[s
 	}
 	args, isObject := decoded.(map[string]any)
 	if !isObject {
-		writeFailure(
-			writer,
-			http.StatusBadRequest,
-			codePostgresOnlyFeature,
-			"A single unnamed JSON RPC argument is not supported",
-		)
+		writeUnsupportedFeature(writer, "A single unnamed JSON RPC argument is not supported")
 		return nil, false
 	}
 	return args, true
