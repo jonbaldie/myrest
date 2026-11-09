@@ -10,7 +10,6 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/jonbaldie/myrest/internal/httpapi/httperror"
 	"github.com/jonbaldie/myrest/internal/readquery"
-	"github.com/jonbaldie/myrest/internal/representation"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/writequery"
 )
@@ -21,8 +20,6 @@ func mysqlError(number uint16, state string) *mysql.MySQLError {
 	return failure
 }
 
-// The error-number rows use SQLSTATE HY000, which maps to 500, so that only
-// the error number can give their status.
 func TestMySQLStatusFollowsThePublishedTable(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -79,26 +76,6 @@ func TestFromMapsEachDomainError(t *testing.T) {
 			envelope: httperror.Envelope{Code: "MYREST001", Message: "not with MySQL"},
 		},
 		{
-			name:   "singular object",
-			err:    representation.SingularObjectRefusal{RowCount: 3},
-			status: http.StatusNotAcceptable,
-			envelope: httperror.Envelope{
-				Code:    "PGRST116",
-				Message: "Cannot coerce the result to a single JSON object",
-				Details: "The result contains 3 rows",
-			},
-		},
-		{
-			name:   "max-affected",
-			err:    writequery.MaxAffectedExceeded{Affected: 5, Max: 2},
-			status: http.StatusBadRequest,
-			envelope: httperror.Envelope{
-				Code:    "PGRST124",
-				Message: "Query result exceeds max-affected preference constraint",
-				Details: "The query affects 5 rows",
-			},
-		},
-		{
 			name:     "invalid JSON",
 			err:      rows.InvalidJSON{},
 			status:   http.StatusBadRequest,
@@ -130,6 +107,48 @@ func TestFromMapsEachDomainError(t *testing.T) {
 			}
 			if got.Database != tc.database {
 				t.Fatalf("Database = %t, want %t", got.Database, tc.database)
+			}
+		})
+	}
+}
+
+func TestTranslationPrecedence(t *testing.T) {
+	missing := readquery.ColumnNotFound{Name: "missing"}
+	gap := readquery.UnsupportedFeature{Message: "unsupported"}
+	invalid := rows.InvalidJSON{}
+	cases := []struct {
+		name    string
+		got     httperror.Failure
+		status  int
+		code    string
+		message string
+	}{
+		{"column before unsupported", httperror.From(errors.Join(gap, missing)), 400, "PGRST204", "column not found: missing"},
+		{"unsupported before invalid JSON", httperror.From(errors.Join(invalid, gap)), 400, "MYREST001", "unsupported"},
+		{"database ignores column", httperror.Database(errors.Join(missing, invalid)), 400, "MYREST002", "JSON column holds invalid JSON"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.got.Status != tc.status || tc.got.Envelope != (httperror.Envelope{Code: tc.code, Message: tc.message}) || tc.got.Database {
+				t.Fatalf("failure = %#v", tc.got)
+			}
+		})
+	}
+}
+
+func TestExtractedRefusals(t *testing.T) {
+	cases := []struct {
+		name string
+		got  httperror.Failure
+		want httperror.Failure
+	}{
+		{"singular", httperror.SingularObject(3), httperror.Failure{Status: 406, Envelope: httperror.Envelope{Code: "PGRST116", Message: "Cannot coerce the result to a single JSON object", Details: "The result contains 3 rows"}}},
+		{"max affected", httperror.MaxAffected(writequery.MaxAffectedExceeded{Affected: 5, Max: 2}), httperror.Failure{Status: 400, Envelope: httperror.Envelope{Code: "PGRST124", Message: "Query result exceeds max-affected preference constraint", Details: "The query affects 5 rows"}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.got != tc.want {
+				t.Fatalf("failure = %#v, want %#v", tc.got, tc.want)
 			}
 		})
 	}

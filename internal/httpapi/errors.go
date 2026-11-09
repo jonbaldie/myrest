@@ -7,8 +7,6 @@ import (
 	"github.com/jonbaldie/myrest/internal/httpapi/httperror"
 )
 
-// The error codes of the PostgREST envelope and the myrest gap family. The
-// codes of the shared error translation are in httperror.
 const (
 	// codeNoTable is the code of the parity target for a table the schema
 	// cache does not hold.
@@ -36,7 +34,6 @@ func writeFailure(writer http.ResponseWriter, status int, code, message string) 
 	writeFailureExtra(writer, status, code, message, nil, nil)
 }
 
-// writeFailureExtra answers with details and hint set.
 func writeFailureExtra(writer http.ResponseWriter, status int, code, message string, details, hint any) {
 	writeEnvelope(writer, httperror.Failure{
 		Status:   status,
@@ -51,10 +48,12 @@ func writeEnvelope(writer http.ResponseWriter, failure httperror.Failure) {
 	writeJSON(writer, failure.Status, failure.Envelope)
 }
 
-// writeTranslatedError answers a request-independent domain or database error
-// through the shared translation, without disclosing database account data.
 func writeTranslatedError(writer http.ResponseWriter, err error) {
 	writeEnvelope(writer, httperror.From(err))
+}
+
+func writeDatabaseFailure(writer http.ResponseWriter, err error) {
+	writeEnvelope(writer, httperror.Database(err))
 }
 
 // writeUnsupportedFeature answers a documented PostgreSQL semantic gap.

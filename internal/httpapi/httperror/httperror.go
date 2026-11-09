@@ -12,12 +12,10 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/jonbaldie/myrest/internal/readquery"
-	"github.com/jonbaldie/myrest/internal/representation"
 	"github.com/jonbaldie/myrest/internal/rows"
 	"github.com/jonbaldie/myrest/internal/writequery"
 )
 
-// The error codes that the translation gives.
 const (
 	// CodeNoColumn is the parity-target code for a missing column.
 	CodeNoColumn = "PGRST204"
@@ -65,15 +63,10 @@ func From(err error) Failure {
 	if errors.As(err, &gap) {
 		return failure(http.StatusBadRequest, CodePostgresOnlyFeature, gap.Message, nil)
 	}
-	var refusal representation.SingularObjectRefusal
-	if errors.As(err, &refusal) {
-		return SingularObject(refusal.RowCount)
-	}
-	var maxErr writequery.MaxAffectedExceeded
-	if errors.As(err, &maxErr) {
-		details := fmt.Sprintf("The query affects %d rows", maxErr.Affected)
-		return failure(http.StatusBadRequest, CodeMaxAffected, maxErr.Error(), details)
-	}
+	return Database(err)
+}
+
+func Database(err error) Failure {
 	var invalid rows.InvalidJSON
 	if errors.As(err, &invalid) {
 		return failure(http.StatusBadRequest, CodeMySQLDatabaseFailure, invalid.Error(), nil)
@@ -94,6 +87,10 @@ func SingularObject(rowCount int) Failure {
 	)
 }
 
+func MaxAffected(err writequery.MaxAffectedExceeded) Failure {
+	return failure(http.StatusBadRequest, CodeMaxAffected, err.Error(), fmt.Sprintf("The query affects %d rows", err.Affected))
+}
+
 func failure(status int, code, message string, details any) Failure {
 	return Failure{
 		Status:   status,
@@ -112,8 +109,6 @@ func MySQLStatus(err error) int {
 	return mysqlStatus(mysqlError.Number, string(mysqlError.SQLState[:]))
 }
 
-// mysqlStatus is the status table in code. It has no side effects so each
-// database error maps to one status regardless of request state.
 func mysqlStatus(number uint16, state string) int {
 	switch number {
 	case 1044, 1045, 1142, 1143, 1227, 1370:

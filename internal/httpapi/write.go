@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jonbaldie/myrest/internal/httpapi/httperror"
 	"github.com/jonbaldie/myrest/internal/prefer"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/representation"
@@ -68,7 +69,7 @@ func (s *Service) insertTable(writer http.ResponseWriter, request *http.Request,
 	written.applied = outcome.Applied
 	if err != nil {
 		s.log.Printf("myrest: insert %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		writeTranslatedError(writer, err)
+		s.writeWriteFailure(writer, err)
 		return
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
@@ -167,7 +168,7 @@ func (s *Service) patchTable(writer http.ResponseWriter, request *http.Request, 
 	written.applied = outcome.Applied
 	if err != nil {
 		s.log.Printf("myrest: update %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		writeTranslatedError(writer, err)
+		s.writeWriteFailure(writer, err)
 		return
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
@@ -209,7 +210,7 @@ func (s *Service) deleteTable(writer http.ResponseWriter, request *http.Request,
 	written.applied = outcome.Applied
 	if err != nil {
 		s.log.Printf("myrest: delete %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		writeTranslatedError(writer, err)
+		s.writeWriteFailure(writer, err)
 		return
 	}
 	s.writeWriteResponse(writer, request, role, table, writeOutcome{
@@ -248,7 +249,7 @@ func (s *Service) putTable(writer http.ResponseWriter, request *http.Request, pr
 	outcome, err := s.writer.Execute(request.Context(), writeexec.Intent{Action: writeexec.Upsert, Role: role, Target: table, Payload: []map[string]any{row}, Preferences: preferences, PrimaryKey: primaryKey})
 	if err != nil {
 		s.log.Printf("myrest: upsert %s.%s as %s: %v", asked.Database, asked.Name, role, err)
-		writeTranslatedError(writer, err)
+		s.writeWriteFailure(writer, err)
 		return
 	}
 	written.applied = outcome.Applied
@@ -305,6 +306,20 @@ func honoursMaxAffected(kind writeKind) bool {
 	default:
 		return false
 	}
+}
+
+func (s *Service) writeWriteFailure(writer http.ResponseWriter, err error) {
+	var maxErr writequery.MaxAffectedExceeded
+	if errors.As(err, &maxErr) {
+		writeEnvelope(writer, httperror.MaxAffected(maxErr))
+		return
+	}
+	var refusal representation.SingularObjectRefusal
+	if errors.As(err, &refusal) {
+		writeSingularObjectFailure(writer, refusal.RowCount)
+		return
+	}
+	writeTranslatedError(writer, err)
 }
 
 func (s *Service) checkWriteRepresentation(writer http.ResponseWriter, snapshot schemacache.Snapshot, role schemacache.Role, asked schemacache.TableID, preferences prefer.Preferences, primaryKey []string, action writeexec.Action) bool {

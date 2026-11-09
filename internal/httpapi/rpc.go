@@ -185,6 +185,11 @@ func writeRPCCallFailure(
 		writeUnsupportedFeature(writer, readSafety.Error())
 		return
 	}
+	var refusal representation.SingularObjectRefusal
+	if errors.As(err, &refusal) {
+		writeSingularObjectFailure(writer, refusal.RowCount)
+		return
+	}
 	var nonTabular rpcexec.NonTabularRepresentationRefusal
 	if errors.As(err, &nonTabular) {
 		refuseRequestMedia(writer, request)
