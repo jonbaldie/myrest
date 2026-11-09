@@ -98,18 +98,46 @@ func ResolveEmbedIn(snapshot Snapshot, role Role, origin TableID, targetName, hi
 	}
 }
 
+type tablePair struct {
+	origin TableID
+	target TableID
+}
+
+type directedForeignKey struct {
+	fact        ForeignKeyFact
+	cardinality Cardinality
+}
+
+type relationshipIndex struct {
+	direct   map[tablePair][]directedForeignKey
+	incoming map[TableID]map[TableID]ForeignKeyFact
+}
+
+func indexRelationships(foreignKeys []ForeignKeyFact, tables map[TableID]Table) relationshipIndex {
+	index := relationshipIndex{
+		direct:   make(map[tablePair][]directedForeignKey),
+		incoming: make(map[TableID]map[TableID]ForeignKeyFact),
+	}
+	for _, fk := range foreignKeys {
+		forward := tablePair{fk.Table, fk.ReferencedTable}
+		reverse := tablePair{fk.ReferencedTable, fk.Table}
+		index.direct[forward] = append(index.direct[forward], directedForeignKey{fk, ManyToOne})
+		index.direct[reverse] = append(index.direct[reverse], directedForeignKey{fk, OneToMany})
+		if _, exists := tables[fk.Table]; !exists {
+			continue
+		}
+		if index.incoming[fk.ReferencedTable] == nil {
+			index.incoming[fk.ReferencedTable] = make(map[TableID]ForeignKeyFact)
+		}
+		index.incoming[fk.ReferencedTable][fk.Table] = fk
+	}
+	return index
+}
+
 func (snapshot Snapshot) relationships(origin, target TableID) []Relationship {
 	var found []Relationship
-	for _, fk := range snapshot.foreignKeys {
-		if fk.Table == origin && fk.ReferencedTable == target {
-			found = append(found, relationshipFromFK(fk, ManyToOne))
-		}
-		// For a self-referential foreign key both branches fire: the same
-		// constraint yields the declared many-to-one path and the inverse
-		// one-to-many path.
-		if fk.Table == target && fk.ReferencedTable == origin {
-			found = append(found, relationshipFromFK(fk, OneToMany))
-		}
+	for _, edge := range snapshot.relationshipIndex.direct[tablePair{origin, target}] {
+		found = append(found, relationshipFromFK(edge.fact, edge.cardinality))
 	}
 	found = append(found, snapshot.manyToMany(origin, target)...)
 	return found
@@ -137,12 +165,19 @@ func relationshipFromFK(fk ForeignKeyFact, cardinality Cardinality) Relationship
 
 func (snapshot Snapshot) manyToMany(origin, target TableID) []Relationship {
 	var found []Relationship
-	for joinID := range snapshot.tables {
+	originJoins := snapshot.relationshipIndex.incoming[origin]
+	targetJoins := snapshot.relationshipIndex.incoming[target]
+	joins := originJoins
+	if len(targetJoins) < len(originJoins) {
+		joins = targetJoins
+	}
+	for joinID := range joins {
 		if joinID == origin || joinID == target {
 			continue
 		}
-		toOrigin, toTarget, ok := snapshot.joinTableFKs(joinID, origin, target)
-		if !ok {
+		toOrigin, hasOrigin := originJoins[joinID]
+		toTarget, hasTarget := targetJoins[joinID]
+		if !hasOrigin || !hasTarget {
 			continue
 		}
 		if !snapshot.pkCoversFKs(joinID, toOrigin, toTarget) {
@@ -161,25 +196,6 @@ func (snapshot Snapshot) manyToMany(origin, target TableID) []Relationship {
 		})
 	}
 	return found
-}
-
-func (snapshot Snapshot) joinTableFKs(join, origin, target TableID) (toOrigin, toTarget ForeignKeyFact, ok bool) {
-	var originFK, targetFK ForeignKeyFact
-	var haveOrigin, haveTarget bool
-	for _, fk := range snapshot.foreignKeys {
-		if fk.Table != join {
-			continue
-		}
-		if fk.ReferencedTable == origin {
-			originFK = fk
-			haveOrigin = true
-		}
-		if fk.ReferencedTable == target {
-			targetFK = fk
-			haveTarget = true
-		}
-	}
-	return originFK, targetFK, haveOrigin && haveTarget
 }
 
 func (snapshot Snapshot) pkCoversFKs(join TableID, a, b ForeignKeyFact) bool {
