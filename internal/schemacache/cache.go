@@ -103,6 +103,7 @@ type Snapshot struct {
 	columns           map[TableID][]Column
 	keys              map[TableID][]KeyFact
 	foreignKeys       []ForeignKeyFact
+	relationshipIndex relationshipIndex
 	routines          []RoutineFact
 	routinesByID      map[RoutineID]RoutineFact
 	tablePrivileges   map[Role]map[tablePrivilege]bool
@@ -192,6 +193,7 @@ func buildSnapshot(catalog Catalog) Snapshot {
 		columns:           columns,
 		keys:              keys,
 		foreignKeys:       foreignKeys,
+		relationshipIndex: indexRelationships(foreignKeys, tables),
 		routines:          routines,
 		routinesByID:      routinesByID,
 		tablePrivileges:   tablePrivileges,
