@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,8 +18,6 @@ const (
 
 	// codeInvalidPrefer is Prefer handling=strict with an invalid token.
 	codeInvalidPrefer = "PGRST122"
-	// codeMaxAffected is Prefer max-affected under handling=strict.
-	codeMaxAffected = "PGRST124"
 )
 
 // writePrefer is the Prefer control surface for ordinary writes and RPC: the
@@ -86,31 +83,6 @@ func writeInvalidPrefer(writer http.ResponseWriter, err prefer.InvalidError) {
 		codeInvalidPrefer,
 		err.Error(),
 		err.Details(),
-		nil,
-	)
-}
-
-// maxAffectedError is Prefer max-affected under handling=strict.
-type maxAffectedError struct {
-	Affected int64
-	Max      int64
-}
-
-func (e maxAffectedError) Error() string {
-	return "Query result exceeds max-affected preference constraint"
-}
-
-func (e maxAffectedError) details() string {
-	return fmt.Sprintf("The query affects %d rows", e.Affected)
-}
-
-func writeMaxAffected(writer http.ResponseWriter, err maxAffectedError) {
-	writeFailureExtra(
-		writer,
-		http.StatusBadRequest,
-		codeMaxAffected,
-		err.Error(),
-		err.details(),
 		nil,
 	)
 }

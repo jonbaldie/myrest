@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jonbaldie/myrest/internal/httpapi/httperror"
 	"github.com/jonbaldie/myrest/internal/prefer"
 	"github.com/jonbaldie/myrest/internal/readquery"
 	"github.com/jonbaldie/myrest/internal/representation"
@@ -305,6 +306,20 @@ func honoursMaxAffected(kind writeKind) bool {
 	default:
 		return false
 	}
+}
+
+func (s *Service) writeWriteFailure(writer http.ResponseWriter, err error) {
+	var maxErr writequery.MaxAffectedExceeded
+	if errors.As(err, &maxErr) {
+		writeEnvelope(writer, httperror.MaxAffected(maxErr))
+		return
+	}
+	var refusal representation.SingularObjectRefusal
+	if errors.As(err, &refusal) {
+		writeSingularObjectFailure(writer, refusal.RowCount)
+		return
+	}
+	writeTranslatedError(writer, err)
 }
 
 func (s *Service) checkWriteRepresentation(writer http.ResponseWriter, snapshot schemacache.Snapshot, role schemacache.Role, asked schemacache.TableID, preferences prefer.Preferences, primaryKey []string, action writeexec.Action) bool {
@@ -896,28 +911,4 @@ func locationValue(value any) string {
 	default:
 		return url.QueryEscape(fmt.Sprint(typed))
 	}
-}
-
-func (s *Service) writeWriteFailure(writer http.ResponseWriter, err error) {
-	var maxErr writequery.MaxAffectedExceeded
-	if errors.As(err, &maxErr) {
-		writeMaxAffected(writer, maxAffectedError{Affected: maxErr.Affected, Max: maxErr.Max})
-		return
-	}
-	var refusal representation.SingularObjectRefusal
-	if errors.As(err, &refusal) {
-		writeSingularObjectFailure(writer, refusal.RowCount)
-		return
-	}
-	var missing readquery.ColumnNotFound
-	if errors.As(err, &missing) {
-		writeFailure(writer, http.StatusBadRequest, codeNoColumn, missing.Error())
-		return
-	}
-	var gap readquery.UnsupportedFeature
-	if errors.As(err, &gap) {
-		writeUnsupportedFeature(writer, gap.Message)
-		return
-	}
-	writeDatabaseFailure(writer, err)
 }

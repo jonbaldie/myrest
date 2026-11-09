@@ -2,15 +2,11 @@ package httpapi
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
-	"strings"
 
-	"github.com/go-sql-driver/mysql"
-	"github.com/jonbaldie/myrest/internal/rows"
+	"github.com/jonbaldie/myrest/internal/httpapi/httperror"
 )
 
-// The error codes of the PostgREST envelope and the myrest gap family.
 const (
 	// codeNoTable is the code of the parity target for a table the schema
 	// cache does not hold.
@@ -20,15 +16,9 @@ const (
 	// codeSpreadAggregate is the parity-target code for aggregates inside a
 	// to-many or many-to-many spread embed.
 	codeSpreadAggregate = "PGRST127"
-	// codeMySQLDatabaseFailure says that MySQL returned an error for which
-	// myrest cannot claim PostgreSQL semantics.
-	codeMySQLDatabaseFailure = "MYREST002"
 	// codeNoHandler says that the current myrest surface has no handler for
 	// the request path and method.
 	codeNoHandler = "MYREST003"
-	// codePostgresOnlyFeature says that the request needs PostgREST behavior
-	// that myrest cannot provide over MySQL.
-	codePostgresOnlyFeature = "MYREST001"
 )
 
 const (
@@ -38,54 +28,37 @@ const (
 	msgSpreadNotSupported  = "PostgREST spread embeds are not available with MySQL"
 )
 
-// failure is the error envelope of the parity target. Every field is written,
-// and details and hint stay null until a ticket gives them a value.
-type failure struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Details any    `json:"details"`
-	Hint    any    `json:"hint"`
-}
-
 // writeFailure answers with the error envelope. Only myrest writes the
 // message: what the database says goes to the log of the operator.
 func writeFailure(writer http.ResponseWriter, status int, code, message string) {
 	writeFailureExtra(writer, status, code, message, nil, nil)
 }
 
-// writeFailureExtra answers with details and hint set. An error envelope
-// names no profile, as in the parity target, so it drops Content-Profile.
 func writeFailureExtra(writer http.ResponseWriter, status int, code, message string, details, hint any) {
+	writeEnvelope(writer, httperror.Failure{
+		Status:   status,
+		Envelope: httperror.Envelope{Code: code, Message: message, Details: details, Hint: hint},
+	})
+}
+
+// writeEnvelope answers with one error envelope. An error envelope names no
+// profile, as in the parity target, so it drops Content-Profile.
+func writeEnvelope(writer http.ResponseWriter, failure httperror.Failure) {
 	writer.Header().Del(headerContentProfile)
-	writeJSON(writer, status, failure{Code: code, Message: message, Details: details, Hint: hint})
+	writeJSON(writer, failure.Status, failure.Envelope)
 }
 
-// writeDatabaseFailure answers a database error without disclosing database
-// account data. The status comes from the published MySQL SQLSTATE table.
+func writeTranslatedError(writer http.ResponseWriter, err error) {
+	writeEnvelope(writer, httperror.From(err))
+}
+
 func writeDatabaseFailure(writer http.ResponseWriter, err error) {
-	if writeInvalidJSON(writer, err) {
-		return
-	}
-	writeFailure(
-		writer,
-		mysqlErrorStatus(err),
-		codeMySQLDatabaseFailure,
-		"The database did not answer the request",
-	)
-}
-
-func writeInvalidJSON(writer http.ResponseWriter, err error) bool {
-	var invalid rows.InvalidJSON
-	if !errors.As(err, &invalid) {
-		return false
-	}
-	writeFailure(writer, http.StatusBadRequest, codeMySQLDatabaseFailure, invalid.Error())
-	return true
+	writeEnvelope(writer, httperror.Database(err))
 }
 
 // writeUnsupportedFeature answers a documented PostgreSQL semantic gap.
 func writeUnsupportedFeature(writer http.ResponseWriter, message string) {
-	writeFailure(writer, http.StatusBadRequest, codePostgresOnlyFeature, message)
+	writeFailure(writer, http.StatusBadRequest, httperror.CodePostgresOnlyFeature, message)
 }
 
 // writeNoHandler answers a path or method outside the current service surface.
@@ -96,42 +69,6 @@ func writeNoHandler(writer http.ResponseWriter, _ *http.Request) {
 		codeNoHandler,
 		"The requested path and method are not available",
 	)
-}
-
-// mysqlErrorStatus maps the supported MySQL errors to their HTTP status. Any
-// error outside the published table gives the documented internal-error
-// fallback.
-func mysqlErrorStatus(err error) int {
-	var mysqlError *mysql.MySQLError
-	if !errors.As(err, &mysqlError) {
-		return http.StatusInternalServerError
-	}
-
-	return mysqlStatus(mysqlError.Number, string(mysqlError.SQLState[:]))
-}
-
-// mysqlStatus is the status table in code. It has no side effects so each
-// database error maps to one status regardless of request state.
-func mysqlStatus(number uint16, state string) int {
-	switch number {
-	case 1044, 1045, 1142, 1143, 1227, 1370:
-		return http.StatusForbidden
-	case 1062, 1451, 1452, 1213:
-		return http.StatusConflict
-	}
-
-	switch {
-	case strings.HasPrefix(state, "08"):
-		return http.StatusServiceUnavailable
-	case strings.HasPrefix(state, "22"), strings.HasPrefix(state, "42"):
-		return http.StatusBadRequest
-	case strings.HasPrefix(state, "23"), strings.HasPrefix(state, "40"):
-		return http.StatusConflict
-	case strings.HasPrefix(state, "28"):
-		return http.StatusForbidden
-	default:
-		return http.StatusInternalServerError
-	}
 }
 
 // writeJSON answers with an application/json body (errors, scalars, OpenAPI
