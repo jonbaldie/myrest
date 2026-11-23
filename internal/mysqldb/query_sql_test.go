@@ -48,9 +48,9 @@ func TestBuildSelectIsDistinctQuotedNullStaysLiteral(t *testing.T) {
 	}
 
 	cases := []struct {
-		raw      string
-		sql      string
-		arg      any
+		raw string
+		sql string
+		arg any
 	}{
 		{raw: `not.isdistinct."null"`, sql: "SELECT `id`, `name` FROM `shop`.`items` WHERE `name` <=> ?", arg: "null"},
 		{raw: `isdistinct."null"`, sql: "SELECT `id`, `name` FROM `shop`.`items` WHERE NOT (`name` <=> ?)", arg: "null"},
@@ -381,6 +381,61 @@ func TestBuildSelectExpandsStarBesideNamedColumns(t *testing.T) {
 		t.Fatalf("buildSelect: %v", err)
 	}
 	want := "SELECT `name`, `id`, `name_len`, `id` AS `key` FROM `shop`.`items`"
+	if parts.statement != want {
+		t.Fatalf("statement = %q, want %q", parts.statement, want)
+	}
+}
+
+// A paged embed child read applies its page in SQL: the key filter and
+// the embed filter and order come first, then LIMIT and OFFSET. The
+// service reads only that page for one parent scope.
+func TestBuildSelectAppliesPerParentEmbedPageInSQL(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID:      schemacache.TableID{Database: "shop", Name: "orders"},
+		Columns: []schemacache.Column{{Name: "id"}, {Name: "item_id"}},
+	}
+	limit := uint64(2)
+	parts, err := buildSelect(table, readquery.Query{
+		Columns: []readquery.Column{{Name: "id"}, {Name: "item_id"}},
+		Filters: []readquery.Filter{
+			{Column: "item_id", Op: readquery.OpIn, Values: []string{"1"}},
+			{Column: "id", Op: readquery.OpGt, Value: "1"},
+		},
+		Order:  []readquery.Order{{Column: "id", Desc: true}},
+		Limit:  &limit,
+		Offset: 1,
+	})
+	if err != nil {
+		t.Fatalf("buildSelect: %v", err)
+	}
+	want := "SELECT `id`, `item_id` FROM `shop`.`orders` WHERE `item_id` IN (?) AND `id` > ? ORDER BY `id` DESC LIMIT 2 OFFSET 1"
+	if parts.statement != want {
+		t.Fatalf("statement = %q, want %q", parts.statement, want)
+	}
+	if len(parts.args) != 2 || parts.args[0] != "1" || parts.args[1] != "1" {
+		t.Fatalf("args = %#v", parts.args)
+	}
+}
+
+func TestBuildSelectAppliesLimitZeroEmbedPageInSQL(t *testing.T) {
+	t.Parallel()
+
+	table := schemacache.Table{
+		ID:      schemacache.TableID{Database: "shop", Name: "orders"},
+		Columns: []schemacache.Column{{Name: "id"}, {Name: "item_id"}},
+	}
+	limit := uint64(0)
+	parts, err := buildSelect(table, readquery.Query{
+		Columns: []readquery.Column{{Name: "id"}, {Name: "item_id"}},
+		Filters: []readquery.Filter{{Column: "item_id", Op: readquery.OpIn, Values: []string{"1"}}},
+		Limit:   &limit,
+	})
+	if err != nil {
+		t.Fatalf("buildSelect: %v", err)
+	}
+	want := "SELECT `id`, `item_id` FROM `shop`.`orders` WHERE `item_id` IN (?) LIMIT 0"
 	if parts.statement != want {
 		t.Fatalf("statement = %q, want %q", parts.statement, want)
 	}

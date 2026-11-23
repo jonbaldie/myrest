@@ -99,13 +99,13 @@ func TestEmbedManyToOneUsesReaderRows(t *testing.T) {
 func TestEmbedOneToManyUsesReaderRows(t *testing.T) {
 	t.Parallel()
 
+	// The reader is the database: a limit=1 read returns only its page.
 	source := &multiReader{answers: []readAnswer{
 		{rows: []rows.Row{
 			{Columns: []string{"id"}, Values: []any{int64(1)}},
 		}},
 		{rows: []rows.Row{
 			{Columns: []string{"id", "item_id"}, Values: []any{int64(2), int64(1)}},
-			{Columns: []string{"id", "item_id"}, Values: []any{int64(1), int64(1)}},
 		}},
 	}}
 	response, body := get(

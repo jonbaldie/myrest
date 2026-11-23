@@ -1096,9 +1096,9 @@ func TestPreferReturnRepresentationEmbedNestedFilterOrder(t *testing.T) {
 		updated:    1,
 	}
 	source := &multiReader{answers: []readAnswer{
+		// The reader is the database: a limit=1 read returns only its page.
 		{rows: []rows.Row{
 			{Columns: []string{"id", "item_id"}, Values: []any{int64(2), int64(1)}},
-			{Columns: []string{"id", "item_id"}, Values: []any{int64(1), int64(1)}},
 		}},
 	}}
 	request, err := http.NewRequest(
