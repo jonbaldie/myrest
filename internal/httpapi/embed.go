@@ -301,7 +301,9 @@ func (s *Service) nestToOne(
 	embed plannedEmbed,
 ) ([]rows.Row, error) {
 	keys := uniqueKeyTuples(parentRows, embed.relationship.OriginColumns)
-	related, err := s.readByKeys(ctx, role, embed, embed.relationship.TargetColumns, keys)
+	// A to-one embed holds one object per parent, so a child page does not
+	// apply to it. Its response keeps the single related row.
+	related, err := s.readByKeys(ctx, role, embed, embed.relationship.TargetColumns, keys, false)
 	if err != nil {
 		return nil, err
 	}
@@ -324,13 +326,45 @@ func (s *Service) nestToMany(
 	parentRows []rows.Row,
 	embed plannedEmbed,
 ) ([]rows.Row, error) {
+	if hasEmbedPage(embed.ask) {
+		return s.nestToManyPaged(ctx, role, parentRows, embed)
+	}
 	keys := uniqueKeyTuples(parentRows, embed.relationship.OriginColumns)
-	related, err := s.readByKeys(ctx, role, embed, embed.relationship.TargetColumns, keys)
+	related, err := s.readByKeys(ctx, role, embed, embed.relationship.TargetColumns, keys, false)
 	if err != nil {
 		return nil, err
 	}
 	grouped := groupRows(related, embed.relationship.TargetColumns)
-	return attachGroupedEmbeds(parentRows, embed, grouped), nil
+	return attachGroupedEmbeds(parentRows, embed, grouped, false), nil
+}
+
+// hasEmbedPage reports whether the client asked for a page of the children
+// of each parent. Unpaged embeds keep the single batch read.
+func hasEmbedPage(ask readquery.Embed) bool {
+	return ask.Limit != nil || ask.Offset > 0
+}
+
+// nestToManyPaged reads the requested page of each parent separately, so
+// the database returns only that page. The parent key stays on every row
+// the read returns, and attachGroupedEmbeds keeps the same response.
+func (s *Service) nestToManyPaged(
+	ctx context.Context,
+	role schemacache.Role,
+	parentRows []rows.Row,
+	embed plannedEmbed,
+) ([]rows.Row, error) {
+	grouped := map[string][]rows.Row{}
+	keys := uniqueKeyTuples(parentRows, embed.relationship.OriginColumns)
+	for _, key := range keys {
+		related, err := s.readByKeys(
+			ctx, role, embed, embed.relationship.TargetColumns, [][]any{key}, true,
+		)
+		if err != nil {
+			return nil, err
+		}
+		grouped[tupleKey(key, embed.relationship.TargetColumns)] = related
+	}
+	return attachGroupedEmbeds(parentRows, embed, grouped, true), nil
 }
 
 func (s *Service) nestManyToMany(
@@ -339,21 +373,21 @@ func (s *Service) nestManyToMany(
 	parentRows []rows.Row,
 	embed plannedEmbed,
 ) ([]rows.Row, error) {
+	if hasAggregateColumn(embed.ask.Columns) {
+		return s.nestManyToManyAggregates(ctx, role, parentRows, embed)
+	}
+	if hasEmbedPage(embed.ask) {
+		return s.nestManyToManyPaged(ctx, role, parentRows, embed)
+	}
 	parentKeys := uniqueKeyTuples(parentRows, embed.relationship.OriginColumns)
 	links, err := s.loadManyToManyLinks(ctx, role, embed, parentKeys)
 	if err != nil {
 		return nil, err
 	}
-	if hasAggregateColumn(embed.ask.Columns) {
-		grouped, err := s.readManyToManyAggregates(ctx, role, parentRows, embed, links)
-		if err != nil {
-			return nil, err
-		}
-		return attachGroupedEmbeds(parentRows, embed, grouped), nil
-	}
-
 	targetKeys := uniqueKeyTuples(links, embed.relationship.JoinTargetColumns)
-	related, err := s.readByKeys(ctx, role, embed, embed.relationship.TargetColumns, targetKeys)
+	related, err := s.readByKeys(
+		ctx, role, embed, embed.relationship.TargetColumns, targetKeys, false,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -364,7 +398,53 @@ func (s *Service) nestManyToMany(
 		parentsByTarget[targetKey] = append(parentsByTarget[targetKey], parentKey)
 	}
 	grouped := groupManyToMany(related, parentsByTarget, embed.relationship.TargetColumns)
-	return attachGroupedEmbeds(parentRows, embed, grouped), nil
+	return attachGroupedEmbeds(parentRows, embed, grouped, false), nil
+}
+
+func (s *Service) nestManyToManyAggregates(
+	ctx context.Context,
+	role schemacache.Role,
+	parentRows []rows.Row,
+	embed plannedEmbed,
+) ([]rows.Row, error) {
+	parentKeys := uniqueKeyTuples(parentRows, embed.relationship.OriginColumns)
+	links, err := s.loadManyToManyLinks(ctx, role, embed, parentKeys)
+	if err != nil {
+		return nil, err
+	}
+	grouped, err := s.readManyToManyAggregates(ctx, role, parentRows, embed, links)
+	if err != nil {
+		return nil, err
+	}
+	return attachGroupedEmbeds(parentRows, embed, grouped, hasEmbedPage(embed.ask)), nil
+}
+
+// nestManyToManyPaged reads the links and the requested page of each
+// parent separately. A target shared by two parents is read once for
+// each parent that owns it, as the batch grouping did.
+func (s *Service) nestManyToManyPaged(
+	ctx context.Context,
+	role schemacache.Role,
+	parentRows []rows.Row,
+	embed plannedEmbed,
+) ([]rows.Row, error) {
+	grouped := map[string][]rows.Row{}
+	parentKeys := uniqueKeyTuples(parentRows, embed.relationship.OriginColumns)
+	for _, parentKey := range parentKeys {
+		links, err := s.loadManyToManyLinks(ctx, role, embed, [][]any{parentKey})
+		if err != nil {
+			return nil, err
+		}
+		targetKeys := uniqueKeyTuples(links, embed.relationship.JoinTargetColumns)
+		related, err := s.readByKeys(
+			ctx, role, embed, embed.relationship.TargetColumns, targetKeys, true,
+		)
+		if err != nil {
+			return nil, err
+		}
+		grouped[tupleKey(parentKey, embed.relationship.OriginColumns)] = related
+	}
+	return attachGroupedEmbeds(parentRows, embed, grouped, true), nil
 }
 
 func (s *Service) loadManyToManyLinks(
@@ -427,6 +507,7 @@ func (s *Service) readManyToManyAggregates(
 			embed,
 			embed.relationship.TargetColumns,
 			keysByParent[parentKey],
+			hasEmbedPage(embed.ask),
 		)
 		if err != nil {
 			return nil, err
@@ -475,15 +556,22 @@ func groupManyToMany(
 	return grouped
 }
 
+// attachGroupedEmbeds attaches each group to its parent. A paged group
+// already holds only its page, so it is not paged again. An unpaged
+// group is paged in memory, which is a no-op without a requested page.
 func attachGroupedEmbeds(
 	parentRows []rows.Row,
 	embed plannedEmbed,
 	grouped map[string][]rows.Row,
+	paged bool,
 ) []rows.Row {
 	keyName := embed.ask.Key()
 	for i, row := range parentRows {
 		key := rowKey(row, embed.relationship.OriginColumns)
-		children := pageRows(grouped[key], embed.ask)
+		children := grouped[key]
+		if !paged {
+			children = pageRows(children, embed.ask)
+		}
 		projected := make([]rows.Row, len(children))
 		for j, child := range children {
 			projected[j] = projectEmbedRow(child, embed.ask)
@@ -499,8 +587,9 @@ func (s *Service) readByKeys(
 	embed plannedEmbed,
 	keyColumns []string,
 	keys [][]any,
+	paged bool,
 ) ([]rows.Row, error) {
-	return s.readByKeysAndEmbeds(ctx, role, embed, keyColumns, keys, true)
+	return s.readByKeysAndEmbeds(ctx, role, embed, keyColumns, keys, true, paged)
 }
 
 // readByKeysForAggregate keeps the target keys out of the selected columns.
@@ -511,8 +600,9 @@ func (s *Service) readByKeysForAggregate(
 	embed plannedEmbed,
 	keyColumns []string,
 	keys [][]any,
+	paged bool,
 ) ([]rows.Row, error) {
-	return s.readByKeysAndEmbeds(ctx, role, embed, keyColumns, keys, false)
+	return s.readByKeysAndEmbeds(ctx, role, embed, keyColumns, keys, false, paged)
 }
 
 func (s *Service) readByKeysAndEmbeds(
@@ -522,12 +612,15 @@ func (s *Service) readByKeysAndEmbeds(
 	keyColumns []string,
 	keys [][]any,
 	injectKeyColumns bool,
+	paged bool,
 ) ([]rows.Row, error) {
 	keyFilters, keyGroups, ok := keyCondition(keyColumns, keys)
 	if !ok {
 		return nil, nil
 	}
-	// Limit and offset apply per parent row after grouping, not to the batch.
+	// A paged read applies the limit and offset to its one parent scope in
+	// the database, not to the whole batch. An unpaged read keeps the
+	// batch, and attachGroupedEmbeds pages each group as before.
 	query := readquery.Query{
 		Columns:   embed.ask.Columns,
 		SelectAll: len(embed.ask.Columns) == 0,
@@ -535,6 +628,10 @@ func (s *Service) readByKeysAndEmbeds(
 		Groups:    append(keyGroups, embed.ask.Groups...),
 		Order:     embed.ask.Order,
 		Embeds:    embedAsks(embed.children),
+	}
+	if paged {
+		query.Limit = embed.ask.Limit
+		query.Offset = embed.ask.Offset
 	}
 	childPlan := embed.children
 	query, injected := withJoinColumns(embed.target, query, childPlan)
@@ -745,16 +842,21 @@ func columnValue(row rows.Row, column string) any {
 }
 
 func rowKey(row rows.Row, columns []string) string {
+	return tupleKey(rowValues(row, columns), columns)
+}
+
+// tupleKey encodes one key tuple the way rowKey encodes a row, so a
+// per-parent read can name the group its rows belong to.
+func tupleKey(values []any, columns []string) string {
 	if len(columns) == 0 {
 		return ""
 	}
 	parts := make([]string, len(columns))
-	for i, column := range columns {
-		value := columnValue(row, column)
-		if value == nil {
+	for i := range columns {
+		if i >= len(values) || values[i] == nil {
 			return ""
 		}
-		parts[i] = stringifyValue(value)
+		parts[i] = stringifyValue(values[i])
 	}
 	if len(parts) == 1 {
 		if parts[0] == "" {

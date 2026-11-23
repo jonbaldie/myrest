@@ -338,7 +338,7 @@ func TestAttachGroupedEmbedsEmptyChildren(t *testing.T) {
 			OriginColumns: []string{"id"},
 		},
 	}
-	got := attachGroupedEmbeds(parent, embed, map[string][]rows.Row{})
+	got := attachGroupedEmbeds(parent, embed, map[string][]rows.Row{}, false)
 	if len(got) != 1 || got[0].Columns[1] != "orders" {
 		t.Fatalf("attach = %#v", got)
 	}
