@@ -98,6 +98,58 @@ func TestJSONValueReadsNumericBytesAsJSONNumber(t *testing.T) {
 	}
 }
 
+// Issue #287: BIGINT UNSIGNED bytes above max int64 must stay a JSON number.
+func TestJSONValueReadsBigintUnsignedBytesAsJSONNumber(t *testing.T) {
+	t.Parallel()
+
+	encoded := marshaledJSONValue(t, []byte("18446744073709551615"), "UNSIGNED BIGINT")
+	if want := `{"meta":18446744073709551615}`; encoded != want {
+		t.Fatalf("row = %s, want %s", encoded, want)
+	}
+}
+
+func TestJSONValueReadsBigintNamesAsJSONNumber(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		value    string
+		typeName string
+		want     string
+	}{
+		{"driver bigint", "42", "BIGINT", `{"meta":42}`},
+		{"driver unsigned bigint", "42", "UNSIGNED BIGINT", `{"meta":42}`},
+		{"catalog bigint", "42", "bigint", `{"meta":42}`},
+		{"catalog bigint unsigned", "18446744073709551615", "bigint unsigned", `{"meta":18446744073709551615}`},
+		{"catalog bigint unsigned width", "18446744073709551615", "bigint(20) unsigned", `{"meta":18446744073709551615}`},
+		{"signed bigint min", "-9223372036854775808", "BIGINT", `{"meta":-9223372036854775808}`},
+		{"above int64", "9223372036854775808", "UNSIGNED BIGINT", `{"meta":9223372036854775808}`},
+		{"at int64 max", "9223372036854775807", "UNSIGNED BIGINT", `{"meta":9223372036854775807}`},
+		{"longlong unsigned", "18446744073709551615", "longlong unsigned", `{"meta":18446744073709551615}`},
+		{"unsigned longlong", "18446744073709551615", "UNSIGNED LONGLONG", `{"meta":18446744073709551615}`},
+		{"bigint zerofill", "18446744073709551615", "BIGINT UNSIGNED ZEROFILL", `{"meta":18446744073709551615}`},
+		{"float", "1.5", "FLOAT", `{"meta":1.5}`},
+		{"double", "1.5", "DOUBLE", `{"meta":1.5}`},
+		{"numeric", "1.5", "NUMERIC", `{"meta":1.5}`},
+		{"newdecimal", "1.5", "NEWDECIMAL", `{"meta":1.5}`},
+		{"real", "1.5", "REAL", `{"meta":1.5}`},
+	}
+	for _, tc := range cases {
+		if got := marshaledJSONValue(t, []byte(tc.value), tc.typeName); got != tc.want {
+			t.Fatalf("%s: row = %s, want %s", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestJSONValueKeepsBigintTextString(t *testing.T) {
+	t.Parallel()
+
+	encoded := marshaledJSONValue(t, []byte("alpha"), "TEXT")
+	if want := `{"meta":"alpha"}`; encoded != want {
+		t.Fatalf("row = %s, want %s", encoded, want)
+	}
+}
+
 func TestJSONValueRefusesMalformedJSON(t *testing.T) {
 	t.Parallel()
 

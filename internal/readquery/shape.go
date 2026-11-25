@@ -1,6 +1,7 @@
 package readquery
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -421,6 +422,9 @@ func asFloat(value any) (float64, bool) {
 	case string:
 		parsed, err := strconv.ParseFloat(typed, 64)
 		return parsed, err == nil
+	case json.Number:
+		parsed, err := strconv.ParseFloat(string(typed), 64)
+		return parsed, err == nil
 	default:
 		return asFloatSmallInt(value)
 	}
@@ -446,6 +450,8 @@ func valueAsString(value any) (string, bool) {
 	case string:
 		return typed, true
 	case []byte:
+		return string(typed), true
+	case json.Number:
 		return string(typed), true
 	default:
 		if number, ok := asFloat(value); ok {
