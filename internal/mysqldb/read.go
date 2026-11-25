@@ -142,9 +142,10 @@ func columnTypeName(columnType *sql.ColumnType) string {
 }
 
 // jsonValue turns a MySQL driver value into a JSON-ready value. Text and blob
-// columns arrive as bytes (JSON would otherwise write base64). Decimal and
-// floating types from aggregates also arrive as bytes and become JSON numbers.
-// JSON columns and JSON extracts arrive as bytes and stay JSON values.
+// columns arrive as bytes (JSON would otherwise write base64). Decimal, float,
+// and BIGINT types from parameterized reads also arrive as bytes and become
+// JSON numbers. JSON columns and JSON extracts arrive as bytes and stay JSON
+// values. Issue #287: UNSIGNED BIGINT bytes above max int64 become numbers.
 func jsonValue(value any, typeName string) (any, error) {
 	text, isBytes := value.([]byte)
 	if !isBytes {
@@ -167,17 +168,29 @@ func jsonColumnValue(text []byte) (any, error) {
 }
 
 func isNumericDBType(name string) bool {
-	switch {
-	case strings.EqualFold(name, "DECIMAL"),
-		strings.EqualFold(name, "NUMERIC"),
-		strings.EqualFold(name, "NEWDECIMAL"),
-		strings.EqualFold(name, "FLOAT"),
-		strings.EqualFold(name, "DOUBLE"),
-		strings.EqualFold(name, "REAL"):
+	switch numericBaseType(name) {
+	case "DECIMAL", "NUMERIC", "NEWDECIMAL", "FLOAT", "DOUBLE", "REAL", "BIGINT", "LONGLONG":
 		return true
 	default:
 		return false
 	}
+}
+
+// numericBaseType returns the core MySQL type of a driver or catalog name.
+// It drops display width, unsigned, and zerofill. Driver names put unsigned
+// first (UNSIGNED BIGINT). Catalog DTD identifiers put it last.
+func numericBaseType(name string) string {
+	upper := strings.ToUpper(strings.TrimSpace(name))
+	if at := strings.Index(upper, "("); at >= 0 {
+		upper = strings.TrimSpace(upper[:at])
+	}
+	for _, field := range strings.Fields(upper) {
+		if field == "UNSIGNED" || field == "ZEROFILL" {
+			continue
+		}
+		return field
+	}
+	return ""
 }
 
 func numericJSON(text []byte) any {

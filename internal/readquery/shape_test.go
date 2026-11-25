@@ -1,6 +1,7 @@
 package readquery_test
 
 import (
+	"encoding/json"
 	"net/url"
 	"reflect"
 	"testing"
@@ -203,6 +204,43 @@ func TestShapeNullFilterParity(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Issue #287: large JSON numbers keep exact digits for text compare.
+func TestShapeKeepsLargeJSONNumberDigits(t *testing.T) {
+	t.Parallel()
+
+	set := []rows.Row{
+		{Columns: []string{"id"}, Values: []any{json.Number("9007199254740993")}},
+	}
+	result, err := readquery.Shape(set, readquery.Query{
+		Filters: []readquery.Filter{{Column: "id", Op: readquery.OpLike, Value: "9007199254740993"}},
+	})
+	if err != nil {
+		t.Fatalf("Shape: %v", err)
+	}
+	if len(result.Rows) != 1 {
+		t.Fatalf("rows kept = %d, want 1", len(result.Rows))
+	}
+}
+
+// Issue #287: JSON numbers sort by value, not by text.
+func TestShapeSortsJSONNumbersByValue(t *testing.T) {
+	t.Parallel()
+
+	set := []rows.Row{
+		{Columns: []string{"id"}, Values: []any{json.Number("10")}},
+		{Columns: []string{"id"}, Values: []any{json.Number("9")}},
+	}
+	result, err := readquery.Shape(set, readquery.Query{
+		Order: []readquery.Order{{Column: "id"}},
+	})
+	if err != nil {
+		t.Fatalf("Shape: %v", err)
+	}
+	if len(result.Rows) != 2 || result.Rows[0].Values[0] != json.Number("9") {
+		t.Fatalf("rows = %#v, want 9 first", result.Rows)
 	}
 }
 
